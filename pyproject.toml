@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ProteomicsViewer"
+version = "1.0.0"
+description = "ProteomicsViewer — an interactive browser-based proteomics data visualization tool"
+readme = "README.md"
+license = {text = "Proprietary"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Billy Ngo", email = "billy.ngo0108@gmail.com"},
+]
+keywords = ["proteomics", "mass-spectrometry", "visualization", "MaxQuant", "bioinformatics"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.29.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.scripts]
+protview = "proteomicsviewer.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/billy-ngo/proteomics-viewer"
+Repository = "https://github.com/billy-ngo/proteomics-viewer"
+
+[tool.setuptools.packages.find]
+include = ["proteomicsviewer*"]
+
+[tool.setuptools.package-data]
+proteomicsviewer = [
+    "server/templates/*",
+    "server/templates/**/*",
+    "server/**/*.py",
+    "server/api/**/*.py",
+]
