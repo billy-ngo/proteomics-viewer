@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pro-ker</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230d1117'/%3E%3Cg transform='translate(4,6) rotate(-12,22,26)'%3E%3Crect x='2' y='2' width='32' height='44' rx='3' fill='white' opacity='.85'/%3E%3Ctext x='6' y='13' font-size='10' font-weight='bold' fill='%23dc2626' font-family='Georgia,serif'%3E2%3C/text%3E%3Ctext x='7' y='20' font-size='5.5' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif'%3EBN%3C/text%3E%3Ctext x='11' y='32' font-size='12' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif'%3EBN%3C/text%3E%3C/g%3E%3Cg transform='translate(4,6) rotate(8,38,26)'%3E%3Crect x='22' y='0' width='32' height='44' rx='3' fill='white'/%3E%3Ctext x='26' y='11' font-size='10' font-weight='bold' fill='%23dc2626' font-family='Georgia,serif'%3E2%3C/text%3E%3Ctext x='27' y='18' font-size='5.5' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif'%3EBN%3C/text%3E%3Ctext x='31' y='30' font-size='12' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif'%3EBN%3C/text%3E%3C/g%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230d1117'/%3E%3Cg transform='translate(2,6) rotate(-10,22,26)'%3E%3Crect x='3' y='3' width='32' height='45' rx='3' fill='white' opacity='.85'/%3E%3Ctext x='7' y='14' font-size='9' font-weight='bold' fill='%23dc2626' font-family='Georgia,serif'%3E2%3C/text%3E%3Ctext x='19' y='23' font-size='9' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif' text-anchor='middle'%3EBN%3C/text%3E%3Cg transform='rotate(180,19,32)'%3E%3Ctext x='19' y='32' font-size='9' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif' text-anchor='middle'%3EBN%3C/text%3E%3C/g%3E%3C/g%3E%3Cg transform='translate(2,6) rotate(8,40,26)'%3E%3Crect x='26' y='1' width='32' height='45' rx='3' fill='white'/%3E%3Ctext x='30' y='12' font-size='9' font-weight='bold' fill='%23dc2626' font-family='Georgia,serif'%3E2%3C/text%3E%3Ctext x='42' y='21' font-size='9' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif' text-anchor='middle'%3EBN%3C/text%3E%3Cg transform='rotate(180,42,30)'%3E%3Ctext x='42' y='30' font-size='9' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif' text-anchor='middle'%3EBN%3C/text%3E%3C/g%3E%3C/g%3E%3C/svg%3E">
 <script src="https://cdn.plot.ly/plotly-2.35.0.min.js" charset="utf-8"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -16,9 +16,14 @@ body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg)
 ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 .hidden{display:none!important}
 /* Tab Bar */
-#tabbar{height:var(--tabbar-h);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px}
-.app-name{font-size:15px;font-weight:700;letter-spacing:-.3px;margin-right:32px;white-space:nowrap}
+#tabbar{height:var(--tabbar-h);background:var(--surface);border-bottom:2px solid var(--border);display:flex;align-items:center;padding:0 16px;justify-content:space-between}
 .tab-buttons{display:flex;height:100%;gap:0}
+/* Header pill buttons (Info, Help — BiNgo style) */
+.hdr-pill{background:none;border:1px solid var(--border);border-radius:10px;padding:2px 8px;display:flex;align-items:center;gap:4px;cursor:pointer;color:var(--text-sec);font-size:11px;font-weight:600;line-height:1;flex-shrink:0;font-family:inherit;transition:color .15s,border-color .15s}
+.hdr-pill:hover{color:var(--text);border-color:var(--text-sec)}
+/* Header action buttons (Save, Theme, Export — BiNgo style) */
+.hdr-btn{background:var(--card);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:5px 14px;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;font-family:inherit;transition:border-color .15s}
+.hdr-btn:hover{border-color:var(--text-sec)}
 .tab-btn{height:100%;padding:0 18px;border:none;background:none;color:var(--text-sec);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;position:relative;transition:color .15s;white-space:nowrap}
 .tab-btn:hover{color:var(--text)}.tab-btn.active{color:var(--accent)}
 .tab-btn.active::after{content:'';position:absolute;bottom:0;left:8px;right:8px;height:2px;background:var(--accent);border-radius:1px 1px 0 0}
@@ -130,6 +135,28 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .modal-actions .m-cancel{background:transparent;color:var(--text-sec)}.modal-actions .m-cancel:hover{color:var(--text)}
 .modal-actions .m-danger{background:var(--danger);color:#fff;border-color:var(--danger)}.modal-actions .m-danger:hover{opacity:.85}
 .modal-actions .m-accent{background:var(--accent);color:#fff;border-color:var(--accent)}.modal-actions .m-accent:hover{opacity:.85}
+/* Floating panels (theme, help — BiNgo-style) */
+.floating-panel{position:fixed;top:var(--tabbar-h);right:8px;z-index:100;width:280px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.5);overflow:hidden}
+.fp-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600}
+.fp-header button{width:22px;height:22px;border:none;background:transparent;color:var(--text-sec);cursor:pointer;border-radius:3px;font-size:14px;display:flex;align-items:center;justify-content:center}
+.fp-header button:hover{color:var(--danger);background:rgba(248,81,73,.15)}
+.fp-body{padding:12px;max-height:70vh;overflow-y:auto}
+/* Theme preset buttons */
+.theme-preset-btn{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:6px 8px;cursor:pointer;min-width:56px;text-align:center;transition:border-color .15s}
+.theme-preset-btn:hover{border-color:var(--accent)}
+.theme-preset-btn.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.tp-swatches{display:flex;gap:2px;justify-content:center;margin-bottom:3px}
+.tp-swatches span{width:14px;height:14px;border-radius:2px;border:1px solid rgba(128,128,128,.3)}
+.tp-label{font-size:9px;color:var(--text-sec);font-family:inherit}
+/* Theme color swatch row */
+.tc-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.tc-swatch{width:18px;height:18px;border-radius:3px;border:1px solid rgba(128,128,128,.3);cursor:pointer;flex-shrink:0}
+.tc-swatch:hover{transform:scale(1.15)}
+.tc-label{font-size:11px;color:var(--text-sec);flex:1}
+/* Color picker popup */
+.color-picker-popup{position:fixed;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 6px 20px rgba(0,0,0,.6);display:grid;grid-template-columns:repeat(12,20px);gap:2px}
+.color-picker-popup span{width:20px;height:20px;border-radius:3px;cursor:pointer;border:1px solid transparent}
+.color-picker-popup span:hover{border-color:#fff;transform:scale(1.1)}
 /* Status Bar */
 #statusbar{height:var(--status-h);background:var(--surface);border-top:1px solid var(--border);padding:0 20px;display:flex;align-items:center;gap:16px;font-size:11px;color:var(--text-sec)}
 .status-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px;background:var(--success)}
@@ -180,21 +207,133 @@ async function uploadFile(file,append){
 </div>
 
 <nav id="tabbar">
-    <svg class="app-logo" viewBox="0 0 64 52" width="28" height="23" style="margin-right:8px;flex-shrink:0"><g transform="rotate(-12,22,26)"><rect x="2" y="2" width="32" height="44" rx="3" fill="white" opacity=".85"/><text x="6" y="13" font-size="10" font-weight="bold" fill="#dc2626" font-family="Georgia,serif">2</text><text x="7" y="20" font-size="5.5" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif">BN</text><text x="11" y="32" font-size="12" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif">BN</text></g><g transform="rotate(8,38,26)"><rect x="22" y="0" width="32" height="44" rx="3" fill="white"/><text x="26" y="11" font-size="10" font-weight="bold" fill="#dc2626" font-family="Georgia,serif">2</text><text x="27" y="18" font-size="5.5" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif">BN</text><text x="31" y="30" font-size="12" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif">BN</text></g></svg>
-    <span class="app-name">Pro-ker</span>
+    <!-- Left: logo + title + info/help (BiNgo layout) -->
+    <div style="display:flex;align-items:center;gap:12px">
+        <svg viewBox="0 0 100 80" width="34" height="27" style="flex-shrink:0">
+            <g transform="rotate(-10,35,40)"><rect x="5" y="5" width="50" height="70" rx="4" fill="white" opacity=".85" stroke="#bbb" stroke-width=".5"/><text x="11" y="19" font-size="11" font-weight="bold" fill="#dc2626" font-family="Georgia,serif">2</text><text x="30" y="35" font-size="14" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif" text-anchor="middle">BN</text><g transform="rotate(180,30,50)"><text x="30" y="50" font-size="14" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif" text-anchor="middle">BN</text></g><g transform="rotate(180,30,40)"><text x="11" y="19" font-size="11" font-weight="bold" fill="#dc2626" font-family="Georgia,serif">2</text></g></g>
+            <g transform="rotate(8,60,40)"><rect x="40" y="3" width="50" height="70" rx="4" fill="white" stroke="#bbb" stroke-width=".5"/><text x="46" y="17" font-size="11" font-weight="bold" fill="#dc2626" font-family="Georgia,serif">2</text><text x="65" y="33" font-size="14" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif" text-anchor="middle">BN</text><g transform="rotate(180,65,48)"><text x="65" y="48" font-size="14" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif" text-anchor="middle">BN</text></g><g transform="rotate(180,65,38)"><text x="46" y="17" font-size="11" font-weight="bold" fill="#dc2626" font-family="Georgia,serif">2</text></g></g>
+        </svg>
+        <div>
+            <div style="font-size:18px;font-weight:700;letter-spacing:1px;line-height:1.1">Pro-ker Proteomics Analysis</div>
+            <div style="font-size:11px;color:var(--text-sec)" id="header-subtitle"></div>
+        </div>
+        <!-- Info button (BiNgo style: pill with icon+text) -->
+        <button class="hdr-pill" onclick="toggleInfoPanel()" title="About / Info">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="flex-shrink:0"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><circle cx="8" cy="4.5" r="1.2"/><rect x="7" y="6.5" width="2" height="5.5" rx=".8"/></svg>
+            Info
+        </button>
+        <!-- Help button (BiNgo style) -->
+        <button class="hdr-pill" onclick="toggleHelpPanel()" title="Help">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="flex-shrink:0"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286z"/><circle cx="8" cy="11.5" r="1"/></svg>
+            Help
+        </button>
+    </div>
+    <!-- Center: tabs -->
     <div class="tab-buttons">
         <button class="tab-btn active" data-tab="upload" onclick="switchTab('upload')">Data Upload</button>
         <button class="tab-btn" data-tab="processing" onclick="switchTab('processing')" disabled id="tab-processing">Processing</button>
         <button class="tab-btn" data-tab="analysis" onclick="switchTab('analysis')" disabled id="tab-analysis">Analysis</button>
         <button class="tab-btn" data-tab="visualization" onclick="switchTab('visualization')" disabled id="tab-viz">Visualization</button>
     </div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
-        <button class="btn-sm" onclick="saveSession()" title="Save session">Save</button>
-        <button class="btn-sm" onclick="document.getElementById('session-load-input').click()" title="Load session">Load</button>
+    <!-- Right: action buttons (BiNgo layout) -->
+    <div style="display:flex;align-items:center;gap:8px">
+        <button class="hdr-btn" onclick="saveSession()" title="Save or restore a session">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M2 2h8v8H2z"/><path d="M4 2v4h4V2"/><path d="M5 3h2"/></svg>
+            Save Session
+        </button>
         <input type="file" id="session-load-input" accept=".json" style="display:none" onchange="loadSession(this.files[0]);this.value=''">
-        <button class="btn-sm" onclick="toggleTheme()" id="theme-btn" title="Toggle theme" style="font-size:14px;padding:2px 8px">&#9790;</button>
+        <button class="hdr-btn" onclick="toggleThemePanel()" title="Customize color theme">
+            <svg width="12" height="12" viewBox="0 0 12 12" style="flex-shrink:0"><rect x="0" y="0" width="5.5" height="5.5" rx="1" fill="#66bb6a"/><rect x="6.5" y="0" width="5.5" height="5.5" rx="1" fill="#42a5f5"/><rect x="0" y="6.5" width="5.5" height="5.5" rx="1" fill="#ffa726"/><rect x="6.5" y="6.5" width="5.5" height="5.5" rx="1" fill="#ab47bc"/></svg>
+            Theme
+        </button>
+        <button class="hdr-btn" onclick="exportAllPNG()" title="Export plots as PNG">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M6 1v7M3 5.5L6 8.5 9 5.5M2 11h8"/></svg>
+            Export Image
+        </button>
     </div>
 </nav>
+
+<!-- Theme Settings Panel (BiNgo-style) -->
+<div id="theme-panel" class="floating-panel hidden">
+    <div class="fp-header"><span>Theme</span><button onclick="document.getElementById('theme-panel').classList.add('hidden')">&times;</button></div>
+    <div class="fp-body">
+        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Presets</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">
+            <button class="theme-preset-btn" onclick="setTheme('dark')" data-theme="dark"><div class="tp-swatches"><span style="background:#0d1117"></span><span style="background:#161b22"></span><span style="background:#21262d"></span></div><div class="tp-label">Dark</div></button>
+            <button class="theme-preset-btn" onclick="setTheme('light')" data-theme="light"><div class="tp-swatches"><span style="background:#f4f5f7"></span><span style="background:#ffffff"></span><span style="background:#e8eaed"></span></div><div class="tp-label">Light</div></button>
+            <button class="theme-preset-btn" onclick="setTheme('soft')" data-theme="soft"><div class="tp-swatches"><span style="background:#f0ede8"></span><span style="background:#e9e5de"></span><span style="background:#d5cfc6"></span></div><div class="tp-label">Soft</div></button>
+            <button class="theme-preset-btn" onclick="setTheme('highContrast')" data-theme="highContrast"><div class="tp-swatches"><span style="background:#000"></span><span style="background:#111"></span><span style="background:#444"></span></div><div class="tp-label">Hi-Con</div></button>
+        </div>
+        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Interface Colors</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px" id="theme-ui-colors"></div>
+    </div>
+</div>
+
+<!-- Help Panel (?) -->
+<div id="help-panel" class="floating-panel hidden" style="width:320px">
+    <div class="fp-header"><span>Help</span><button onclick="document.getElementById('help-panel').classList.add('hidden')">&times;</button></div>
+    <div class="fp-body">
+        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Workflow</div>
+        <div style="font-size:12px;color:var(--text-sec);line-height:1.7">
+            <div><strong style="color:var(--text)">1. Data Upload</strong> — Load proteinGroups.txt, assign samples to groups</div>
+            <div><strong style="color:var(--text)">2. Processing</strong> — LFQ, normalization, pruning</div>
+            <div><strong style="color:var(--text)">3. Analysis</strong> — Save comparisons, create derived groups</div>
+            <div><strong style="color:var(--text)">4. Visualization</strong> — Add plots to the canvas</div>
+        </div>
+        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin:12px 0 6px">Interactions</div>
+        <div style="font-size:12px;color:var(--text-sec);line-height:1.7">
+            <div>Drag corners to resize plots</div>
+            <div>Hover for protein details</div>
+            <div>Click plot titles to rename</div>
+            <div>Drag samples between groups</div>
+        </div>
+        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin:12px 0 6px">Session</div>
+        <div style="font-size:12px;color:var(--text-sec);line-height:1.7">
+            <div>Auto-saves to browser on changes</div>
+            <div>Save button exports full session as JSON</div>
+            <div>Drag a .json session file onto the page to restore</div>
+        </div>
+        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin:12px 0 6px">Supported Formats</div>
+        <div style="font-size:12px;color:var(--text-sec)">MaxQuant proteinGroups.txt (tab-separated)</div>
+    </div>
+</div>
+
+<!-- Info Panel (matches BiNgo about overlay exactly) -->
+<div id="info-panel" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px 32px;width:420px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.6)">
+        <!-- Logo + Title row -->
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">
+            <svg viewBox="0 0 100 80" width="48" height="38" style="flex-shrink:0">
+                <g transform="rotate(-10,35,40)"><rect x="5" y="5" width="50" height="70" rx="4" fill="white" opacity=".85" stroke="#bbb" stroke-width=".5"/><text x="11" y="19" font-size="11" font-weight="bold" fill="#dc2626" font-family="Georgia,serif">2</text><text x="30" y="35" font-size="14" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif" text-anchor="middle">BN</text><g transform="rotate(180,30,50)"><text x="30" y="50" font-size="14" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif" text-anchor="middle">BN</text></g></g>
+                <g transform="rotate(8,60,40)"><rect x="40" y="3" width="50" height="70" rx="4" fill="white" stroke="#bbb" stroke-width=".5"/><text x="46" y="17" font-size="11" font-weight="bold" fill="#dc2626" font-family="Georgia,serif">2</text><text x="65" y="33" font-size="14" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif" text-anchor="middle">BN</text><g transform="rotate(180,65,48)"><text x="65" y="48" font-size="14" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif" text-anchor="middle">BN</text></g></g>
+            </svg>
+            <div style="font-size:22px;font-weight:700;letter-spacing:.5px">Pro-ker Proteomics Analysis</div>
+        </div>
+        <!-- Fields -->
+        <div style="font-size:14px;line-height:2">
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)">2.0.0</span></div>
+            <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
+            <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
+        </div>
+        <!-- Citation box -->
+        <div style="margin:16px 0;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:6px;font-size:13px;color:var(--text-sec);font-style:italic;line-height:1.5">
+            Ngo, B.M. (2026). Pro-ker Proteomics Analysis (v2.0.0) [Software].
+        </div>
+        <!-- References collapsible -->
+        <details style="margin-bottom:16px">
+            <summary style="font-size:14px;font-weight:700;cursor:pointer;padding:4px 0">References &amp; Acknowledgments</summary>
+            <div style="font-size:12px;color:var(--text-sec);line-height:1.7;margin-top:8px">
+                <div>Plotly.js &mdash; Interactive charting library</div>
+                <div>MaxQuant &mdash; Proteomics data processing</div>
+                <div>Benjamini-Hochberg &mdash; FDR correction method</div>
+            </div>
+        </details>
+        <!-- Close button -->
+        <div style="text-align:right">
+            <button onclick="document.getElementById('info-panel').classList.add('hidden')" style="background:var(--card);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 24px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">Close</button>
+        </div>
+    </div>
+</div>
 
 <div id="workspace">
 <aside id="left-panel">
@@ -515,7 +654,7 @@ document.addEventListener('mouseup',()=>{if(!rbActive)return;rbActive=false;if(r
 function addBin(){const id=nextBinId++;let i=BINS.length+1,lbl='Group '+i;while(BINS.some(b=>b.label===lbl)){i++;lbl='Group '+i}BINS.push({id,label:lbl,color:COLORS[(id-1)%COLORS.length],samples:[]});renderAll()}
 function updateContinueBtn(){const ok=BINS.filter(b=>b.samples.length>0).length>=2;document.getElementById('continue-btn').disabled=!ok;['tab-processing','tab-analysis','tab-viz'].forEach(id=>document.getElementById(id).disabled=!ok)}
 document.getElementById('continue-btn').addEventListener('click',()=>{populatePruneGrp();switchTab('processing')});
-function updateStatus(){if(!RAW)return;const filtered=PROC_FIDX.length;const removed=RAW.total_proteins-filtered;document.getElementById('status-text').textContent=filtered+' proteins'+(removed>0?' ('+removed+' filtered)':'');const a=BINS.reduce((n,b)=>n+b.samples.length,0);document.getElementById('status-groups').textContent=BINS.length+' groups | '+a+'/'+RAW.samples.length+' assigned'}
+function updateStatus(){if(!RAW)return;const filtered=PROC_FIDX.length;const removed=RAW.total_proteins-filtered;document.getElementById('status-text').textContent=filtered+' proteins'+(removed>0?' ('+removed+' filtered)':'');const a=BINS.reduce((n,b)=>n+b.samples.length,0);document.getElementById('status-groups').textContent=BINS.length+' groups | '+a+'/'+RAW.samples.length+' assigned';document.getElementById('header-subtitle').textContent=RAW.filename+' \u00B7 '+RAW.samples.length+' samples'}
 function startHeartbeat(){setInterval(()=>fetch('/api/heartbeat').catch(()=>{}),10000)}
 
 // ================================================================
@@ -1205,33 +1344,107 @@ function exportCSV(){
 }
 
 // ================================================================
-// THEME
+// THEME (BiNgo-style presets + custom colors)
 // ================================================================
-function getPlotColors(){
-    const light=document.documentElement.classList.contains('light');
-    return light?{paper:'#f4f5f7',plot:'#ffffff',grid:'#e8eaed',line:'#d0d7de',text:'#1f2328',textSec:'#656d76',dot:'#1f2328'}
-        :{paper:'#0d1117',plot:'#161b22',grid:'#21262d',line:'#30363d',text:'#e6edf3',textSec:'#8b949e',dot:'#e6edf3'};
+const THEME_PRESETS={
+    dark:{bg:'#0d1117',surface:'#161b22',card:'#21262d',border:'#30363d',text:'#e6edf3','text-sec':'#8b949e',accent:'#58a6ff',danger:'#f85149',success:'#3fb950',warning:'#d29922',purple:'#bc8cff'},
+    light:{bg:'#f4f5f7',surface:'#ffffff',card:'#e8eaed',border:'#d0d7de',text:'#1f2328','text-sec':'#656d76',accent:'#0969da',danger:'#cf222e',success:'#1a7f37',warning:'#9a6700',purple:'#8250df'},
+    soft:{bg:'#f0ede8',surface:'#e9e5de',card:'#d5cfc6',border:'#c4bdb2',text:'#3a3530','text-sec':'#7a7468',accent:'#6366f1',danger:'#c47066',success:'#4caf50',warning:'#e67e22',purple:'#8e44ad'},
+    highContrast:{bg:'#000000',surface:'#111111',card:'#222222',border:'#555555',text:'#ffffff','text-sec':'#cccccc',accent:'#00bfff',danger:'#ff4444',success:'#44ff44',warning:'#ffaa00',purple:'#dd88ff'},
+};
+const THEME_UI_FIELDS=[
+    {key:'bg',label:'Background'},{key:'surface',label:'Surface'},{key:'card',label:'Card'},
+    {key:'border',label:'Border'},{key:'text',label:'Text'},{key:'text-sec',label:'Text secondary'},
+    {key:'accent',label:'Accent'},{key:'danger',label:'Alerts'},
+];
+const PICKER_COLORS=[
+    '#000000','#1a1a1a','#333333','#4d4d4d','#666666','#808080','#999999','#b3b3b3','#cccccc','#e6e6e6','#f2f2f2','#ffffff',
+    '#4a0000','#8b0000','#b22222','#dc2626','#ef4444','#f87171','#001a4a','#003087','#0969da','#3b82f6','#60a5fa','#93c5fd',
+    '#004d00','#006400','#1a7f37','#22c55e','#4ade80','#86efac','#4a3500','#7c4d00','#b45309','#eab308','#facc15','#fde68a',
+    '#2e003e','#4c1d95','#6d28d9','#8b5cf6','#a78bfa','#c4b5fd','#4a0028','#831843','#be185d','#ec4899','#f472b6','#f9a8d4',
+    '#003d3d','#065f46','#0d9488','#14b8a6','#2dd4bf','#5eead4','#3d1f00','#78350f','#92400e','#d97706','#f59e0b','#fbbf24',
+];
+var currentThemeName='dark';
+var customTheme={...THEME_PRESETS.dark};
+
+function applyThemeVars(t){
+    const r=document.documentElement.style;
+    Object.keys(t).forEach(k=>{r.setProperty('--'+k,t[k])});
+    // Also update Plotly colors
+    PL.paper_bgcolor=t.bg;PL.plot_bgcolor=t.surface;PL.font.color=t.text;
+    PL.xaxis.gridcolor=t.card;PL.xaxis.zerolinecolor=t.border;PL.xaxis.linecolor=t.border;
+    PL.yaxis.gridcolor=t.card;PL.yaxis.zerolinecolor=t.border;PL.yaxis.linecolor=t.border;
+    PL.hoverlabel.bgcolor=t.surface;PL.hoverlabel.bordercolor=t.border;PL.hoverlabel.font.color=t.text;
 }
-function applyPlotTheme(){
-    const c=getPlotColors();
-    PL.paper_bgcolor=c.paper;PL.plot_bgcolor=c.plot;
-    PL.font.color=c.text;
-    PL.xaxis.gridcolor=c.grid;PL.xaxis.zerolinecolor=c.line;PL.xaxis.linecolor=c.line;
-    PL.yaxis.gridcolor=c.grid;PL.yaxis.zerolinecolor=c.line;PL.yaxis.linecolor=c.line;
-    PL.hoverlabel.bgcolor=c.plot;PL.hoverlabel.bordercolor=c.line;PL.hoverlabel.font.color=c.text;
-}
-function toggleTheme(){
-    const html=document.documentElement;
-    const isLight=html.classList.toggle('light');
-    document.getElementById('theme-btn').textContent=isLight?'\u2600':'\u263E';
-    localStorage.setItem('proker-theme',isLight?'light':'dark');
-    applyPlotTheme();
+
+function setTheme(name){
+    currentThemeName=name;
+    const t=THEME_PRESETS[name]||THEME_PRESETS.dark;
+    customTheme={...t};
+    // Remove old light class approach
+    document.documentElement.classList.remove('light');
+    applyThemeVars(t);
+    localStorage.setItem('proker-theme-name',name);
+    localStorage.setItem('proker-theme-custom',JSON.stringify(customTheme));
+    renderThemeUI();
     refreshAllPlots();
 }
+
+function setCustomColor(key,color){
+    customTheme[key]=color;
+    currentThemeName='custom';
+    applyThemeVars(customTheme);
+    localStorage.setItem('proker-theme-name','custom');
+    localStorage.setItem('proker-theme-custom',JSON.stringify(customTheme));
+    renderThemeUI();
+    refreshAllPlots();
+}
+
+function renderThemeUI(){
+    // Highlight active preset
+    document.querySelectorAll('.theme-preset-btn').forEach(b=>
+        b.classList.toggle('active',b.dataset.theme===currentThemeName));
+    // Render color swatch rows
+    const c=document.getElementById('theme-ui-colors');if(!c)return;
+    c.innerHTML=THEME_UI_FIELDS.map(f=>
+        `<div class="tc-row"><span class="tc-swatch" style="background:${customTheme[f.key]}" onclick="openColorPicker('${f.key}',this)" ondblclick="openNativeColorPicker('${f.key}')"></span><span class="tc-label">${f.label}</span></div>`
+    ).join('');
+}
+
+var pickerTarget=null;
+function openColorPicker(key,el){
+    closeColorPicker();
+    const rect=el.getBoundingClientRect();
+    const popup=document.createElement('div');popup.className='color-picker-popup';popup.id='cp-popup';
+    popup.style.left=(rect.left-100)+'px';popup.style.top=(rect.bottom+4)+'px';
+    PICKER_COLORS.forEach(c=>{
+        const s=document.createElement('span');s.style.background=c;
+        s.onclick=()=>{setCustomColor(key,c);closeColorPicker()};
+        popup.appendChild(s);
+    });
+    popup.addEventListener('mouseleave',()=>setTimeout(closeColorPicker,200));
+    document.body.appendChild(popup);pickerTarget=key;
+}
+function closeColorPicker(){const p=document.getElementById('cp-popup');if(p)p.remove();pickerTarget=null}
+function openNativeColorPicker(key){
+    const inp=document.createElement('input');inp.type='color';inp.value=customTheme[key]||'#000000';
+    inp.addEventListener('input',()=>setCustomColor(key,inp.value));
+    inp.click();
+}
+
+function closePanels(){['theme-panel','help-panel','info-panel'].forEach(id=>document.getElementById(id)?.classList.add('hidden'))}
+function toggleThemePanel(){const wasOpen=!document.getElementById('theme-panel').classList.contains('hidden');closePanels();if(!wasOpen){document.getElementById('theme-panel').classList.remove('hidden');renderThemeUI()}}
+function toggleHelpPanel(){const wasOpen=!document.getElementById('help-panel').classList.contains('hidden');closePanels();if(!wasOpen)document.getElementById('help-panel').classList.remove('hidden')}
+function toggleInfoPanel(){const wasOpen=!document.getElementById('info-panel').classList.contains('hidden');closePanels();if(!wasOpen)document.getElementById('info-panel').classList.remove('hidden')}
+
 // Restore theme on load
 (function(){
-    const saved=localStorage.getItem('proker-theme');
-    if(saved==='light'){document.documentElement.classList.add('light');document.getElementById('theme-btn').textContent='\u2600';applyPlotTheme()}
+    const name=localStorage.getItem('proker-theme-name')||'dark';
+    const custom=localStorage.getItem('proker-theme-custom');
+    if(custom){try{customTheme=JSON.parse(custom)}catch(e){}}
+    currentThemeName=name;
+    if(name==='custom'){applyThemeVars(customTheme)}
+    else if(THEME_PRESETS[name]){customTheme={...THEME_PRESETS[name]};applyThemeVars(customTheme)}
 })();
 
 // ================================================================
