@@ -116,9 +116,21 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 #canvas{flex:1;overflow-y:auto;padding:8px 12px}
 #canvas.empty-canvas{display:flex;align-items:center;justify-content:center}
 .canvas-plot{position:relative;margin-bottom:4px}
-.canvas-plot .cp-close{position:absolute;top:2px;right:6px;width:18px;height:18px;border:none;background:transparent;color:transparent;cursor:pointer;font-size:13px;z-index:5;display:flex;align-items:center;justify-content:center;border-radius:3px;transition:all .15s}
+.canvas-plot .cp-close{position:absolute;top:2px;right:6px;width:18px;height:18px;border:none;background:transparent;color:transparent;cursor:pointer;font-size:13px;z-index:6;display:flex;align-items:center;justify-content:center;border-radius:3px;transition:all .15s}
 .canvas-plot:hover .cp-close{color:var(--text-sec)}
 .canvas-plot .cp-close:hover{color:var(--danger);background:rgba(248,81,73,.2)}
+/* Corner resize handles — sit on top of Plotly */
+.cp-handle{position:absolute;width:20px;height:20px;z-index:6}
+.cp-handle.se{bottom:0;right:0;cursor:nwse-resize}
+.cp-handle.sw{bottom:0;left:0;cursor:nesw-resize}
+.cp-handle.ne{top:24px;right:0;cursor:nesw-resize}
+.cp-handle.nw{top:24px;left:0;cursor:nwse-resize}
+.cp-handle::after{content:'';position:absolute;width:8px;height:8px}
+.cp-handle.se::after{bottom:3px;right:3px;border-right:2px solid transparent;border-bottom:2px solid transparent}
+.cp-handle.sw::after{bottom:3px;left:3px;border-left:2px solid transparent;border-bottom:2px solid transparent}
+.cp-handle.ne::after{top:3px;right:3px;border-right:2px solid transparent;border-top:2px solid transparent}
+.cp-handle.nw::after{top:3px;left:3px;border-left:2px solid transparent;border-top:2px solid transparent}
+.canvas-plot:hover .cp-handle::after{border-color:var(--text-sec)}
 .canvas-plot .plot-title-input{display:block;background:transparent;border:1px solid transparent;border-radius:3px;color:var(--text);font-size:12px;font-weight:600;font-family:inherit;padding:2px 6px;outline:none;width:calc(100% - 30px)}
 .canvas-plot .plot-title-input:focus{border-color:var(--accent);background:var(--card)}
 .canvas-drop-hint{border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:200px;color:var(--border);font-size:13px;transition:all .15s}
@@ -223,7 +235,7 @@ async function uploadFile(file,append){
             Info
         </button>
         <!-- Help button (BiNgo style) -->
-        <button class="hdr-pill" onclick="toggleHelpPanel()" title="Help">
+        <button class="hdr-pill" onclick="startTour()" title="Guided Tour">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="flex-shrink:0"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286z"/><circle cx="8" cy="11.5" r="1"/></svg>
             Help
         </button>
@@ -236,7 +248,7 @@ async function uploadFile(file,append){
         <button class="tab-btn" data-tab="visualization" onclick="switchTab('visualization')" disabled id="tab-viz">Visualization</button>
     </div>
     <!-- Right: action buttons (BiNgo layout) -->
-    <div style="display:flex;align-items:center;gap:8px">
+    <div style="display:flex;align-items:center;gap:8px" data-tour="header-btns">
         <button class="hdr-btn" onclick="toggleSessionPanel()" title="Save or restore a session">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M2 2h8v8H2z"/><path d="M4 2v4h4V2"/><path d="M5 3h2"/></svg>
             Save Session
@@ -246,7 +258,7 @@ async function uploadFile(file,append){
             <svg width="12" height="12" viewBox="0 0 12 12" style="flex-shrink:0"><rect x="0" y="0" width="5.5" height="5.5" rx="1" fill="#66bb6a"/><rect x="6.5" y="0" width="5.5" height="5.5" rx="1" fill="#42a5f5"/><rect x="0" y="6.5" width="5.5" height="5.5" rx="1" fill="#ffa726"/><rect x="6.5" y="6.5" width="5.5" height="5.5" rx="1" fill="#ab47bc"/></svg>
             Theme
         </button>
-        <button class="hdr-btn" onclick="exportAllPNG()" title="Export plots as PNG">
+        <button class="hdr-btn" onclick="toggleExportPanel()" title="Export current plots as SVG or PNG">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M6 1v7M3 5.5L6 8.5 9 5.5M2 11h8"/></svg>
             Export Image
         </button>
@@ -269,37 +281,44 @@ async function uploadFile(file,append){
     </div>
 </div>
 
-<!-- Help Panel (?) -->
-<div id="help-panel" class="floating-panel hidden" style="width:320px">
-    <div class="fp-header"><span>Help</span><button onclick="document.getElementById('help-panel').classList.add('hidden')">&times;</button></div>
-    <div class="fp-body">
-        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Workflow</div>
-        <div style="font-size:12px;color:var(--text-sec);line-height:1.7">
-            <div><strong style="color:var(--text)">1. Data Upload</strong> — Load proteinGroups.txt, assign samples to groups</div>
-            <div><strong style="color:var(--text)">2. Processing</strong> — LFQ, normalization, pruning</div>
-            <div><strong style="color:var(--text)">3. Analysis</strong> — Save comparisons, create derived groups</div>
-            <div><strong style="color:var(--text)">4. Visualization</strong> — Add plots to the canvas</div>
-        </div>
-        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin:12px 0 6px">Interactions</div>
-        <div style="font-size:12px;color:var(--text-sec);line-height:1.7">
-            <div>Drag corners to resize plots</div>
-            <div>Hover for protein details</div>
-            <div>Click plot titles to rename</div>
-            <div>Drag samples between groups</div>
-        </div>
-        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin:12px 0 6px">Session</div>
-        <div style="font-size:12px;color:var(--text-sec);line-height:1.7">
-            <div>Auto-saves to browser on changes</div>
-            <div>Save button exports full session as JSON</div>
-            <div>Drag a .json session file onto the page to restore</div>
-        </div>
-        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin:12px 0 6px">Supported Formats</div>
-        <div style="font-size:12px;color:var(--text-sec)">MaxQuant proteinGroups.txt (tab-separated)</div>
-    </div>
-</div>
+<!-- Tour overlay (rendered by JS) -->
+<div id="tour-overlay" class="hidden"></div>
 
 <!-- Info Panel (matches BiNgo about overlay exactly) -->
 <!-- Session Panel (BiNgo-style modal) -->
+<!-- Export Panel (BiNgo-style) -->
+<div id="export-panel" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:400px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.6)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+            <div style="font-size:18px;font-weight:700">Export Image</div>
+            <button onclick="document.getElementById('export-panel').classList.add('hidden')" style="width:28px;height:28px;border:none;background:transparent;color:var(--text-sec);cursor:pointer;font-size:20px;display:flex;align-items:center;justify-content:center;border-radius:4px" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-sec)'">&times;</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Format</div>
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+            <button class="hdr-btn" onclick="doExport('svg')" style="flex:1;justify-content:center">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" style="flex-shrink:0"><rect x="1" y="1" width="10" height="10" rx="1"/><path d="M3 8L5 4 7 7 9 3"/></svg>
+                SVG (vector)
+            </button>
+            <button class="hdr-btn" onclick="doExport('png')" style="flex:1;justify-content:center">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" style="flex-shrink:0"><rect x="1" y="1" width="10" height="10" rx="1"/><circle cx="4" cy="4" r="1.5"/><path d="M1 9l3-3 2 2 3-4 2 3"/></svg>
+                PNG (raster)
+            </button>
+        </div>
+        <div style="font-size:11px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Options</div>
+        <div style="display:flex;gap:10px;margin-bottom:14px">
+            <div style="flex:1"><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Width (px)</div><input type="number" id="export-width" value="1200" min="400" max="4000" style="width:100%"></div>
+            <div style="flex:1"><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Height (px)</div><input type="number" id="export-height" value="700" min="300" max="3000" style="width:100%"></div>
+        </div>
+        <div style="font-size:11px;color:var(--text-sec);line-height:1.5;margin-bottom:14px">
+            <b>SVG</b> — fully vectorized, editable in Illustrator/Inkscape/Figma. All text remains as text elements.<br>
+            <b>PNG</b> — high-resolution raster at 2&times; scale.
+        </div>
+        <div style="text-align:right">
+            <button onclick="document.getElementById('export-panel').classList.add('hidden')" style="background:var(--card);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 24px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">Close</button>
+        </div>
+    </div>
+</div>
+
 <div id="session-panel" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:420px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.6)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
@@ -373,7 +392,7 @@ async function uploadFile(file,append){
         <span class="cu-file" id="cu-filename"></span>
         <button class="btn-sm cu-btn" onclick="document.getElementById('file-input').click()">Change file</button>
     </div>
-    <div id="upload-section" class="panel-section">
+    <div id="upload-section" class="panel-section" data-tour="upload-zone">
         <div class="section-label">Load Data</div>
         <div class="upload-zone" id="upload-zone"
              onclick="document.getElementById('file-input').click()"
@@ -386,7 +405,7 @@ async function uploadFile(file,append){
         </div>
         <div class="upload-error" id="upload-error"></div>
     </div>
-    <div id="grouping-section" class="hidden">
+    <div id="grouping-section" class="hidden" data-tour="grouping">
         <div class="panel-section">
             <div class="section-label">Assign Samples to Groups</div>
             <div class="unassigned-pool" id="unassigned-pool">
@@ -401,7 +420,7 @@ async function uploadFile(file,append){
 </div>
 
 <!-- ── PROCESSING TAB ── -->
-<div class="tab-panel hidden" data-for="processing">
+<div class="tab-panel hidden" data-for="processing" data-tour="processing">
     <div class="panel-section">
         <div class="section-label">Data Processing Options</div>
         <div class="proc-option">
@@ -455,7 +474,7 @@ async function uploadFile(file,append){
 </div>
 
 <!-- ── ANALYSIS TAB ── -->
-<div class="tab-panel hidden" data-for="analysis">
+<div class="tab-panel hidden" data-for="analysis" data-tour="analysis">
     <div class="panel-section">
         <div class="section-label">Saved Analyses</div>
         <div id="ana-list"></div>
@@ -477,7 +496,7 @@ async function uploadFile(file,append){
 </div>
 
 <!-- ── VISUALIZATION TAB ── -->
-<div class="tab-panel hidden" data-for="visualization">
+<div class="tab-panel hidden" data-for="visualization" data-tour="visualization">
     <div class="panel-section">
         <div class="section-label">Add Visualization</div>
         <div id="viz-palette">
@@ -498,7 +517,7 @@ async function uploadFile(file,append){
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         <div class="wc-text">Data visualization will appear here</div>
     </div>
-    <div id="canvas-wrap" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+    <div id="canvas-wrap" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden" data-tour="canvas">
         <div class="export-bar">
             <button class="btn-sm" onclick="exportAllSVG()">Export SVG</button>
             <button class="btn-sm" onclick="exportAllPNG()">Export PNG</button>
@@ -1070,7 +1089,7 @@ function addPlotToCanvas(type){
     // Create minimal plot element
     const plotWrap=document.createElement('div');plotWrap.className='canvas-plot';plotWrap.id='card-'+plotId;
     plotWrap.style.height='420px';
-    plotWrap.innerHTML=`<input class="plot-title-input" value="${title.replace(/"/g,'&quot;')}" onchange="renamePlot('${plotId}',this.value)"><button class="cp-close" onclick="removePlot('${plotId}')" title="Remove">&times;</button><div id="${plotId}" style="width:100%;height:calc(100% - 24px)"></div>`;
+    plotWrap.innerHTML=`<input class="plot-title-input" value="${title.replace(/"/g,'&quot;')}" onchange="renamePlot('${plotId}',this.value)"><button class="cp-close" onclick="removePlot('${plotId}')" title="Remove">&times;</button><div id="${plotId}" style="width:100%;height:calc(100% - 24px)"></div><div class="cp-handle se" data-corner="se"></div><div class="cp-handle sw" data-corner="sw"></div><div class="cp-handle ne" data-corner="ne"></div><div class="cp-handle nw" data-corner="nw"></div>`;
     canvas.appendChild(plotWrap);
     setupPlotResize(plotWrap,plotId);
 
@@ -1090,55 +1109,36 @@ function removePlot(plotId){
     }
 }
 function setupPlotResize(wrap,plotId){
-    // 4-corner resize: detect mousedown near any corner of the plot div
-    const EDGE=12;
-    let dragging=false,corner='',startX=0,startY=0,startW=0,startH=0,startL=0,startT=0;
     const plotEl=()=>document.getElementById(plotId);
+    let dragging=false,corner='',startX=0,startY=0,startH=0;
 
-    wrap.addEventListener('mousedown',e=>{
-        const r=wrap.getBoundingClientRect();
-        const x=e.clientX-r.left, y=e.clientY-r.top;
-        const nearL=x<EDGE, nearR=x>r.width-EDGE, nearT=y<EDGE, nearB=y>r.height-EDGE;
-        if(nearB&&nearR) corner='se';
-        else if(nearB&&nearL) corner='sw';
-        else if(nearT&&nearR) corner='ne';
-        else if(nearT&&nearL) corner='nw';
-        else return;
-        dragging=true;startX=e.clientX;startY=e.clientY;startW=r.width;startH=r.height;
-        const cs={nw:'nwse-resize',ne:'nesw-resize',sw:'nesw-resize',se:'nwse-resize'}[corner];
-        document.body.style.cursor=cs;document.body.style.userSelect='none';
-        e.preventDefault();e.stopPropagation();
+    // Attach to each handle element
+    wrap.querySelectorAll('.cp-handle').forEach(handle=>{
+        handle.addEventListener('mousedown',e=>{
+            dragging=true;
+            corner=handle.dataset.corner;
+            startX=e.clientX;startY=e.clientY;startH=wrap.offsetHeight;
+            document.body.style.cursor=handle.style.cursor;
+            document.body.style.userSelect='none';
+            e.preventDefault();e.stopPropagation();
+        });
     });
+
     document.addEventListener('mousemove',e=>{
         if(!dragging)return;
-        const dx=e.clientX-startX, dy=e.clientY-startY;
-        let h=startH, w=startW;
-        if(corner==='se'){h=startH+dy;w=startW+dx}
-        else if(corner==='sw'){h=startH+dy;w=startW-dx}
-        else if(corner==='ne'){h=startH-dy;w=startW+dx}
-        else if(corner==='nw'){h=startH-dy;w=startW-dx}
+        const dy=e.clientY-startY;
+        let h=startH;
+        if(corner==='se'||corner==='sw') h=startH+dy;
+        else if(corner==='ne'||corner==='nw') h=startH-dy;
         wrap.style.height=Math.max(200,h)+'px';
-        // Width is fluid (fills container), but we can set max-width to allow narrowing
-        // For now only resize height — width follows the container
         const el=plotEl();if(el&&el.data)Plotly.Plots.resize(el);
     });
+
     document.addEventListener('mouseup',()=>{
         if(!dragging)return;dragging=false;corner='';
         document.body.style.cursor='';document.body.style.userSelect='';
         const el=plotEl();if(el&&el.data)Plotly.Plots.resize(el);
     });
-
-    // Show resize cursor when hovering near edges
-    wrap.addEventListener('mousemove',e=>{
-        if(dragging)return;
-        const r=wrap.getBoundingClientRect();
-        const x=e.clientX-r.left, y=e.clientY-r.top;
-        const nearL=x<EDGE, nearR=x>r.width-EDGE, nearT=y<EDGE, nearB=y>r.height-EDGE;
-        if((nearB&&nearR)||(nearT&&nearL)) wrap.style.cursor='nwse-resize';
-        else if((nearB&&nearL)||(nearT&&nearR)) wrap.style.cursor='nesw-resize';
-        else wrap.style.cursor='';
-    });
-    wrap.addEventListener('mouseleave',()=>{if(!dragging)wrap.style.cursor=''});
 }
 
 // ================================================================
@@ -1165,19 +1165,20 @@ function plotEnrichment(div,p,qd,fidx){
         // For ratio mode, skip if denominator is 0 (unique to X — not a ratio)
         if(!isLog2&&mB===0)continue;
         const val=isLog2?Math.log2((mA+1)/(mB+1)):(mA/mB);
-        data.push({fi,val,label:pLabel(fidx,fi)});
+        data.push({fi,val,label:pLabel(fidx,fi),rawX:mA,rawY:mB});
     }
     data.sort((a,b)=>a.val-b.val);
     const xVals=data.map((_,i)=>i+1);
     const yVals=data.map(d=>d.val);
     const labels=data.map(d=>d.label);
     const hoverLabel=isLog2?'log2('+gx+'/'+gy+')':'Ratio';
+    const customHover=data.map(d=>d.label+'<br>'+hoverLabel+': '+(d.val<100?d.val.toFixed(3):d.val.toFixed(1))+'<br>'+gx+': '+d.rawX.toExponential(2)+'<br>'+gy+': '+d.rawY.toExponential(2)+'<br>Rank: ');
 
     const traces=[];
     if(style==='bar'){
-        traces.push({x:xVals,y:yVals,type:'bar',marker:{color:'#e6edf3',line:{width:0}},text:labels,hovertemplate:`%{text}<br>${hoverLabel}: %{y:.3f}<br>Rank: %{x}<extra></extra>`});
+        traces.push({x:xVals,y:yVals,type:'bar',marker:{color:'#e6edf3',line:{width:0}},text:customHover,hovertemplate:'%{text}%{x}<extra></extra>'});
     } else {
-        traces.push({x:xVals,y:yVals,mode:'markers',type:'scatter',marker:{size:5,color:'#e6edf3',symbol:'circle'},text:labels,hovertemplate:`%{text}<br>${hoverLabel}: %{y:.3f}<br>Rank: %{x}<extra></extra>`});
+        traces.push({x:xVals,y:yVals,mode:'markers',type:'scatter',marker:{size:5,color:'#e6edf3',symbol:'circle'},text:customHover,hovertemplate:'%{text}%{x}<extra></extra>'});
     }
 
     const yTitle=isLog2?'log2('+gx+'/'+gy+')':'Enrichment ('+gx+'/'+gy+')';
@@ -1289,9 +1290,9 @@ function plotDotplot(div,p,qd,fidx){
         const mx=grpMean(fi,gx,qd,fidx),my=grpMean(fi,gy,qd,fidx);
         if(mx===0&&my===0)continue;
         const label=pLabel(fidx,fi);
-        if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,fc:Math.log2(my/mx)});
-        else if(mx>0) xOnly.push({x:txFn(mx),y:0,label});
-        else yOnly.push({x:0,y:txFn(my),label});
+        if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,fc:Math.log2(my/mx),rawX:mx,rawY:my});
+        else if(mx>0) xOnly.push({x:txFn(mx),y:0,label,rawX:mx});
+        else yOnly.push({x:0,y:txFn(my),label,rawY:my});
     }
 
     // Smart axis compression for single-group proteins
@@ -1308,13 +1309,13 @@ function plotDotplot(div,p,qd,fidx){
     const traces=[];
     if(both.length) traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',type:'scattergl',
         marker:{size:5,color:both.map(d=>d.fc),colorscale:[[0,'#58a6ff'],[.5,'#8b949e'],[1,'#f85149']],cmin:-3,cmax:3,opacity:.7},
-        text:both.map(d=>d.label),hovertemplate:'%{text}<br>'+gx+': %{x:.2f}<br>'+gy+': %{y:.2f}<extra></extra>',name:'Both',showlegend:false});
+        text:both.map(d=>d.label+'<br>'+gx+' raw: '+d.rawX.toExponential(2)+'<br>'+gy+' raw: '+d.rawY.toExponential(2)),hovertemplate:'%{text}<extra></extra>',name:'Both',showlegend:false});
     if(xOnlyPlot.length) traces.push({x:xOnlyPlot.map(d=>d.x),y:xOnlyPlot.map(d=>d.y),mode:'markers',type:'scatter',
         marker:{size:5,color:grpColor(gx),opacity:.7,symbol:'triangle-right'},
-        text:xOnlyPlot.map(d=>d.label),hovertemplate:'%{text}<br>Only in '+gx+'<extra></extra>',name:'Only '+gx,showlegend:true});
+        text:xOnlyPlot.map(d=>d.label+'<br>'+gx+' raw: '+d.rawX.toExponential(2)),hovertemplate:'%{text}<br>Only in '+gx+'<extra></extra>',name:'Only '+gx,showlegend:true});
     if(yOnlyPlot.length) traces.push({x:yOnlyPlot.map(d=>d.x),y:yOnlyPlot.map(d=>d.y),mode:'markers',type:'scatter',
         marker:{size:5,color:grpColor(gy),opacity:.7,symbol:'triangle-up'},
-        text:yOnlyPlot.map(d=>d.label),hovertemplate:'%{text}<br>Only in '+gy+'<extra></extra>',name:'Only '+gy,showlegend:true});
+        text:yOnlyPlot.map(d=>d.label+'<br>'+gy+' raw: '+d.rawY.toExponential(2)),hovertemplate:'%{text}<br>Only in '+gy+'<extra></extra>',name:'Only '+gy,showlegend:true});
 
     if(both.length){const mn=Math.min(minNzX,minNzY),mx2=Math.max(maxX,maxY);traces.push({x:[mn,mx2],y:[mn,mx2],mode:'lines',line:{color:'#30363d',width:1,dash:'dash'},hoverinfo:'skip',showlegend:false})}
 
@@ -1458,9 +1459,19 @@ function openNativeColorPicker(key){
     inp.click();
 }
 
-function closePanels(){['theme-panel','help-panel','info-panel','session-panel'].forEach(id=>document.getElementById(id)?.classList.add('hidden'))}
+function closePanels(){['theme-panel','info-panel','session-panel','export-panel'].forEach(id=>document.getElementById(id)?.classList.add('hidden'))}
+function toggleExportPanel(){if(!CANVAS_PLOTS.length){alert('No plots to export');return}const wasOpen=!document.getElementById('export-panel').classList.contains('hidden');closePanels();if(!wasOpen)document.getElementById('export-panel').classList.remove('hidden')}
+function doExport(fmt){
+    const w=+(document.getElementById('export-width')?.value||1200);
+    const h=+(document.getElementById('export-height')?.value||700);
+    CANVAS_PLOTS.forEach(p=>{const el=document.getElementById(p.plotId);if(!el||!el.data)return;
+        const opts={format:fmt,filename:(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_'),width:w,height:h};
+        if(fmt==='png')opts.scale=2;
+        Plotly.downloadImage(el,opts);
+    });
+    document.getElementById('export-panel').classList.add('hidden');
+}
 function toggleThemePanel(){const wasOpen=!document.getElementById('theme-panel').classList.contains('hidden');closePanels();if(!wasOpen){document.getElementById('theme-panel').classList.remove('hidden');renderThemeUI()}}
-function toggleHelpPanel(){const wasOpen=!document.getElementById('help-panel').classList.contains('hidden');closePanels();if(!wasOpen)document.getElementById('help-panel').classList.remove('hidden')}
 function toggleInfoPanel(){const wasOpen=!document.getElementById('info-panel').classList.contains('hidden');closePanels();if(!wasOpen)document.getElementById('info-panel').classList.remove('hidden')}
 
 // Restore theme on load
@@ -1593,6 +1604,157 @@ function loadSession(file){
     };
     reader.readAsText(file);
 }
+
+// ================================================================
+// GUIDED TOUR (BiNgo spotlight style)
+// ================================================================
+const TOUR_STEPS=[
+    {target:'upload-zone',title:'Load Data',position:'bottom',desc:
+        '<b>Upload</b> a MaxQuant proteinGroups.txt file:'+
+        '<div class="tl">\u2022 <b>Click</b> the upload zone to browse</div>'+
+        '<div class="tl">\u2022 <b>Drag &amp; drop</b> a file anywhere on the page</div>'+
+        '<div class="tl">\u2022 <b>CLI:</b> <code>proker file.txt</code> to auto-load</div>'+
+        '<div class="td">Supported: MaxQuant proteinGroups.txt (tab-separated)</div>'},
+    {target:'grouping',title:'Sample Groups',position:'bottom',desc:
+        'After loading, samples appear as draggable chips:'+
+        '<div class="tl">\u2022 <b>Click</b> a chip to select it</div>'+
+        '<div class="tl">\u2022 <b>Drag</b> chips between groups to reassign</div>'+
+        '<div class="tl">\u2022 <b>Rubber-band select</b> \u2014 click &amp; drag on empty space</div>'+
+        '<div class="tl">\u2022 <b>Rename</b> groups by clicking the label text</div>'+
+        '<div class="tl">\u2022 <b>+ Add Group</b> to create new bins</div>'},
+    {target:'processing',title:'Processing',position:'bottom',action:'processing',desc:
+        'Configure how your data is processed:'+
+        '<div class="tl">\u2022 <b>LFQ Analysis</b> \u2014 use label-free quantification</div>'+
+        '<div class="tl">\u2022 <b>Normalization</b> \u2014 total-sum normalization, optionally within a specific organism (locus tag prefix)</div>'+
+        '<div class="tl">\u2022 <b>Pruning</b> \u2014 filter low-abundance proteins by spectral count or intensity</div>'+
+        '<div class="tl">\u2022 <b>Aggregation</b> \u2014 averages (default) or sums</div>'+
+        '<div class="td">Changes here update all visualizations in real-time.</div>'},
+    {target:'analysis',title:'Analysis',position:'bottom',action:'analysis',desc:
+        'Define and save group comparisons:'+
+        '<div class="tl">\u2022 <b>New Analysis</b> \u2014 name a pairwise comparison (e.g. IP vs Control)</div>'+
+        '<div class="tl">\u2022 <b>Derived Groups</b> \u2014 create ratios (A/B), differences (A\u2212B), or combinations</div>'+
+        '<div class="td">Saved analyses are available when configuring visualizations.</div>'},
+    {target:'visualization',title:'Visualization',position:'bottom',action:'visualization',desc:
+        'Add plots to the canvas:'+
+        '<div class="tl">\u2022 <b>Ranked Enrichment</b> \u2014 fold enrichment in rank order</div>'+
+        '<div class="tl">\u2022 <b>Unique Proteins</b> \u2014 proteins in one group but not others</div>'+
+        '<div class="tl">\u2022 <b>Volcano Plot</b> \u2014 fold-change vs BH-FDR p-value</div>'+
+        '<div class="tl">\u2022 <b>Dot Plot</b> \u2014 abundance group X vs Y with axis breaks</div>'+
+        '<div class="tl">\u2022 <b>PCA</b> \u2014 principal component analysis of individual samples</div>'+
+        '<div class="td">Click a graph type to configure, then "Add to Canvas".</div>'},
+    {target:'canvas',title:'Canvas',position:'inside',desc:
+        'Your plots appear here on a continuous canvas:'+
+        '<div class="tl">\u2022 <b>Drag corners</b> to resize any plot</div>'+
+        '<div class="tl">\u2022 <b>Click titles</b> to rename plots</div>'+
+        '<div class="tl">\u2022 <b>Hover</b> over data points for details</div>'+
+        '<div class="tl">\u2022 <b>\u00D7 button</b> (on hover) to remove a plot</div>'+
+        '<div class="td">Plots persist when switching tabs \u2014 changes to groups or processing update them live.</div>'},
+    {target:'header-btns',title:'Save, Theme &amp; Export',position:'bottom',desc:
+        '<div class="tl">\u2022 <b>Save Session</b> \u2014 export your full analysis state as JSON, or restore a previous session</div>'+
+        '<div class="tl">\u2022 <b>Theme</b> \u2014 4 presets (Dark, Light, Soft, Hi-Con) plus custom color editing</div>'+
+        '<div class="tl">\u2022 <b>Export Image</b> \u2014 download all plots as PNG</div>'+
+        '<div class="td">Sessions auto-save to the browser. Theme preferences persist across sessions.</div>'},
+    {target:'upload-zone',title:'Tips',position:'bottom',desc:
+        '<div class="tl">\u2022 <b>Drag a .json file</b> onto the page to restore a saved session</div>'+
+        '<div class="tl">\u2022 <b>proker --update</b> checks PyPI for new versions</div>'+
+        '<div class="tl">\u2022 <b>proker --install</b> creates a desktop shortcut</div>'+
+        '<div class="tl">\u2022 <b>Organism filter</b> \u2014 in Processing \u2192 Normalization, select locus tag prefixes to analyze specific organisms in mixed samples</div>'+
+        '<div class="tl">\u2022 <b>Imputation</b> \u2014 volcano plots can impute missing values for better statistical power</div>'},
+];
+
+var tourStep=-1;
+function startTour(){closePanels();tourStep=0;renderTour()}
+function endTour(){tourStep=-1;document.getElementById('tour-overlay').classList.add('hidden');document.getElementById('tour-overlay').innerHTML=''}
+function tourNext(){if(tourStep<TOUR_STEPS.length-1){tourStep++;tourNavigate()}else endTour()}
+function tourPrev(){if(tourStep>0){tourStep--;tourNavigate()}}
+function tourNavigate(){
+    const s=TOUR_STEPS[tourStep];
+    if(s.action)switchTab(s.action);
+    renderTour();
+}
+
+function renderTour(){
+    const ov=document.getElementById('tour-overlay');
+    ov.classList.remove('hidden');
+    const s=TOUR_STEPS[tourStep];
+    const el=document.querySelector('[data-tour="'+s.target+'"]');
+    const r=el?el.getBoundingClientRect():null;
+    const PAD=10,GAP=14,CW=360;
+
+    // Spotlight strips + border
+    let spotHTML='';
+    if(r){
+        const st=r.top-PAD,sl=r.left-PAD,sw=r.width+PAD*2,sh=r.height+PAD*2;
+        const dim='rgba(0,0,0,0.55)';
+        spotHTML=`
+            <div style="position:fixed;top:0;left:0;right:0;height:${Math.max(0,st)}px;background:${dim};z-index:10001;pointer-events:none"></div>
+            <div style="position:fixed;top:${st+sh}px;left:0;right:0;bottom:0;background:${dim};z-index:10001;pointer-events:none"></div>
+            <div style="position:fixed;top:${st}px;left:0;width:${Math.max(0,sl)}px;height:${sh}px;background:${dim};z-index:10001;pointer-events:none"></div>
+            <div style="position:fixed;top:${st}px;left:${sl+sw}px;right:0;height:${sh}px;background:${dim};z-index:10001;pointer-events:none"></div>
+            <div style="position:fixed;top:${st}px;left:${sl}px;width:${sw}px;height:${sh}px;border-radius:6px;border:2px solid rgba(255,255,255,0.22);z-index:10001;pointer-events:none;box-sizing:border-box"></div>`;
+    } else {
+        spotHTML='<div style="position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10001;pointer-events:none"></div>';
+    }
+
+    // Card position
+    let cardTop,cardLeft,arrowDir='up';
+    if(!r){
+        cardTop=(window.innerHeight-250)/2;cardLeft=(window.innerWidth-CW)/2;arrowDir=null;
+    } else {
+        const pos=s.position||'bottom';
+        const spotBot=r.top+r.height+PAD,spotTop=r.top-PAD;
+        if(pos==='inside'){
+            cardTop=r.top+Math.max(20,(r.height-250)/2);
+            cardLeft=r.left+Math.max(16,(r.width-CW)/2);arrowDir=null;
+        } else if(spotBot+GAP+250<=window.innerHeight){
+            cardTop=spotBot+GAP;arrowDir='up';
+            cardLeft=r.left+r.width/2-CW/2;
+        } else {
+            cardTop=spotTop-GAP-250;arrowDir='down';
+            cardLeft=r.left+r.width/2-CW/2;
+        }
+        cardLeft=Math.max(12,Math.min(window.innerWidth-CW-12,cardLeft));
+        cardTop=Math.max(12,Math.min(window.innerHeight-260,cardTop));
+    }
+
+    const arrowOff=r?Math.max(20,Math.min(CW-20,r.left+r.width/2-cardLeft)):CW/2;
+    const arrowUp=arrowDir==='up'?`<div style="position:absolute;top:-7px;left:${arrowOff-7}px;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:7px solid var(--surface)"></div>`:'';
+    const arrowDown=arrowDir==='down'?`<div style="position:absolute;bottom:-7px;left:${arrowOff-7}px;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:7px solid var(--surface)"></div>`:'';
+
+    // Dots
+    let dots='';for(let i=0;i<TOUR_STEPS.length;i++){
+        dots+=`<div onclick="tourStep=${i};tourNavigate()" style="width:7px;height:7px;border-radius:50%;background:${i===tourStep?'var(--accent)':'var(--border)'};cursor:pointer"></div>`;
+    }
+
+    ov.innerHTML=`
+        <div style="position:fixed;inset:0;z-index:10000" onclick="endTour()"></div>
+        ${spotHTML}
+        <div style="position:fixed;top:${cardTop}px;left:${cardLeft}px;width:${CW}px;z-index:10002;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px 24px 16px;color:var(--text);box-shadow:0 8px 32px rgba(0,0,0,0.5)" onclick="event.stopPropagation()">
+            ${arrowUp}${arrowDown}
+            <div style="font-size:11px;font-weight:600;color:var(--text-sec);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:10px">Step ${tourStep+1} of ${TOUR_STEPS.length}</div>
+            <div style="font-size:16px;font-weight:700;margin-bottom:6px">${s.title}</div>
+            <div style="font-size:13px;line-height:1.6;color:var(--text-sec);margin-bottom:20px">${s.desc}</div>
+            <div style="display:flex;justify-content:center;gap:8px;margin-bottom:14px">${dots}</div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+                <button onclick="endTour()" style="background:none;border:none;color:var(--text-sec);font-size:11px;cursor:pointer;text-decoration:underline;padding:0;font-family:inherit">Skip Tour</button>
+                <div style="display:flex;gap:8px">
+                    <button onclick="tourPrev()" style="background:var(--card);border:1px solid var(--border);border-radius:5px;color:${tourStep===0?'var(--text-sec)':'var(--text)'};padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;opacity:${tourStep===0?'0.5':'1'}" ${tourStep===0?'disabled':''}>Previous</button>
+                    <button onclick="tourNext()" style="background:var(--accent);border:none;border-radius:5px;color:#fff;padding:6px 18px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">${tourStep===TOUR_STEPS.length-1?'Finish':'Next'}</button>
+                </div>
+            </div>
+        </div>`;
+}
+
+// Keyboard navigation for tour
+document.addEventListener('keydown',e=>{
+    if(tourStep<0)return;
+    if(e.key==='Escape')endTour();
+    else if(e.key==='ArrowRight'||e.key==='Enter')tourNext();
+    else if(e.key==='ArrowLeft')tourPrev();
+});
+
+// Tour bullet styles
+(function(){const s=document.createElement('style');s.textContent='.tl{display:flex;gap:6px;margin-top:4px}.tl::before{content:"\\2022";opacity:.5;flex-shrink:0}.td{margin-top:8px;opacity:.7;font-size:12px}';document.head.appendChild(s)})();
 </script>
 </body>
 </html>
