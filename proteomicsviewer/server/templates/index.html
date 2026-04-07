@@ -237,7 +237,7 @@ async function uploadFile(file,append){
     </div>
     <!-- Right: action buttons (BiNgo layout) -->
     <div style="display:flex;align-items:center;gap:8px">
-        <button class="hdr-btn" onclick="saveSession()" title="Save or restore a session">
+        <button class="hdr-btn" onclick="toggleSessionPanel()" title="Save or restore a session">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M2 2h8v8H2z"/><path d="M4 2v4h4V2"/><path d="M5 3h2"/></svg>
             Save Session
         </button>
@@ -299,6 +299,31 @@ async function uploadFile(file,append){
 </div>
 
 <!-- Info Panel (matches BiNgo about overlay exactly) -->
+<!-- Session Panel (BiNgo-style modal) -->
+<div id="session-panel" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:420px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.6)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+            <div style="font-size:18px;font-weight:700">Session</div>
+            <button onclick="document.getElementById('session-panel').classList.add('hidden')" style="width:28px;height:28px;border:none;background:transparent;color:var(--text-sec);cursor:pointer;font-size:20px;display:flex;align-items:center;justify-content:center;border-radius:4px" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-sec)'">&times;</button>
+        </div>
+        <!-- Save section -->
+        <div style="font-size:11px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Save</div>
+        <button class="hdr-btn" onclick="saveSession()" style="margin-bottom:6px">Save to file</button>
+        <div style="font-size:11px;color:var(--text-sec);margin-bottom:18px">Session is also auto-saved to browser storage.</div>
+        <!-- Restore section -->
+        <div style="font-size:11px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Restore</div>
+        <div style="display:flex;gap:8px;margin-bottom:6px">
+            <button class="hdr-btn" onclick="document.getElementById('session-load-input').click()">Load from file</button>
+            <button class="hdr-btn" onclick="restoreAutoSave()">Restore last session</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-sec);margin-bottom:18px" id="session-autosave-info"></div>
+        <!-- Close -->
+        <div style="text-align:right">
+            <button onclick="document.getElementById('session-panel').classList.add('hidden')" style="background:var(--card);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 24px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">Close</button>
+        </div>
+    </div>
+</div>
+
 <div id="info-panel" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px 32px;width:420px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.6)">
         <!-- Logo + Title row -->
@@ -607,7 +632,7 @@ function initGrouping(){
     renderAll();startHeartbeat();
 }
 
-function renderAll(){renderUnassigned();renderBins();updateStatus();updateContinueBtn();buildProcessedData();refreshAllPlots()}
+function renderAll(){renderUnassigned();renderBins();updateStatus();updateContinueBtn();buildProcessedData();refreshAllPlots();autoSaveSession()}
 
 function createChip(sample){
     const c=document.createElement('div');c.className='sample-chip'+(SELECTED.has(sample)?' selected':'');c.dataset.sample=sample;c.draggable=true;
@@ -677,6 +702,7 @@ function updateProcPreview(){
     // Rebuild the processed data from all upstream settings and re-render all canvas plots
     buildProcessedData();
     refreshAllPlots();
+    autoSaveSession();
 }
 
 function refreshAllPlots(){
@@ -1432,7 +1458,7 @@ function openNativeColorPicker(key){
     inp.click();
 }
 
-function closePanels(){['theme-panel','help-panel','info-panel'].forEach(id=>document.getElementById(id)?.classList.add('hidden'))}
+function closePanels(){['theme-panel','help-panel','info-panel','session-panel'].forEach(id=>document.getElementById(id)?.classList.add('hidden'))}
 function toggleThemePanel(){const wasOpen=!document.getElementById('theme-panel').classList.contains('hidden');closePanels();if(!wasOpen){document.getElementById('theme-panel').classList.remove('hidden');renderThemeUI()}}
 function toggleHelpPanel(){const wasOpen=!document.getElementById('help-panel').classList.contains('hidden');closePanels();if(!wasOpen)document.getElementById('help-panel').classList.remove('hidden')}
 function toggleInfoPanel(){const wasOpen=!document.getElementById('info-panel').classList.contains('hidden');closePanels();if(!wasOpen)document.getElementById('info-panel').classList.remove('hidden')}
@@ -1450,11 +1476,38 @@ function toggleInfoPanel(){const wasOpen=!document.getElementById('info-panel').
 // ================================================================
 // SESSION SAVE / LOAD
 // ================================================================
-function saveSession(){
-    const session={
-        version:1,
-        savedAt:new Date().toISOString(),
-        app:'Pro-ker Proteomics Viewer',
+function toggleSessionPanel(){
+    const wasOpen=!document.getElementById('session-panel').classList.contains('hidden');
+    closePanels();
+    if(!wasOpen){
+        document.getElementById('session-panel').classList.remove('hidden');
+        // Show auto-save info
+        const info=document.getElementById('session-autosave-info');
+        const saved=localStorage.getItem('proker-autosave');
+        if(saved){try{const s=JSON.parse(saved);info.textContent='Last auto-save: '+new Date(s.savedAt).toLocaleString()+' \u2014 '+(s.filename||'unknown')}catch(e){info.textContent=''}}
+        else{info.textContent='No auto-saved session found.'}
+    }
+}
+function autoSaveSession(){
+    if(!RAW)return;
+    try{
+        const session=buildSessionObject();
+        localStorage.setItem('proker-autosave',JSON.stringify(session));
+    }catch(e){}
+}
+function restoreAutoSave(){
+    const saved=localStorage.getItem('proker-autosave');
+    if(!saved){alert('No auto-saved session found.');return}
+    try{
+        const blob=new Blob([saved],{type:'application/json'});
+        const file=new File([blob],'autosave.json');
+        loadSession(file);
+        document.getElementById('session-panel').classList.add('hidden');
+    }catch(e){alert('Error restoring: '+e.message)}
+}
+function buildSessionObject(){
+    return{
+        version:1,savedAt:new Date().toISOString(),app:'Pro-ker Proteomics Analysis',
         filename:RAW?.filename||'',
         bins:BINS.map(b=>({label:b.label,color:b.color,samples:[...b.samples]})),
         unassigned:[...UNASSIGNED],
@@ -1473,12 +1526,16 @@ function saveSession(){
             pruneAgg:document.getElementById('prune-agg')?.value||'total',
             pruneScope:document.getElementById('prune-scope')?.value||'all',
         },
-        theme:document.documentElement.classList.contains('light')?'light':'dark',
+        theme:currentThemeName,customTheme:customTheme,
     };
+}
+function saveSession(){
+    const session=buildSessionObject();
     const name=RAW?.filename?.replace(/\.[^.]+$/,'')||'proker';
     const blob=new Blob([JSON.stringify(session,null,2)],{type:'application/json'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);
     a.download=`proker-session-${name}-${new Date().toISOString().slice(0,10)}.json`;a.click();
+    document.getElementById('session-panel')?.classList.add('hidden');
 }
 function loadSession(file){
     if(!file)return;
