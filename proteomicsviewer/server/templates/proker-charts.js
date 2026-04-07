@@ -11,7 +11,7 @@ class ProkerChart {
     constructor(container, options = {}) {
         this.container = typeof container === 'string' ? document.getElementById(container) : container;
         this.opts = {
-            margin: { top: 10, right: 20, bottom: 55, left: 60 },
+            margin: { top: 12, right: 40, bottom: 55, left: 65 },
             theme: {
                 bg: '#0d1117', plot: '#161b22', grid: '#21262d', line: '#30363d',
                 text: '#e6edf3', textSec: '#8b949e', accent: '#58a6ff',
@@ -79,15 +79,16 @@ class ProkerChart {
 
         let xMin, xMax, yMin, yMax;
         if (this.xRange) { [xMin, xMax] = this.xRange; }
-        else if (allX.length) { xMin = Math.min(...allX); xMax = Math.max(...allX); const pad = (xMax - xMin) * 0.05 || 1; xMin -= pad; xMax += pad; }
+        else if (allX.length) { xMin = Math.min(...allX); xMax = Math.max(...allX); const pad = (xMax - xMin) * 0.02 || 0.5; xMin -= pad; xMax += pad; }
         else { xMin = 0; xMax = 1; }
 
         if (this.yRange) { [yMin, yMax] = this.yRange; }
-        else if (allY.length) { yMin = Math.min(...allY); yMax = Math.max(...allY); const pad = (yMax - yMin) * 0.05 || 1; yMin -= pad; yMax += pad; }
+        else if (allY.length) { yMin = Math.min(...allY); yMax = Math.max(...allY); const pad = (yMax - yMin) * 0.02 || 0.5; yMin -= pad; yMax += pad; }
         else { yMin = 0; yMax = 1; }
 
-        const xScale = d3.scaleLinear().domain([xMin, xMax]).range([0, pw]);
-        const yScale = d3.scaleLinear().domain([yMin, yMax]).range([ph, 0]);
+        // Use D3's nice() to get clean axis endpoints
+        const xScale = d3.scaleLinear().domain([xMin, xMax]).nice().range([0, pw]);
+        const yScale = d3.scaleLinear().domain([yMin, yMax]).nice().range([ph, 0]);
 
         return { xScale, yScale, pw, ph, m };
     }
@@ -108,11 +109,11 @@ class ProkerChart {
         if (!this._origXRange) this._origXRange = xScale.domain().slice();
         if (!this._origYRange) this._origYRange = yScale.domain().slice();
 
-        // Generate ticks
-        const xTicks = xScale.ticks(Math.max(3, Math.floor(pw / 80)));
-        const yTicks = yScale.ticks(Math.max(3, Math.floor(ph / 50)));
-        const xFmt = d3.format(this._smartFormat(xScale.domain()));
-        const yFmt = d3.format(this._smartFormat(yScale.domain()));
+        // Generate ticks — fewer, cleaner
+        const xTicks = xScale.ticks(Math.min(8, Math.max(3, Math.floor(pw / 100))));
+        const yTicks = yScale.ticks(Math.min(7, Math.max(3, Math.floor(ph / 60))));
+        const xFmt = this._niceFormat(xScale.domain());
+        const yFmt = this._niceFormat(yScale.domain());
 
         // Build SVG
         let svg = `<svg class="proker-svg" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="font-family:Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased">`;
@@ -121,10 +122,10 @@ class ProkerChart {
         svg += `<rect width="${w}" height="${h}" fill="${T.bg}" rx="0"/>`;
         svg += `<rect x="${m.left}" y="${m.top}" width="${pw}" height="${ph}" fill="${T.plot}"/>`;
 
-        // Grid lines (subtle)
+        // Grid lines (subtle, dashed)
         svg += `<g class="grid" shape-rendering="crispEdges">`;
-        xTicks.forEach(v => { const x = Math.round(m.left + xScale(v)) + 0.5; svg += `<line x1="${x}" y1="${m.top}" x2="${x}" y2="${m.top + ph}" stroke="${T.grid}" stroke-width="1" opacity="0.5"/>`; });
-        yTicks.forEach(v => { const y = Math.round(m.top + yScale(v)) + 0.5; svg += `<line x1="${m.left}" y1="${y}" x2="${m.left + pw}" y2="${y}" stroke="${T.grid}" stroke-width="1" opacity="0.5"/>`; });
+        xTicks.forEach(v => { const x = Math.round(m.left + xScale(v)) + 0.5; svg += `<line x1="${x}" y1="${m.top}" x2="${x}" y2="${m.top + ph}" stroke="${T.grid}" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.6"/>`; });
+        yTicks.forEach(v => { const y = Math.round(m.top + yScale(v)) + 0.5; svg += `<line x1="${m.left}" y1="${y}" x2="${m.left + pw}" y2="${y}" stroke="${T.grid}" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.6"/>`; });
         svg += `</g>`;
 
         // Axes lines
@@ -195,7 +196,7 @@ class ProkerChart {
                 if (symbol === 'cross') {
                     svg += symFn(px, py, size) + `stroke="${c}" opacity="${opacity}" ${attrs}/>`;
                 } else {
-                    svg += symFn(px, py, size) + `fill="${c}" opacity="${opacity}" stroke="rgba(0,0,0,0.15)" stroke-width="0.5" ${attrs}/>`;
+                    svg += symFn(px, py, size) + `fill="${c}" fill-opacity="${opacity}" stroke="${c}" stroke-opacity="0.4" stroke-width="0.8" ${attrs}/>`;
                 }
             }
         });
@@ -209,16 +210,19 @@ class ProkerChart {
             const ax = ann.ax || 30;
             const ay = ann.ay || -25;
             const lx = px + ax, ly = py + ay;
-            const lines = String(ann.text).split('\n');
-            const lineH = 13;
-            const textW = Math.max(...lines.map(l => l.length * 6.5)) + 12;
-            const textH = lines.length * lineH + 8;
+            // Truncate long labels
+            const rawLines = String(ann.text).split('\n');
+            const lines = rawLines.map(l => l.length > 30 ? l.slice(0, 28) + '...' : l);
+            const lineH = 14;
+            const textW = Math.max(...lines.map(l => l.length * 7)) + 16;
+            const textH = lines.length * lineH + 10;
 
             svg += `<g class="ann" data-key="${this._esc(ann.key)}" data-ai="${ai}">`;
-            svg += `<line x1="${px}" y1="${py}" x2="${lx}" y2="${ly}" stroke="${T.textSec}" stroke-width="1"/>`;
-            svg += `<rect x="${lx - textW / 2}" y="${ly - textH / 2}" width="${textW}" height="${textH}" rx="3" fill="${T.bg}" stroke="${T.line}" stroke-width="0.5" opacity="0.92"/>`;
+            svg += `<line x1="${px}" y1="${py}" x2="${lx}" y2="${ly}" stroke="${T.textSec}" stroke-width="1" stroke-dasharray="3,2"/>`;
+            svg += `<circle cx="${px}" cy="${py}" r="3" fill="${T.accent}" opacity="0.7"/>`;
+            svg += `<rect x="${lx - textW / 2}" y="${ly - textH / 2}" width="${textW}" height="${textH}" rx="4" fill="${T.bg}" stroke="${T.accent}" stroke-width="0.8" opacity="0.94"/>`;
             lines.forEach((line, li) => {
-                svg += `<text x="${lx}" y="${ly - textH / 2 + 12 + li * lineH}" text-anchor="middle" fill="${T.text}" font-size="10">${this._esc(line)}</text>`;
+                svg += `<text x="${lx}" y="${ly - textH / 2 + 13 + li * lineH}" text-anchor="middle" fill="${T.text}" font-size="10.5" font-weight="${li===0?'600':'400'}">${this._esc(line)}</text>`;
             });
             svg += `</g>`;
         });
@@ -688,6 +692,20 @@ class ProkerChart {
         if (range > 1) return '.1f';
         if (range > 0.01) return '.2f';
         return '.3f';
+    }
+
+    _niceFormat(domain) {
+        const range = Math.abs(domain[1] - domain[0]);
+        // Return a function, not a d3.format string
+        return (v) => {
+            if (v === 0) return '0';
+            const abs = Math.abs(v);
+            if (abs >= 10000) return d3.format('.2s')(v);
+            if (Number.isInteger(v) || (range > 10 && abs >= 1)) return d3.format('.0f')(v);
+            if (range > 1) return d3.format('.1f')(v);
+            if (range > 0.1) return d3.format('.2f')(v);
+            return d3.format('.3f')(v);
+        };
     }
 
     _colorscale(val, cmin, cmax, scale) {

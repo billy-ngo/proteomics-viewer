@@ -804,12 +804,7 @@ function updateProcPreview(){
     autoSaveSession();
 }
 
-function refreshAllPlots(){
-    if(!RAW || !CANVAS_PLOTS.length) return;
-    const {data:qd} = getQData();
-    const fidx = getFilteredIdx();
-    CANVAS_PLOTS.forEach(p => renderPlot(p, qd, fidx));
-}
+function refreshAllPlots_stub(){} // actual refreshAllPlots is below
 
 // ================================================================
 // ANALYSIS — SAVED ANALYSES
@@ -1251,21 +1246,20 @@ function setupPlotResize(wrap,plotId){
 // PLOT RENDERING
 // ================================================================
 // ================================================================
-// RENDER + INTERACTIONS (ProkerChart engine — replaces Plotly)
+// RENDER + INTERACTIONS (ProkerChart custom SVG engine)
 // ================================================================
 
 function renderPlot(p,qd,fidx){
     const div=document.getElementById(p.plotId);if(!div)return;
-    // Destroy old chart if exists
     if(CHARTS[p.plotId]){CHARTS[p.plotId].destroy();delete CHARTS[p.plotId]}
     const chart=new ProkerChart(div,{theme:getChartTheme()});
     CHARTS[p.plotId]=chart;
 
-    if(p.type==='enrichment') buildEnrichment(chart,p,qd,fidx);
-    else if(p.type==='unique') buildUnique(chart,p,qd,fidx);
-    else if(p.type==='volcano') buildVolcano(chart,p,qd,fidx);
-    else if(p.type==='dotplot') buildDotplot(chart,p,qd,fidx);
-    else if(p.type==='pca') buildPCA(chart,p,qd,fidx);
+    if(p.type==='enrichment') buildEnrichmentConfig(chart,p,qd,fidx);
+    else if(p.type==='unique') buildUniqueConfig(chart,p,qd,fidx);
+    else if(p.type==='volcano') buildVolcanoConfig(chart,p,qd,fidx);
+    else if(p.type==='dotplot') buildDotplotConfig(chart,p,qd,fidx);
+    else if(p.type==='pca') buildPCAConfig(chart,p,qd,fidx);
 
     chart.on('dblclick',()=>openGraphSettingsForPlot(p.plotId));
     chart.on('resetcolors',()=>{const{data:q}=getQData();renderPlot(p,q,getFilteredIdx())});
@@ -1273,192 +1267,102 @@ function renderPlot(p,qd,fidx){
 
 function refreshAllPlots(){
     if(!RAW||!CANVAS_PLOTS.length)return;
+    buildProcessedData();
     const{data:qd}=getQData();const fidx=getFilteredIdx();
     CANVAS_PLOTS.forEach(p=>renderPlot(p,qd,fidx));
 }
 
-// ── Plot builders ──
-function buildEnrichment(chart,p,qd,fidx){
-    const gx=p.config.gx,gy=p.config.gy;
-    const isLog2=p.config.log2||false;
-    const style=p.config.style||'dot';
+function buildEnrichmentConfig(chart,p,qd,fidx){
+    const gx=p.config.gx,gy=p.config.gy,isLog2=p.config.log2||false;
     const data=[];
     for(let fi=0;fi<fidx.length;fi++){
         const mA=grpMean(fi,gx,qd,fidx),mB=grpMean(fi,gy,qd,fidx);
-        if(mA===0&&mB===0)continue;
-        if(!isLog2&&mB===0)continue;
+        if(mA===0&&mB===0)continue;if(!isLog2&&mB===0)continue;
         const val=isLog2?Math.log2((mA+1)/(mB+1)):(mA/mB);
-        const hover=pLabel(fidx,fi)+'<br>'+(isLog2?'log2FC':'Ratio')+': '+(val<100?val.toFixed(3):val.toFixed(1))+'<br>'+gx+': '+fmtVal(mA)+'<br>'+gy+': '+fmtVal(mB);
-        if(isAggSum()){
-            data.push({fi,val,label:pLabel(fidx,fi),full:pFullLabel(fidx,fi),hover:hover+'<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd)});
-        } else data.push({fi,val,label:pLabel(fidx,fi),full:pFullLabel(fidx,fi),hover});
+        let hover=pLabel(fidx,fi)+'<br>'+(isLog2?'log2FC':'Ratio')+': '+(val<100?val.toFixed(3):val.toFixed(1))+'<br>'+gx+': '+fmtVal(mA)+'<br>'+gy+': '+fmtVal(mB);
+        if(isAggSum()) hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);
+        data.push({val,label:pLabel(fidx,fi),full:pFullLabel(fidx,fi),hover});
     }
     data.sort((a,b)=>a.val-b.val);
-    chart.setData([{
-        x:data.map((_,i)=>i+1), y:data.map(d=>d.val),
-        mode:'markers', marker:{size:5,color:'#e6edf3',symbol:style==='bar'?'square':'circle'},
-        text:data.map(d=>d.hover), customdata:data.map(d=>d.full)
-    }]);
-    chart.setXTitle('Rank');
-    chart.setYTitle(isLog2?'log2('+gx+'/'+gy+')':'Enrichment ('+gx+'/'+gy+')');
-    chart.render();
+    chart.setData([{x:data.map((_,i)=>i+1),y:data.map(d=>d.val),mode:'markers',marker:{size:5,color:'#e6edf3',symbol:'circle'},text:data.map(d=>d.hover),customdata:data.map(d=>d.full)}]);
+    chart.setXTitle('Rank').setYTitle(isLog2?'log2('+gx+'/'+gy+')':'Enrichment ('+gx+'/'+gy+')').render();
 }
 
-function buildUnique(chart,p,qd,fidx){
+function buildUniqueConfig(chart,p,qd,fidx){
     const featured=p.config.featuredGroup,mode=p.config.mode;
     const allGroups=BINS.filter(b=>b.samples.length>0).map(b=>b.label);
-    if(!featured)return;
     let excludeGroups=[];
     if(mode==='not_control') excludeGroups=p.config.controlGroup?[p.config.controlGroup]:[];
     else if(mode==='not_selected') excludeGroups=p.config.excludeGroups||[];
     else if(mode==='exclusive') excludeGroups=allGroups.filter(g=>g!==featured);
     const items=[];
     for(let fi=0;fi<fidx.length;fi++){
-        const fm=mean(grpVals(fi,featured,qd,fidx));
-        if(fm<=0)continue;
-        let found=false;
-        for(const eg of excludeGroups){if(eg===featured)continue;if(mean(grpVals(fi,eg,qd,fidx))>0){found=true;break}}
+        const fm=mean(grpVals(fi,featured,qd,fidx));if(fm<=0)continue;
+        let found=false;for(const eg of excludeGroups){if(eg===featured)continue;if(mean(grpVals(fi,eg,qd,fidx))>0){found=true;break}}
         if(found)continue;
         items.push({label:pLabel(fidx,fi),abund:fm,full:pFullLabel(fidx,fi)});
     }
-    items.sort((a,b)=>b.abund-a.abund);
-    const shown=items.slice(0,60);
-    // Jitter overlapping
+    items.sort((a,b)=>b.abund-a.abund);const shown=items.slice(0,60);
     const band=shown.length>1?(shown[0].abund-shown[shown.length-1].abund)/50:1;
-    const jittered=shown.map((d,i)=>{
-        let jx=0,crowd=0;
-        for(let j=i-1;j>=0&&j>=i-8;j--){if(Math.abs(shown[i].abund-shown[j].abund)<(band||1))crowd++}
-        if(crowd>0)jx=(crowd%2===1?1:-1)*Math.ceil(crowd/2)*0.06;
-        return{x:jx,y:d.abund,label:d.label,full:d.full};
-    });
-    chart.setData([{
-        x:jittered.map(d=>d.x),y:jittered.map(d=>d.y),
-        mode:'markers',marker:{size:7,color:grpColor(featured),symbol:'circle'},
-        text:jittered.map(d=>d.label+'<br>Abundance: '+fmtVal(d.y)),
-        customdata:jittered.map(d=>d.full)
-    }]);
-    chart.setXTitle('');chart.setYTitle('Abundance');
-    // Narrow default
+    const jittered=shown.map((d,i)=>{let jx=0,crowd=0;for(let j=i-1;j>=0&&j>=i-8;j--){if(Math.abs(shown[i].abund-shown[j].abund)<(band||1))crowd++}if(crowd>0)jx=(crowd%2===1?1:-1)*Math.ceil(crowd/2)*0.06;return{x:jx,y:d.abund,label:d.label,full:d.full}});
+    chart.setData([{x:jittered.map(d=>d.x),y:jittered.map(d=>d.y),mode:'markers',marker:{size:7,color:grpColor(featured),symbol:'circle'},text:jittered.map(d=>d.label+'<br>Abundance: '+fmtVal(d.y)),customdata:jittered.map(d=>d.full)}]);
+    chart.setXTitle('').setYTitle('Abundance');
     const wrap=chart.container.closest('.canvas-plot');
     if(wrap&&!wrap.dataset.userResized){wrap.style.width='320px';wrap.dataset.userResized=''}
     chart.render();
 }
 
-function buildVolcano(chart,p,qd,fidx){
+function buildVolcanoConfig(chart,p,qd,fidx){
     if(isAggSum()){chart.setData([]).setXTitle('').setYTitle('Sums mode — no statistics').render();return}
     const gx=p.config.gx,gy=p.config.gy,fcT=p.config.fc||1,fdrT=p.config.fdr||0.05,doImpute=p.config.impute;
     const fc=[],rawP=[],labels=[],fulls=[];
-    for(let fi=0;fi<fidx.length;fi++){
-        let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
-        if(doImpute){vA=imputeZeros(vA);vB=imputeZeros(vB)}
-        const mA=mean(vA),mB=mean(vB);
-        if(mA===0&&mB===0)continue;
-        fc.push(Math.log2((mA+.1)/(mB+.1)));
-        rawP.push(ttest(vA,vB));
-        labels.push(pLabel(fidx,fi));
-        fulls.push(pFullLabel(fidx,fi));
-    }
-    const adjP=bhFDR(rawP);
-    const negLog=adjP.map(p=>-Math.log10(Math.max(p,1e-300)));
+    for(let fi=0;fi<fidx.length;fi++){let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);if(doImpute){vA=imputeZeros(vA);vB=imputeZeros(vB)}const mA=mean(vA),mB=mean(vB);if(mA===0&&mB===0)continue;fc.push(Math.log2((mA+.1)/(mB+.1)));rawP.push(ttest(vA,vB));labels.push(pLabel(fidx,fi));fulls.push(pFullLabel(fidx,fi))}
+    const adjP=bhFDR(rawP);const negLog=adjP.map(p=>-Math.log10(Math.max(p,1e-300)));
     const cats=fc.map((f,i)=>adjP[i]<fdrT&&Math.abs(f)>=fcT?(f>0?'up':'down'):'ns');
-    const cM={up:grpColor(gx),down:grpColor(gy),ns:'#30363d'};
     const traces=[];
-    ['ns','up','down'].forEach(cat=>{
-        const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);
-        if(!idx.length)return;
-        traces.push({
-            x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),
-            mode:'markers',marker:{size:cat==='ns'?3:5,color:cM[cat],opacity:cat==='ns'?0.3:0.8,symbol:'circle'},
-            text:idx.map(i=>labels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),
-            customdata:idx.map(i=>fulls[i])
-        });
-    });
-    chart.setData(traces);
-    chart.setXTitle('Log2 Fold Change');chart.setYTitle('-Log10(FDR adj. P-value)');
-    chart.render();
+    ['ns','up','down'].forEach(cat=>{const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);if(!idx.length)return;
+        traces.push({x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),mode:'markers',marker:{size:cat==='ns'?3:5,color:cat==='up'?grpColor(gx):cat==='down'?grpColor(gy):'#30363d',opacity:cat==='ns'?0.3:0.8,symbol:'circle'},text:idx.map(i=>labels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),customdata:idx.map(i=>fulls[i])})});
+    chart.setData(traces).setXTitle('Log2 Fold Change').setYTitle('-Log10(FDR adj. P-value)').render();
 }
 
-function buildDotplot(chart,p,qd,fidx){
-    const gx=p.config.gx,gy=p.config.gy;
-    const tf=p.config.transform||'log10';
+function buildDotplotConfig(chart,p,qd,fidx){
+    const gx=p.config.gx,gy=p.config.gy,tf=p.config.transform||'log10';
     const txFn=tf==='log2'?(v=>Math.log2(v+1)):tf==='log10'?(v=>Math.log10(v+1)):(v=>v);
     const axSuffix=tf==='raw'?'':(tf==='log2'?' (log2)':' (log10)');
     const both=[],xOnly=[],yOnly=[];
-    for(let fi=0;fi<fidx.length;fi++){
-        const mx=grpMean(fi,gx,qd,fidx),my=grpMean(fi,gy,qd,fidx);
-        if(mx===0&&my===0)continue;
-        const label=pLabel(fidx,fi),full=pFullLabel(fidx,fi);
-        const sums=isAggSum();
-        let hover=label+'<br>'+gx+': '+fmtVal(mx)+'<br>'+gy+': '+fmtVal(my);
-        if(sums)hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);
-        if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,full,hover,fc:Math.log2(my/mx)});
-        else if(mx>0) xOnly.push({x:txFn(mx),y:0,label,full,hover:label+'<br>'+gx+': '+fmtVal(mx)});
-        else yOnly.push({x:0,y:txFn(my),label,full,hover:label+'<br>'+gy+': '+fmtVal(my)});
-    }
-    // Axis compression for single-group
-    const allNzX=both.map(d=>d.x).concat(xOnly.map(d=>d.x)).filter(v=>v>0);
-    const allNzY=both.map(d=>d.y).concat(yOnly.map(d=>d.y)).filter(v=>v>0);
+    for(let fi=0;fi<fidx.length;fi++){const mx=grpMean(fi,gx,qd,fidx),my=grpMean(fi,gy,qd,fidx);if(mx===0&&my===0)continue;const label=pLabel(fidx,fi),full=pFullLabel(fidx,fi);let hover=label+'<br>'+gx+': '+fmtVal(mx)+'<br>'+gy+': '+fmtVal(my);if(isAggSum())hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);if(mx>0&&my>0)both.push({x:txFn(mx),y:txFn(my),label,full,hover});else if(mx>0)xOnly.push({x:txFn(mx),y:0,label,full,hover:label+'<br>'+gx+': '+fmtVal(mx)});else yOnly.push({x:0,y:txFn(my),label,full,hover:label+'<br>'+gy+': '+fmtVal(my)})}
+    const allNzX=both.map(d=>d.x).filter(v=>v>0),allNzY=both.map(d=>d.y).filter(v=>v>0);
     const minNzX=allNzX.length?Math.min(...allNzX):0,minNzY=allNzY.length?Math.min(...allNzY):0;
-    const breakX=minNzX*0.6,breakY=minNzY*0.6;
     const traces=[];
-    if(both.length) traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',
-        marker:{size:5,color:both.map(d=>d.fc),colorscale:[[0,'#58a6ff'],[0.5,'#8b949e'],[1,'#f85149']],cmin:-3,cmax:3,opacity:0.7},
-        text:both.map(d=>d.hover),customdata:both.map(d=>d.full)});
-    if(xOnly.length) traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(d=>breakY*0.3),mode:'markers',
-        marker:{size:5,color:grpColor(gx),opacity:0.7,symbol:'triangle-right'},
-        text:xOnly.map(d=>d.hover),customdata:xOnly.map(d=>d.full)});
-    if(yOnly.length) traces.push({x:yOnly.map(d=>breakX*0.3),y:yOnly.map(d=>d.y),mode:'markers',
-        marker:{size:5,color:grpColor(gy),opacity:0.7,symbol:'triangle-up'},
-        text:yOnly.map(d=>d.hover),customdata:yOnly.map(d=>d.full)});
-    chart.setData(traces);
-    chart.setXTitle(gx+axSuffix);chart.setYTitle(gy+axSuffix);
-    chart.render();
+    if(both.length)traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',marker:{size:5,color:'#8b949e',opacity:0.7,symbol:'circle'},text:both.map(d=>d.hover),customdata:both.map(d=>d.full)});
+    if(xOnly.length)traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(()=>minNzY*0.18),mode:'markers',marker:{size:5,color:grpColor(gx),opacity:0.7,symbol:'triangle-right'},text:xOnly.map(d=>d.hover),customdata:xOnly.map(d=>d.full)});
+    if(yOnly.length)traces.push({x:yOnly.map(()=>minNzX*0.18),y:yOnly.map(d=>d.y),mode:'markers',marker:{size:5,color:grpColor(gy),opacity:0.7,symbol:'triangle-up'},text:yOnly.map(d=>d.hover),customdata:yOnly.map(d=>d.full)});
+    chart.setData(traces).setXTitle(gx+axSuffix).setYTitle(gy+axSuffix).render();
 }
 
-function buildPCA(chart,p,qd,fidx){
-    const groups=p.config.gx.split(',');
-    const sampleNames=[],sampleGroups=[];
+function buildPCAConfig(chart,p,qd,fidx){
+    const groups=p.config.gx.split(',');const sampleNames=[],sampleGroups=[];
     groups.forEach(g=>{const bin=BINS.find(b=>b.label===g);if(bin)bin.samples.forEach(s=>{sampleNames.push(s);sampleGroups.push(g)})});
-    if(sampleNames.length<3){chart.setData([]).setXTitle('').setYTitle('Need at least 3 samples').render();return}
+    if(sampleNames.length<3){chart.setData([]).setXTitle('').setYTitle('Need ≥3 samples').render();return}
     const pca=computePCA(sampleNames,qd,fidx);
-    const traces=groups.map(g=>{
-        const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);
-        return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),
-            mode:'markers',marker:{size:10,color:grpColor(g),symbol:'circle'},
-            text:idx.map(i=>pca.scores[i].name),customdata:idx.map(i=>g+': '+pca.scores[i].name)};
-    });
-    chart.setData(traces);
-    chart.setXTitle('PC1 ('+pca.varExpl[0].toFixed(1)+'%)');
-    chart.setYTitle('PC2 ('+pca.varExpl[1].toFixed(1)+'%)');
-    chart.render();
+    const traces=groups.map(g=>{const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),mode:'markers',marker:{size:10,color:grpColor(g),symbol:'circle'},text:idx.map(i=>pca.scores[i].name),customdata:idx.map(i=>g+': '+pca.scores[i].name)}});
+    chart.setData(traces).setXTitle('PC1 ('+pca.varExpl[0].toFixed(1)+'%)').setYTitle('PC2 ('+pca.varExpl[1].toFixed(1)+'%)').render();
 }
 
 // ================================================================
 // EXPORT
 // ================================================================
 function exportAllSVG(){
-    CANVAS_PLOTS.forEach(p=>{
-        const chart=CHARTS[p.plotId];if(!chart)return;
-        const svgStr=chart.toSVG();
-        const blob=new Blob([svgStr],{type:'image/svg+xml'});
-        const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-        a.download=(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_')+'.svg';a.click();
-    });
+    CANVAS_PLOTS.forEach(p=>{const chart=CHARTS[p.plotId];if(!chart)return;
+        const svgStr=chart.toSVG();const blob=new Blob([svgStr],{type:'image/svg+xml'});
+        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_')+'.svg';a.click()});
 }
 function exportAllPNG(){
-    CANVAS_PLOTS.forEach(p=>{
-        const chart=CHARTS[p.plotId];if(!chart)return;
-        chart.toPNG(1600,1000,2).then(blob=>{
-            const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-            a.download=(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_')+'.png';a.click();
-        });
-    });
+    CANVAS_PLOTS.forEach(p=>{const chart=CHARTS[p.plotId];if(!chart)return;
+        chart.toPNG(1600,1000,2).then(blob=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_')+'.png';a.click()})});
 }
 function doExport(fmt){
-    const w=+(document.getElementById('export-width')?.value||1200);
-    const h=+(document.getElementById('export-height')?.value||700);
-    if(fmt==='svg') exportAllSVG();
-    else exportAllPNG();
+    if(fmt==='svg')exportAllSVG();else exportAllPNG();
     document.getElementById('export-panel')?.classList.add('hidden');
 }
 function exportCSV(){
