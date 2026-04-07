@@ -1,0 +1,7 @@
+include pyproject.toml
+include README.md
+recursive-include proteomicsviewer/server/templates *
+recursive-exclude Test\ data *
+exclude proker_logo.jpg
+exclude *.bat
+exclude *.command

@@ -16,3 +16,6 @@ Thumbs.db
 *.tmp
 .claude/
 Test data/
+dist/
+build/
+*.egg-info/
