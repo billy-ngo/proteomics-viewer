@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pro-ker</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230d1117'/%3E%3Cg transform='translate(2,6) rotate(-10,22,26)'%3E%3Crect x='3' y='3' width='32' height='45' rx='3' fill='white' opacity='.85'/%3E%3Ctext x='7' y='14' font-size='9' font-weight='bold' fill='%23dc2626' font-family='Georgia,serif'%3E2%3C/text%3E%3Ctext x='19' y='23' font-size='9' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif' text-anchor='middle'%3EBN%3C/text%3E%3Cg transform='rotate(180,19,32)'%3E%3Ctext x='19' y='32' font-size='9' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif' text-anchor='middle'%3EBN%3C/text%3E%3C/g%3E%3C/g%3E%3Cg transform='translate(2,6) rotate(8,40,26)'%3E%3Crect x='26' y='1' width='32' height='45' rx='3' fill='white'/%3E%3Ctext x='30' y='12' font-size='9' font-weight='bold' fill='%23dc2626' font-family='Georgia,serif'%3E2%3C/text%3E%3Ctext x='42' y='21' font-size='9' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif' text-anchor='middle'%3EBN%3C/text%3E%3Cg transform='rotate(180,42,30)'%3E%3Ctext x='42' y='30' font-size='9' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif' text-anchor='middle'%3EBN%3C/text%3E%3C/g%3E%3C/g%3E%3C/svg%3E">
-<script src="https://cdn.plot.ly/plotly-2.35.0.min.js" charset="utf-8"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="/proker-charts.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#0d1117;--surface:#161b22;--card:#21262d;--border:#30363d;--text:#e6edf3;--text-sec:#8b949e;--accent:#58a6ff;--danger:#f85149;--success:#3fb950;--warning:#d29922;--purple:#bc8cff;--left-w:380px;--radius:6px;--tabbar-h:44px;--status-h:28px}
@@ -437,7 +438,7 @@ async function uploadFile(file,append){
         <details style="margin-bottom:16px">
             <summary style="font-size:14px;font-weight:700;cursor:pointer;padding:4px 0">References &amp; Acknowledgments</summary>
             <div style="font-size:12px;color:var(--text-sec);line-height:1.7;margin-top:8px">
-                <div>Plotly.js &mdash; Interactive charting library</div>
+                <div>D3.js &mdash; Data visualization library</div>
                 <div>MaxQuant &mdash; Proteomics data processing</div>
                 <div>Benjamini-Hochberg &mdash; FDR correction method</div>
             </div>
@@ -617,8 +618,12 @@ var ANALYSES=[];    // [{id,name,groupX,groupY}]
 var DERIVED=[];     // [{name,op,left,right}]
 var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
-const PL={paper_bgcolor:'#0d1117',plot_bgcolor:'#161b22',font:{family:'Inter,system-ui',color:'#e6edf3',size:12},margin:{l:60,r:20,t:10,b:65},dragmode:false,xaxis:{gridcolor:'#21262d',zerolinecolor:'#30363d',linecolor:'#30363d'},yaxis:{gridcolor:'#21262d',zerolinecolor:'#30363d',linecolor:'#30363d'},hoverlabel:{bgcolor:'#21262d',bordercolor:'#30363d',font:{color:'#e6edf3',family:'Inter,system-ui',size:12}}};
-const PCFG={responsive:true,displayModeBar:false,scrollZoom:true,edits:{annotationPosition:true,annotationTail:true}};
+// Chart instances stored per plotId
+var CHARTS={};
+
+function getChartTheme(){
+    return{bg:customTheme.bg||'#0d1117',plot:customTheme.surface||'#161b22',grid:customTheme.card||'#21262d',line:customTheme.border||'#30363d',text:customTheme.text||'#e6edf3',textSec:customTheme['text-sec']||'#8b949e',accent:customTheme.accent||'#58a6ff'};
+}
 
 // ================================================================
 // DIVIDER
@@ -628,7 +633,7 @@ d.addEventListener('mousedown',e=>{dr=true;sx=e.clientX;sw=l.offsetWidth;d.class
 document.addEventListener('mousemove',e=>{if(!dr)return;const w=Math.max(260,Math.min(700,sw+(e.clientX-sx)));l.style.width=w+'px';l.style.minWidth=w+'px'});
 document.addEventListener('mouseup',()=>{if(!dr)return;dr=false;d.classList.remove('dragging');document.body.style.cursor='';document.body.style.userSelect='';resizeAllPlots()})})();
 
-function resizeAllPlots(){CANVAS_PLOTS.forEach(p=>{const el=document.getElementById(p.plotId);if(el&&el.data)Plotly.Plots.resize(el)})}
+function resizeAllPlots(){Object.values(CHARTS).forEach(c=>c.resize())}
 window.addEventListener('resize',resizeAllPlots);
 
 // ================================================================
@@ -1202,6 +1207,9 @@ function removePlot(plotId){
         canvas.innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>';
     }
 }
+// ================================================================
+// PLOT SYSTEM (ProkerChart — custom SVG engine)
+// ================================================================
 function setupPlotResize(wrap,plotId){
     const plotEl=()=>document.getElementById(plotId);
     let dragging=false,corner='',startX=0,startY=0,startW=0,startH=0;
@@ -1229,13 +1237,13 @@ function setupPlotResize(wrap,plotId){
         wrap.style.width=Math.max(300,w)+'px';
         wrap.style.height=Math.max(200,h)+'px';
         wrap.dataset.userResized='1';
-        const el=plotEl();if(el&&el.data)Plotly.Plots.resize(el);
+        if(CHARTS[plotId])CHARTS[plotId].resize();
     });
 
     document.addEventListener('mouseup',()=>{
         if(!dragging)return;dragging=false;corner='';
         document.body.style.cursor='';document.body.style.userSelect='';
-        const el=plotEl();if(el&&el.data)Plotly.Plots.resize(el);
+        if(CHARTS[plotId])CHARTS[plotId].resize();
     });
 }
 
@@ -1243,372 +1251,103 @@ function setupPlotResize(wrap,plotId){
 // PLOT RENDERING
 // ================================================================
 // ================================================================
-// CLICK-TO-LABEL SYSTEM
+// RENDER + INTERACTIONS (ProkerChart engine — replaces Plotly)
 // ================================================================
-// Store pinned labels per plot: { plotId: [{x, y, text, key}] }
-var PINNED_LABELS={};
-
-function setupClickLabel(div,plotId){
-    div.on('plotly_click',function(eventData){
-        if(!eventData||!eventData.points||!eventData.points.length)return;
-        const pt=eventData.points[0];
-        const x=pt.x, y=pt.y;
-
-        // Use customdata (locus tag + gene name) if available, otherwise parse from text
-        let displayLabel='';
-        if(pt.customdata){
-            displayLabel=String(pt.customdata);
-        } else {
-            let label=pt.text||pt.data.text?.[pt.pointIndex]||'';
-            label=label.replace(/<[^>]*>/g,'\n').split('\n').filter(s=>s.trim())[0]||'';
-            displayLabel=label;
-        }
-        if(!displayLabel)return;
-
-        const key=x+'_'+y;
-        if(!PINNED_LABELS[plotId])PINNED_LABELS[plotId]=[];
-        const existing=PINNED_LABELS[plotId].findIndex(p=>p.key===key);
-
-        if(existing>=0){
-            // Remove existing pin
-            PINNED_LABELS[plotId].splice(existing,1);
-        } else {
-            // Add new pin
-            PINNED_LABELS[plotId].push({x,y,text:displayLabel,key});
-        }
-        applyPinnedLabels(div,plotId);
-    });
-
-    // Persist dragged label positions back to PINNED_LABELS
-    div.on('plotly_relayout',function(update){
-        if(!update)return;
-        const pins=PINNED_LABELS[plotId];if(!pins||!pins.length)return;
-        const anns=(div.layout||{}).annotations||[];
-        // Check for annotation position changes (annotations[i].ax, annotations[i].ay)
-        for(const key of Object.keys(update)){
-            const m=key.match(/^annotations\[(\d+)\]\.(ax|ay)$/);
-            if(m){
-                const idx=+m[1], prop=m[2], val=update[key];
-                const ann=anns[idx];
-                if(ann&&ann._pinKey){
-                    const pin=pins.find(p=>p.key===ann._pinKey);
-                    if(pin) pin[prop]=val;
-                }
-            }
-        }
-    });
-}
-
-function applyPinnedLabels(div,plotId){
-    const pins=PINNED_LABELS[plotId]||[];
-    if(!pins.length){
-        // Remove all pinned annotations (keep any existing non-pinned ones)
-        const existing=(div.layout||{}).annotations||[];
-        const kept=existing.filter(a=>!a._pinned);
-        Plotly.relayout(div,{annotations:kept});
-        return;
-    }
-
-    // Smart positioning: spread labels to avoid overlap
-    // Sort by y descending so we can stack labels
-    const sorted=[...pins].sort((a,b)=>b.y-a.y);
-
-    // Check for crowding: if points are close, use longer arrows
-    const annotations=[];
-    const usedSlots=[]; // track label positions to avoid overlap
-
-    sorted.forEach((pin,i)=>{
-        // Base offset direction: alternate left/right, stagger vertically
-        const side=(i%2===0)?1:-1;
-        let ax=30*side + (Math.floor(i/2))*15*side;
-        let ay=-20 - (i%3)*14;
-
-        // Check if this label would overlap with existing ones
-        // If so, push it further out
-        const targetX=pin.x;const targetY=pin.y;
-        for(const slot of usedSlots){
-            const dx=Math.abs(targetX+ax/100 - slot.lx);
-            const dy=Math.abs(targetY+ay/100 - slot.ly);
-            if(dx<0.5&&dy<0.3){
-                ay-=18;
-                ax+=10*side;
-            }
-        }
-        usedSlots.push({lx:targetX+ax/100,ly:targetY+ay/100});
-
-        // Use arrow if label is far from point (crowded area)
-        const needsArrow=pins.length>1||Math.abs(ax)>20||Math.abs(ay)>20;
-
-        annotations.push({
-            x:pin.x, y:pin.y, text:pin.text,
-            showarrow:true, arrowhead:0, arrowwidth:1, arrowcolor:'var(--text-sec)',
-            ax:pin.ax!==undefined?pin.ax:ax, ay:pin.ay!==undefined?pin.ay:ay,
-            font:{size:11,color:'var(--text)'},
-            bgcolor:'var(--surface)', bordercolor:'var(--border)', borderwidth:1,
-            borderpad:6, opacity:0.95,
-            captureevents:true, standoff:8,
-            _pinned:true, _pinKey:pin.key,
-        });
-    });
-
-    // Merge with any non-pinned annotations
-    const existing=(div.layout||{}).annotations||[];
-    const kept=existing.filter(a=>!a._pinned);
-    Plotly.relayout(div,{annotations:kept.concat(annotations)});
-}
 
 function renderPlot(p,qd,fidx){
     const div=document.getElementById(p.plotId);if(!div)return;
-    if(p.type==='enrichment')plotEnrichment(div,p,qd,fidx);
-    else if(p.type==='unique')plotUnique(div,p,qd,fidx);
-    else if(p.type==='volcano')plotVolcano(div,p,qd,fidx);
-    else if(p.type==='dotplot')plotDotplot(div,p,qd,fidx);
-    else if(p.type==='pca')plotPCA(div,p,qd,fidx);
-    // Attach click + drag handlers (remove old first to prevent duplicates) and reapply pins
-    div.removeAllListeners?.('plotly_click');
-    div.removeAllListeners?.('plotly_relayout');
-    setupClickLabel(div,p.plotId);
-    if(PINNED_LABELS[p.plotId]&&PINNED_LABELS[p.plotId].length){
-        setTimeout(()=>applyPinnedLabels(div,p.plotId),50);
-    }
-    const wrap=div.closest('.canvas-plot');
-    setupPlotDblClick(wrap,p.plotId);
-    setupRightClickSelect(wrap,p.plotId);
-    // Custom axis title and tick editing (since Plotly editable:true has too many side effects)
-    setTimeout(()=>setupAxisEditing(div),200);
+    // Destroy old chart if exists
+    if(CHARTS[p.plotId]){CHARTS[p.plotId].destroy();delete CHARTS[p.plotId]}
+    const chart=new ProkerChart(div,{theme:getChartTheme()});
+    CHARTS[p.plotId]=chart;
+
+    if(p.type==='enrichment') buildEnrichment(chart,p,qd,fidx);
+    else if(p.type==='unique') buildUnique(chart,p,qd,fidx);
+    else if(p.type==='volcano') buildVolcano(chart,p,qd,fidx);
+    else if(p.type==='dotplot') buildDotplot(chart,p,qd,fidx);
+    else if(p.type==='pca') buildPCA(chart,p,qd,fidx);
+
+    chart.on('dblclick',()=>openGraphSettingsForPlot(p.plotId));
+    chart.on('resetcolors',()=>{const{data:q}=getQData();renderPlot(p,q,getFilteredIdx())});
 }
 
-function setupAxisEditing(plotDiv){
-    if(!plotDiv||!plotDiv.querySelector)return;
-
-    // Plotly places a transparent .nsewdrag rect over the entire plot that captures
-    // all mouse events. We must persistently disable it because Plotly resets
-    // inline styles on relayout/restyle. Use MutationObserver to enforce.
-    function killDragCapture(){
-        plotDiv.querySelectorAll('.nsewdrag,.dragcover').forEach(el=>{el.style.setProperty('pointer-events','none','important')});
-        const dl=plotDiv.querySelector('.draglayer');
-        if(dl) dl.style.setProperty('pointer-events','none','important');
-    }
-    killDragCapture();
-    // Re-enforce after any Plotly mutation
-    if(!plotDiv._axisObserver){
-        plotDiv._axisObserver=new MutationObserver(killDragCapture);
-        plotDiv._axisObserver.observe(plotDiv,{subtree:true,attributes:true,attributeFilter:['style']});
-    }
-
-    // Axis titles — click to edit inline
-    plotDiv.querySelectorAll('.g-xtitle text, .g-ytitle text').forEach(el=>{
-        el.style.cursor='pointer';
-        el.style.pointerEvents='all';
-        el.addEventListener('click',function(e){
-            e.stopPropagation();
-            const current=el.textContent;
-            const isY=!!el.closest('.g-ytitle');
-            const rect=el.getBoundingClientRect();
-            showAxisInput(rect,current,isY?'y':'x',plotDiv);
-        });
-    });
-
-    // Tick labels — click to edit axis range
-    ['xtick','ytick'].forEach(cls=>{
-        const ticks=[...plotDiv.querySelectorAll('.'+cls+' text')];
-        if(!ticks.length)return;
-        ticks.forEach(tick=>{
-            tick.style.cursor='pointer';
-            tick.style.pointerEvents='all';
-            tick.addEventListener('click',function(e){
-                e.stopPropagation();
-                const isY=cls==='ytick';
-                const axis=isY?'yaxis':'xaxis';
-                const range=plotDiv.layout?.[axis]?.range;
-                if(!range)return;
-                const rect=tick.getBoundingClientRect();
-                showRangeInput(rect,range,axis,plotDiv);
-            });
-        });
-    });
+function refreshAllPlots(){
+    if(!RAW||!CANVAS_PLOTS.length)return;
+    const{data:qd}=getQData();const fidx=getFilteredIdx();
+    CANVAS_PLOTS.forEach(p=>renderPlot(p,qd,fidx));
 }
 
-function showAxisInput(rect,current,axis,plotDiv){
-    // Remove any existing edit input
-    document.querySelectorAll('.axis-edit-input').forEach(e=>e.remove());
-    const inp=document.createElement('input');
-    inp.type='text';inp.value=current;inp.className='axis-edit-input';
-    inp.style.cssText='position:fixed;z-index:300;font-size:12px;font-family:Inter,system-ui,sans-serif;padding:4px 8px;background:var(--card);color:var(--text);border:2px solid var(--accent);border-radius:4px;outline:none;width:'+Math.max(140,rect.width+20)+'px;';
-    inp.style.left=(rect.left-10)+'px';inp.style.top=(rect.top-6)+'px';
-    document.body.appendChild(inp);
-    inp.focus();inp.select();
-    let done=false;
-    function commit(){
-        if(done)return;done=true;
-        const v=inp.value.trim();inp.remove();
-        if(!v||v===current)return;
-        const key=axis==='y'?'yaxis.title.text':'xaxis.title.text';
-        Plotly.relayout(plotDiv,{[key]:v});
-        setTimeout(()=>setupAxisEditing(plotDiv),300);
-    }
-    inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();commit()}if(e.key==='Escape'){done=true;inp.remove()}});
-    inp.addEventListener('blur',commit);
-}
-
-function showRangeInput(rect,range,axis,plotDiv){
-    document.querySelectorAll('.axis-edit-input').forEach(e=>e.remove());
-    const div=document.createElement('div');div.className='axis-edit-input';
-    div.style.cssText='position:fixed;z-index:300;background:var(--card);border:2px solid var(--accent);border-radius:4px;padding:6px 8px;display:flex;gap:6px;align-items:center;';
-    div.style.left=(rect.left-20)+'px';div.style.top=(rect.top-8)+'px';
-    div.innerHTML='<span style="font-size:10px;color:var(--text-sec)">Min</span><input type="number" step="any" value="'+parseFloat(range[0]).toPrecision(4)+'" style="width:70px;font-size:11px;font-family:monospace;padding:2px 4px"><span style="font-size:10px;color:var(--text-sec)">Max</span><input type="number" step="any" value="'+parseFloat(range[1]).toPrecision(4)+'" style="width:70px;font-size:11px;font-family:monospace;padding:2px 4px"><button class="btn-sm" style="font-size:10px;padding:2px 8px">Set</button>';
-    document.body.appendChild(div);
-    const inputs=div.querySelectorAll('input');
-    inputs[0].focus();inputs[0].select();
-    let done=false;
-    function commit(){
-        if(done)return;done=true;
-        const mn=parseFloat(inputs[0].value),mx=parseFloat(inputs[1].value);
-        div.remove();
-        if(isNaN(mn)||isNaN(mx))return;
-        Plotly.relayout(plotDiv,{[axis+'.range']:[mn,mx],[axis+'.autorange']:false});
-        setTimeout(()=>setupAxisEditing(plotDiv),300);
-    }
-    div.querySelector('button').onclick=commit;
-    inputs.forEach(inp=>{inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();commit()}if(e.key==='Escape'){done=true;div.remove()}})});
-    div.addEventListener('click',e=>e.stopPropagation());
-}
-
-// Dismiss edit inputs on click elsewhere
-document.addEventListener('mousedown',e=>{
-    if(!e.target.closest('.axis-edit-input')){
-        document.querySelectorAll('.axis-edit-input').forEach(el=>el.remove());
-    }
-});
-
-function plotEnrichment(div,p,qd,fidx){
+// ── Plot builders ──
+function buildEnrichment(chart,p,qd,fidx){
     const gx=p.config.gx,gy=p.config.gy;
-    const style=p.config.style||'dot';
     const isLog2=p.config.log2||false;
+    const style=p.config.style||'dot';
     const data=[];
     for(let fi=0;fi<fidx.length;fi++){
         const mA=grpMean(fi,gx,qd,fidx),mB=grpMean(fi,gy,qd,fidx);
-        // Skip proteins not detected in either group
         if(mA===0&&mB===0)continue;
-        // For ratio mode, skip if denominator is 0 (unique to X — not a ratio)
         if(!isLog2&&mB===0)continue;
         const val=isLog2?Math.log2((mA+1)/(mB+1)):(mA/mB);
-        data.push({fi,val,label:pLabel(fidx,fi),fullLabel:pFullLabel(fidx,fi),rawX:mA,rawY:mB});
+        const hover=pLabel(fidx,fi)+'<br>'+(isLog2?'log2FC':'Ratio')+': '+(val<100?val.toFixed(3):val.toFixed(1))+'<br>'+gx+': '+fmtVal(mA)+'<br>'+gy+': '+fmtVal(mB);
+        if(isAggSum()){
+            data.push({fi,val,label:pLabel(fidx,fi),full:pFullLabel(fidx,fi),hover:hover+'<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd)});
+        } else data.push({fi,val,label:pLabel(fidx,fi),full:pFullLabel(fidx,fi),hover});
     }
     data.sort((a,b)=>a.val-b.val);
-    const xVals=data.map((_,i)=>i+1);
-    const yVals=data.map(d=>d.val);
-    const hoverLabel=isLog2?'log2('+gx+'/'+gy+')':'Ratio';
-    const sums=isAggSum();
-    const customHover=data.map(d=>{
-        let h=d.label+'<br>'+hoverLabel+': '+(d.val<100?d.val.toFixed(3):d.val.toFixed(1))+'<br>'+gx+': '+fmtVal(d.rawX)+'<br>'+gy+': '+fmtVal(d.rawY);
-        if(sums){h+='<br>---<br>'+gx+' samples:<br>'+grpSampleBreakdown(d.fi,gx,qd)+'<br>'+gy+' samples:<br>'+grpSampleBreakdown(d.fi,gy,qd)}
-        return h+'<br>Rank: ';
-    });
-
-    const traces=[];
-    const fullLabels=data.map(d=>d.fullLabel);
-    if(style==='bar'){
-        traces.push({x:xVals,y:yVals,type:'bar',marker:{color:'#e6edf3',line:{width:0}},text:customHover,customdata:fullLabels,hovertemplate:'%{text}%{x}<extra></extra>'});
-    } else {
-        traces.push({x:xVals,y:yVals,mode:'markers',type:'scatter',marker:{size:5,color:'#e6edf3',symbol:'circle'},text:customHover,customdata:fullLabels,hovertemplate:'%{text}%{x}<extra></extra>'});
-    }
-
-    const yTitle=isLog2?'log2('+gx+'/'+gy+')':'Enrichment ('+gx+'/'+gy+')';
-    Plotly.react(div,traces,{...PL,        xaxis:{...PL.xaxis,title:'Rank',linecolor:'#e6edf3',linewidth:1},
-        yaxis:{...PL.yaxis,title:yTitle,linecolor:'#e6edf3',linewidth:1},
-        showlegend:false},PCFG);
+    chart.setData([{
+        x:data.map((_,i)=>i+1), y:data.map(d=>d.val),
+        mode:'markers', marker:{size:5,color:'#e6edf3',symbol:style==='bar'?'square':'circle'},
+        text:data.map(d=>d.hover), customdata:data.map(d=>d.full)
+    }]);
+    chart.setXTitle('Rank');
+    chart.setYTitle(isLog2?'log2('+gx+'/'+gy+')':'Enrichment ('+gx+'/'+gy+')');
+    chart.render();
 }
 
-function plotUnique(div,p,qd,fidx){
-    const featured=p.config.featuredGroup;
-    const mode=p.config.mode;
+function buildUnique(chart,p,qd,fidx){
+    const featured=p.config.featuredGroup,mode=p.config.mode;
     const allGroups=BINS.filter(b=>b.samples.length>0).map(b=>b.label);
-    if(!featured) return;
-
-    // Determine which groups the protein must NOT be found in
+    if(!featured)return;
     let excludeGroups=[];
-    if(mode==='not_control'){
-        excludeGroups=p.config.controlGroup?[p.config.controlGroup]:[];
-    } else if(mode==='not_selected'){
-        excludeGroups=p.config.excludeGroups||[];
-    } else if(mode==='exclusive'){
-        excludeGroups=allGroups.filter(g=>g!==featured);
-    }
-
+    if(mode==='not_control') excludeGroups=p.config.controlGroup?[p.config.controlGroup]:[];
+    else if(mode==='not_selected') excludeGroups=p.config.excludeGroups||[];
+    else if(mode==='exclusive') excludeGroups=allGroups.filter(g=>g!==featured);
     const items=[];
     for(let fi=0;fi<fidx.length;fi++){
-        const featuredMean=mean(grpVals(fi,featured,qd,fidx));
-        if(featuredMean<=0) continue; // must be detected in featured group
-
-        // Check it is NOT detected in any exclude group
-        let foundInExclude=false;
-        for(const eg of excludeGroups){
-            if(eg===featured) continue;
-            if(mean(grpVals(fi,eg,qd,fidx))>0){foundInExclude=true;break}
-        }
-        if(foundInExclude) continue;
-
-        items.push({label:pLabel(fidx,fi),abund:featuredMean});
+        const fm=mean(grpVals(fi,featured,qd,fidx));
+        if(fm<=0)continue;
+        let found=false;
+        for(const eg of excludeGroups){if(eg===featured)continue;if(mean(grpVals(fi,eg,qd,fidx))>0){found=true;break}}
+        if(found)continue;
+        items.push({label:pLabel(fidx,fi),abund:fm,full:pFullLabel(fidx,fi)});
     }
-
     items.sort((a,b)=>b.abund-a.abund);
     const shown=items.slice(0,60);
-    const color=grpColor(featured);
-
-    // Jitter overlapping points: group by similar abundance and spread horizontally
-    // Sort by abundance, then assign small x-offsets to nearby points
-    const jittered=[];
-    const bandSize=shown.length>1?(shown[0].abund-shown[shown.length-1].abund)/50:1;
-    for(let i=0;i<shown.length;i++){
-        let jx=0;
-        // Check how many previous points are at similar y
-        let crowdCount=0;
-        for(let j=i-1;j>=0&&j>=i-8;j--){
-            if(Math.abs(shown[i].abund-shown[j].abund)<(bandSize||1)){crowdCount++}
-        }
-        if(crowdCount>0){
-            jx=(crowdCount%2===1?1:-1)*Math.ceil(crowdCount/2)*0.06;
-        }
-        jittered.push({x:jx,y:shown[i].abund,label:shown[i].label});
-    }
-
-    const traces=[{
-        x:jittered.map(d=>d.x),
-        y:jittered.map(d=>d.y),
-        mode:'markers', type:'scatter',
-        marker:{size:7,color,symbol:'circle',line:{width:0.5,color:'rgba(255,255,255,0.3)'}},
-        text:jittered.map(d=>d.label),
-        customdata:jittered.map(d=>d.label),
-        hovertemplate:'%{text}<br>Abundance: '+('%{y:,.0f}')+'<extra></extra>',
-        cliponaxis:false
-    }];
-
-    let subtitle='';
-    if(mode==='not_control') subtitle=`in ${featured}, not in ${p.config.controlGroup||'?'}`;
-    else if(mode==='not_selected') subtitle=`in ${featured}, not in ${(p.config.excludeGroups||[]).join(', ')||'?'}`;
-    else if(mode==='exclusive') subtitle=`exclusively in ${featured}`;
-
-    // Set the plot wrapper to a narrow width (user can resize via corner handles)
-    const wrap=div.closest('.canvas-plot');
-    if(wrap&&!wrap.dataset.userResized){
-        wrap.style.width='320px';
-        wrap.dataset.userResized='';
-    }
-
-    Plotly.react(div,traces,{...PL,
-        xaxis:{...PL.xaxis,showticklabels:false,showgrid:false,zeroline:false,
-            range:[-0.5,0.5],title:'',visible:false},
-        yaxis:{...PL.yaxis,title:'Abundance',linecolor:'#e6edf3',linewidth:1},
-        margin:{...PL.margin,l:70,r:30},
-        showlegend:false,
-    },PCFG);
+    // Jitter overlapping
+    const band=shown.length>1?(shown[0].abund-shown[shown.length-1].abund)/50:1;
+    const jittered=shown.map((d,i)=>{
+        let jx=0,crowd=0;
+        for(let j=i-1;j>=0&&j>=i-8;j--){if(Math.abs(shown[i].abund-shown[j].abund)<(band||1))crowd++}
+        if(crowd>0)jx=(crowd%2===1?1:-1)*Math.ceil(crowd/2)*0.06;
+        return{x:jx,y:d.abund,label:d.label,full:d.full};
+    });
+    chart.setData([{
+        x:jittered.map(d=>d.x),y:jittered.map(d=>d.y),
+        mode:'markers',marker:{size:7,color:grpColor(featured),symbol:'circle'},
+        text:jittered.map(d=>d.label+'<br>Abundance: '+fmtVal(d.y)),
+        customdata:jittered.map(d=>d.full)
+    }]);
+    chart.setXTitle('');chart.setYTitle('Abundance');
+    // Narrow default
+    const wrap=chart.container.closest('.canvas-plot');
+    if(wrap&&!wrap.dataset.userResized){wrap.style.width='320px';wrap.dataset.userResized=''}
+    chart.render();
 }
 
-function plotVolcano(div,p,qd,fidx){
-    if(isAggSum()){Plotly.react(div,[],{...PL,annotations:[{text:'Volcano plots require Averages mode (change in Processing tab)',showarrow:false,font:{size:13,color:'var(--warning)'},xref:'paper',yref:'paper',x:.5,y:.5}]},PCFG);return}
-    const gx=p.config.gx,gy=p.config.gy,fcT=p.config.fc,fdrT=p.config.fdr,doImpute=p.config.impute;
-    const fc=[],rawP=[],labels=[];
+function buildVolcano(chart,p,qd,fidx){
+    if(isAggSum()){chart.setData([]).setXTitle('').setYTitle('Sums mode — no statistics').render();return}
+    const gx=p.config.gx,gy=p.config.gy,fcT=p.config.fc||1,fdrT=p.config.fdr||0.05,doImpute=p.config.impute;
+    const fc=[],rawP=[],labels=[],fulls=[];
     for(let fi=0;fi<fidx.length;fi++){
         let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
         if(doImpute){vA=imputeZeros(vA);vB=imputeZeros(vB)}
@@ -1617,119 +1356,146 @@ function plotVolcano(div,p,qd,fidx){
         fc.push(Math.log2((mA+.1)/(mB+.1)));
         rawP.push(ttest(vA,vB));
         labels.push(pLabel(fidx,fi));
+        fulls.push(pFullLabel(fidx,fi));
     }
     const adjP=bhFDR(rawP);
     const negLog=adjP.map(p=>-Math.log10(Math.max(p,1e-300)));
     const cats=fc.map((f,i)=>adjP[i]<fdrT&&Math.abs(f)>=fcT?(f>0?'up':'down'):'ns');
     const cM={up:grpColor(gx),down:grpColor(gy),ns:'#30363d'};
-    const traces=['ns','up','down'].map(cat=>{const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);return{x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),text:idx.map(i=>labels[i]),mode:'markers',type:'scattergl',name:cat==='ns'?'NS':cat==='up'?'Up '+gx:'Up '+gy,marker:{size:cat==='ns'?3:5,color:cM[cat],opacity:cat==='ns'?.3:.8},hovertemplate:'%{text}<br>Log2FC: %{x:.2f}<br>-Log10(FDR): %{y:.2f}<extra></extra>'}});
-    const shapes=[{type:'line',x0:fcT,x1:fcT,y0:0,y1:1,yref:'paper',line:{color:'#30363d',width:1,dash:'dash'}},{type:'line',x0:-fcT,x1:-fcT,y0:0,y1:1,yref:'paper',line:{color:'#30363d',width:1,dash:'dash'}},{type:'line',x0:0,x1:1,xref:'paper',y0:-Math.log10(fdrT),y1:-Math.log10(fdrT),line:{color:'#30363d',width:1,dash:'dash'}}];
-    const sigIdx=cats.map((c,i)=>c!=='ns'?i:-1).filter(i=>i>=0).sort((a,b)=>negLog[b]-negLog[a]).slice(0,10);
-    const annotations=sigIdx.map(i=>({x:fc[i],y:negLog[i],text:labels[i],showarrow:true,arrowhead:0,arrowcolor:'#8b949e',font:{size:10,color:'#e6edf3'},bgcolor:'rgba(13,17,23,.7)',borderpad:2,ax:0,ay:-20}));
-    Plotly.react(div,traces,{...PL,shapes,annotations,xaxis:{...PL.xaxis,title:'Log2 Fold Change'},yaxis:{...PL.yaxis,title:'-Log10(FDR adj. P-value)'}},PCFG);
+    const traces=[];
+    ['ns','up','down'].forEach(cat=>{
+        const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);
+        if(!idx.length)return;
+        traces.push({
+            x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),
+            mode:'markers',marker:{size:cat==='ns'?3:5,color:cM[cat],opacity:cat==='ns'?0.3:0.8,symbol:'circle'},
+            text:idx.map(i=>labels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),
+            customdata:idx.map(i=>fulls[i])
+        });
+    });
+    chart.setData(traces);
+    chart.setXTitle('Log2 Fold Change');chart.setYTitle('-Log10(FDR adj. P-value)');
+    chart.render();
 }
 
-function plotDotplot(div,p,qd,fidx){
+function buildDotplot(chart,p,qd,fidx){
     const gx=p.config.gx,gy=p.config.gy;
-    const topN=p.config.topN||8;
     const tf=p.config.transform||'log10';
     const txFn=tf==='log2'?(v=>Math.log2(v+1)):tf==='log10'?(v=>Math.log10(v+1)):(v=>v);
-    const axLabel=tf==='log2'?'Log2':'Log10';
     const axSuffix=tf==='raw'?'':(tf==='log2'?' (log2)':' (log10)');
-
-    // Separate into: both detected, X-only, Y-only
     const both=[],xOnly=[],yOnly=[];
     for(let fi=0;fi<fidx.length;fi++){
         const mx=grpMean(fi,gx,qd,fidx),my=grpMean(fi,gy,qd,fidx);
         if(mx===0&&my===0)continue;
-        const label=pLabel(fidx,fi);
-        const full=pFullLabel(fidx,fi);
-        if(mx>0&&my>0) both.push({fi,x:txFn(mx),y:txFn(my),label,full,fc:Math.log2(my/mx),rawX:mx,rawY:my});
-        else if(mx>0) xOnly.push({fi,x:txFn(mx),y:0,label,full,rawX:mx});
-        else yOnly.push({fi,x:0,y:txFn(my),label,full,rawY:my});
+        const label=pLabel(fidx,fi),full=pFullLabel(fidx,fi);
+        const sums=isAggSum();
+        let hover=label+'<br>'+gx+': '+fmtVal(mx)+'<br>'+gy+': '+fmtVal(my);
+        if(sums)hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);
+        if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,full,hover,fc:Math.log2(my/mx)});
+        else if(mx>0) xOnly.push({x:txFn(mx),y:0,label,full,hover:label+'<br>'+gx+': '+fmtVal(mx)});
+        else yOnly.push({x:0,y:txFn(my),label,full,hover:label+'<br>'+gy+': '+fmtVal(my)});
     }
-
-    // Smart axis compression for single-group proteins
+    // Axis compression for single-group
     const allNzX=both.map(d=>d.x).concat(xOnly.map(d=>d.x)).filter(v=>v>0);
     const allNzY=both.map(d=>d.y).concat(yOnly.map(d=>d.y)).filter(v=>v>0);
-    const minNzX=allNzX.length?Math.min(...allNzX):0;
-    const minNzY=allNzY.length?Math.min(...allNzY):0;
-    const maxX=allNzX.length?Math.max(...allNzX):1;
-    const maxY=allNzY.length?Math.max(...allNzY):1;
-    const breakX=minNzX*0.6, breakY=minNzY*0.6;
-    const xOnlyPlot=xOnly.map(d=>({x:d.x,y:breakY*0.3,label:d.label}));
-    const yOnlyPlot=yOnly.map(d=>({x:breakX*0.3,y:d.y,label:d.label}));
-
+    const minNzX=allNzX.length?Math.min(...allNzX):0,minNzY=allNzY.length?Math.min(...allNzY):0;
+    const breakX=minNzX*0.6,breakY=minNzY*0.6;
     const traces=[];
-    const sums=isAggSum();
-    function dotHoverBoth(d){let h=d.label+'<br>'+gx+' raw: '+fmtVal(d.rawX)+'<br>'+gy+' raw: '+fmtVal(d.rawY);if(sums){h+='<br>---<br>'+gx+' samples:<br>'+grpSampleBreakdown(d.fi,gx,qd)+'<br>'+gy+' samples:<br>'+grpSampleBreakdown(d.fi,gy,qd)}return h}
-    function dotHoverX(d){let h=d.label+'<br>'+gx+' raw: '+fmtVal(d.rawX);if(sums){h+='<br>---<br>'+gx+' samples:<br>'+grpSampleBreakdown(d.fi,gx,qd)}return h}
-    function dotHoverY(d){let h=d.label+'<br>'+gy+' raw: '+fmtVal(d.rawY);if(sums){h+='<br>---<br>'+gy+' samples:<br>'+grpSampleBreakdown(d.fi,gy,qd)}return h}
-
-    if(both.length) traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',type:'scattergl',
-        marker:{size:5,color:both.map(d=>d.fc),colorscale:[[0,'#58a6ff'],[.5,'#8b949e'],[1,'#f85149']],cmin:-3,cmax:3,opacity:.7},
-        text:both.map(dotHoverBoth),
-        customdata:both.map(d=>d.full),hovertemplate:'%{text}<extra></extra>',name:'Both',showlegend:false});
-    if(xOnlyPlot.length) traces.push({x:xOnlyPlot.map(d=>d.x),y:xOnlyPlot.map(d=>d.y),mode:'markers',type:'scatter',
-        marker:{size:5,color:grpColor(gx),opacity:.7,symbol:'triangle-right'},
-        text:xOnlyPlot.map(dotHoverX),
-        customdata:xOnlyPlot.map(d=>d.full),hovertemplate:'%{text}<br>Only in '+gx+'<extra></extra>',name:'Only '+gx,showlegend:true});
-    if(yOnlyPlot.length) traces.push({x:yOnlyPlot.map(d=>d.x),y:yOnlyPlot.map(d=>d.y),mode:'markers',type:'scatter',
-        marker:{size:5,color:grpColor(gy),opacity:.7,symbol:'triangle-up'},
-        text:yOnlyPlot.map(dotHoverY),
-        customdata:yOnlyPlot.map(d=>d.full),hovertemplate:'%{text}<br>Only in '+gy+'<extra></extra>',name:'Only '+gy,showlegend:true});
-
-    if(both.length){const mn=Math.min(minNzX,minNzY),mx2=Math.max(maxX,maxY);traces.push({x:[mn,mx2],y:[mn,mx2],mode:'lines',line:{color:'#30363d',width:1,dash:'dash'},hoverinfo:'skip',showlegend:false})}
-
-    const shapes=[];
-    if(xOnlyPlot.length||yOnlyPlot.length){
-        if(breakY>0)shapes.push({type:'line',x0:0,x1:1,xref:'paper',y0:breakY,y1:breakY,line:{color:'#30363d',width:1,dash:'dot'}});
-        if(breakX>0)shapes.push({type:'line',y0:0,y1:1,yref:'paper',x0:breakX,x1:breakX,line:{color:'#30363d',width:1,dash:'dot'}});
-    }
-
-    const annotations=[];
-    if(topN>0&&both.length){
-        const sorted=[...both].sort((a,b)=>Math.abs(b.fc)-Math.abs(a.fc)).slice(0,topN);
-        sorted.forEach((d,i)=>{
-            annotations.push({x:d.x,y:d.y,text:d.label,showarrow:true,arrowhead:0,arrowcolor:'#8b949e',arrowwidth:1,
-                font:{size:9,color:'#e6edf3'},bgcolor:'rgba(13,17,23,.7)',borderpad:2,
-                ax:20+(i%3)*15,ay:-(10+Math.floor(i/3)*12)});
-        });
-    }
-    if(both.length>2){const r=pearsonR(both.map(d=>d.x),both.map(d=>d.y));
-        annotations.push({x:.02,y:.98,xref:'paper',yref:'paper',text:'R\u00B2 = '+(r*r).toFixed(4),showarrow:false,font:{color:'#8b949e',size:12},bgcolor:'rgba(13,17,23,.8)',borderpad:4})}
-
-    const xTitle=gx+axSuffix, yTitle=gy+axSuffix;
-    const layout={...PL,shapes,annotations,        xaxis:{...PL.xaxis,title:xTitle,linecolor:'#e6edf3',linewidth:1},
-        yaxis:{...PL.yaxis,title:yTitle,linecolor:'#e6edf3',linewidth:1},
-        legend:{bgcolor:'rgba(0,0,0,0)',font:{color:'#8b949e',size:10}}};
-    Plotly.react(div,traces,layout,PCFG);
+    if(both.length) traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',
+        marker:{size:5,color:both.map(d=>d.fc),colorscale:[[0,'#58a6ff'],[0.5,'#8b949e'],[1,'#f85149']],cmin:-3,cmax:3,opacity:0.7},
+        text:both.map(d=>d.hover),customdata:both.map(d=>d.full)});
+    if(xOnly.length) traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(d=>breakY*0.3),mode:'markers',
+        marker:{size:5,color:grpColor(gx),opacity:0.7,symbol:'triangle-right'},
+        text:xOnly.map(d=>d.hover),customdata:xOnly.map(d=>d.full)});
+    if(yOnly.length) traces.push({x:yOnly.map(d=>breakX*0.3),y:yOnly.map(d=>d.y),mode:'markers',
+        marker:{size:5,color:grpColor(gy),opacity:0.7,symbol:'triangle-up'},
+        text:yOnly.map(d=>d.hover),customdata:yOnly.map(d=>d.full)});
+    chart.setData(traces);
+    chart.setXTitle(gx+axSuffix);chart.setYTitle(gy+axSuffix);
+    chart.render();
 }
 
-function plotPCA(div,p,qd,fidx){
+function buildPCA(chart,p,qd,fidx){
     const groups=p.config.gx.split(',');
-    const sampleNames=[];const sampleGroups=[];
+    const sampleNames=[],sampleGroups=[];
     groups.forEach(g=>{const bin=BINS.find(b=>b.label===g);if(bin)bin.samples.forEach(s=>{sampleNames.push(s);sampleGroups.push(g)})});
-    if(sampleNames.length<3){Plotly.react(div,[],{...PL,annotations:[{text:'Need at least 3 samples',showarrow:false,font:{size:14,color:'#8b949e'},xref:'paper',yref:'paper',x:.5,y:.5}]},PCFG);return}
+    if(sampleNames.length<3){chart.setData([]).setXTitle('').setYTitle('Need at least 3 samples').render();return}
     const pca=computePCA(sampleNames,qd,fidx);
-    const traces=groups.map(g=>{const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),text:idx.map(i=>pca.scores[i].name),mode:'markers+text',type:'scatter',name:g,marker:{size:10,color:grpColor(g)},textposition:'top center',textfont:{size:10,color:'#8b949e'},hovertemplate:'%{text}<br>PC1: %{x:.2f}<br>PC2: %{y:.2f}<extra></extra>'}});
-    Plotly.react(div,traces,{...PL,xaxis:{...PL.xaxis,title:`PC1 (${pca.varExpl[0].toFixed(1)}%)`},yaxis:{...PL.yaxis,title:`PC2 (${pca.varExpl[1].toFixed(1)}%)`}},PCFG);
+    const traces=groups.map(g=>{
+        const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);
+        return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),
+            mode:'markers',marker:{size:10,color:grpColor(g),symbol:'circle'},
+            text:idx.map(i=>pca.scores[i].name),customdata:idx.map(i=>g+': '+pca.scores[i].name)};
+    });
+    chart.setData(traces);
+    chart.setXTitle('PC1 ('+pca.varExpl[0].toFixed(1)+'%)');
+    chart.setYTitle('PC2 ('+pca.varExpl[1].toFixed(1)+'%)');
+    chart.render();
 }
 
 // ================================================================
-// EXPORTS
+// EXPORT
 // ================================================================
-// ================================================================
-// EXPORT (enhanced)
-// ================================================================
-function exportAllSVG(){CANVAS_PLOTS.forEach(p=>{const el=document.getElementById(p.plotId);if(el&&el.data)Plotly.downloadImage(el,{format:'svg',filename:(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_'),width:1200,height:700})})}
-function exportAllPNG(){CANVAS_PLOTS.forEach(p=>{const el=document.getElementById(p.plotId);if(el&&el.data)Plotly.downloadImage(el,{format:'png',filename:(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_'),width:1600,height:1000,scale:2})})}
+function exportAllSVG(){
+    CANVAS_PLOTS.forEach(p=>{
+        const chart=CHARTS[p.plotId];if(!chart)return;
+        const svgStr=chart.toSVG();
+        const blob=new Blob([svgStr],{type:'image/svg+xml'});
+        const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+        a.download=(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_')+'.svg';a.click();
+    });
+}
+function exportAllPNG(){
+    CANVAS_PLOTS.forEach(p=>{
+        const chart=CHARTS[p.plotId];if(!chart)return;
+        chart.toPNG(1600,1000,2).then(blob=>{
+            const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+            a.download=(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_')+'.png';a.click();
+        });
+    });
+}
+function doExport(fmt){
+    const w=+(document.getElementById('export-width')?.value||1200);
+    const h=+(document.getElementById('export-height')?.value||700);
+    if(fmt==='svg') exportAllSVG();
+    else exportAllPNG();
+    document.getElementById('export-panel')?.classList.add('hidden');
+}
 function exportCSV(){
     if(!RAW)return;const{qt,data:qd}=getQData();const fidx=getFilteredIdx();const groups=BINS.filter(b=>b.samples.length>0).map(b=>b.label);
     let csv='Protein ID,Gene Name';groups.forEach(g=>csv+=','+g+' (mean)');csv+='\n';
     for(let fi=0;fi<fidx.length;fi++){const p=RAW.proteins[fidx[fi]];csv+=`"${p.majority_id}","${p.gene_name}"`;groups.forEach(g=>csv+=','+grpMean(fi,g,qd,fidx).toFixed(4));csv+='\n'}
     const blob=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='proker_data.csv';a.click();
 }
+
+// ================================================================
+// GRAPH SETTINGS (now uses ProkerChart API)
+// ================================================================
+function applyGraphSettings(){
+    const size=+document.getElementById('gs-dot-size').value;
+    const shape=document.getElementById('gs-dot-shape').value;
+    const color=document.getElementById('gs-dot-color').value;
+    const opacity=(+document.getElementById('gs-dot-opacity').value)/100;
+    const plotBg=document.getElementById('gs-plot-bg').value;
+    const paperBg=document.getElementById('gs-paper-bg').value;
+    const gridColor=document.getElementById('gs-grid-color').value;
+    gsTargetPlots.forEach(plotId=>{
+        const chart=CHARTS[plotId];if(!chart)return;
+        chart.restyle({size,symbol:shape,color,opacity});
+        chart.relayout({plotBg,paperBg,gridColor});
+    });
+}
+
+// Remove old Plotly-dependent functions
+function NOOP_setupClickLabel(){}
+function NOOP_applyPinnedLabels(){}
+function NOOP_setupAxisEditing(){}
+function NOOP_showAxisInput(){}
+function NOOP_showRangeInput(){}
+function NOOP_setupPlotDblClick(){}
+function NOOP_setupRightClickSelect(){}
+
+// OLD PLOTLY CODE REMOVED - now using ProkerChart engine
 
 // ================================================================
 // THEME (BiNgo-style presets + custom colors)
@@ -1759,10 +1525,8 @@ function applyThemeVars(t){
     const r=document.documentElement.style;
     Object.keys(t).forEach(k=>{r.setProperty('--'+k,t[k])});
     // Also update Plotly colors
-    PL.paper_bgcolor=t.bg;PL.plot_bgcolor=t.surface;PL.font.color=t.text;
-    PL.xaxis.gridcolor=t.card;PL.xaxis.zerolinecolor=t.border;PL.xaxis.linecolor=t.border;
-    PL.yaxis.gridcolor=t.card;PL.yaxis.zerolinecolor=t.border;PL.yaxis.linecolor=t.border;
-    PL.hoverlabel.bgcolor=t.surface;PL.hoverlabel.bordercolor=t.border;PL.hoverlabel.font.color=t.text;
+    // Update all active charts with new theme
+    Object.values(CHARTS).forEach(c=>c.setTheme(getChartTheme()).render());
 }
 
 function setTheme(name){
@@ -1829,16 +1593,6 @@ function openNativeColorPicker(key){
 
 function closePanels(){['theme-panel','info-panel','session-panel','export-panel','graph-settings-panel'].forEach(id=>document.getElementById(id)?.classList.add('hidden'))}
 function toggleExportPanel(){if(!CANVAS_PLOTS.length){alert('No plots to export');return}const wasOpen=!document.getElementById('export-panel').classList.contains('hidden');closePanels();if(!wasOpen)document.getElementById('export-panel').classList.remove('hidden')}
-function doExport(fmt){
-    const w=+(document.getElementById('export-width')?.value||1200);
-    const h=+(document.getElementById('export-height')?.value||700);
-    CANVAS_PLOTS.forEach(p=>{const el=document.getElementById(p.plotId);if(!el||!el.data)return;
-        const opts={format:fmt,filename:(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_'),width:w,height:h};
-        if(fmt==='png')opts.scale=2;
-        Plotly.downloadImage(el,opts);
-    });
-    document.getElementById('export-panel').classList.add('hidden');
-}
 function toggleThemePanel(){const wasOpen=!document.getElementById('theme-panel').classList.contains('hidden');closePanels();if(!wasOpen){document.getElementById('theme-panel').classList.remove('hidden');renderThemeUI()}}
 function toggleInfoPanel(){const wasOpen=!document.getElementById('info-panel').classList.contains('hidden');closePanels();if(!wasOpen)document.getElementById('info-panel').classList.remove('hidden')}
 
@@ -2226,292 +1980,7 @@ function gsBatchChanged(){
     gsTargetPlots=[...document.querySelectorAll('#gs-plot-checks input:checked')].map(cb=>cb.value);
 }
 
-function applyGraphSettings(){
-    const size=+document.getElementById('gs-dot-size').value;
-    const shape=document.getElementById('gs-dot-shape').value;
-    const color=document.getElementById('gs-dot-color').value;
-    const opacity=(+document.getElementById('gs-dot-opacity').value)/100;
-    const plotBg=document.getElementById('gs-plot-bg').value;
-    const paperBg=document.getElementById('gs-paper-bg').value;
-    const gridColor=document.getElementById('gs-grid-color').value;
-    const fontSize=+document.getElementById('gs-font-size').value;
 
-    gsTargetPlots.forEach(plotId=>{
-        const el=document.getElementById(plotId);
-        if(!el||!el.data)return;
-        // Update each trace's marker
-        const traceUpdates={};
-        el.data.forEach((trace,i)=>{
-            if(trace.mode&&trace.mode.includes('markers')){
-                // For traces with colorscale (dotplot), only update size/shape/opacity
-                if(Array.isArray(trace.marker?.color)){
-                    traceUpdates['marker.size']=traceUpdates['marker.size']||[];
-                    traceUpdates['marker.size'][i]=size;
-                    traceUpdates['marker.opacity']=traceUpdates['marker.opacity']||[];
-                    traceUpdates['marker.opacity'][i]=opacity;
-                    traceUpdates['marker.symbol']=traceUpdates['marker.symbol']||[];
-                    traceUpdates['marker.symbol'][i]=shape;
-                } else {
-                    Plotly.restyle(el,{'marker.size':size,'marker.color':color,'marker.opacity':opacity,'marker.symbol':shape},[i]);
-                }
-            }
-        });
-        // Update layout
-        Plotly.relayout(el,{
-            plot_bgcolor:plotBg,paper_bgcolor:paperBg,
-            'xaxis.gridcolor':gridColor,'yaxis.gridcolor':gridColor,
-            'font.size':fontSize
-        });
-        // Store settings on the canvas plot object for persistence
-        const cp=CANVAS_PLOTS.find(p=>p.plotId===plotId);
-        if(cp){
-            cp.graphSettings={size,shape,color,opacity,plotBg,paperBg,gridColor,fontSize};
-        }
-    });
-    document.getElementById('graph-settings-panel').classList.add('hidden');
-}
-
-// Double-click on a plot opens its settings
-function setupPlotDblClick(wrap,plotId){
-    const plotDiv=document.getElementById(plotId);
-    if(!plotDiv)return;
-    plotDiv.on('plotly_doubleclick',function(){
-        openGraphSettingsForPlot(plotId);
-        return false;
-    });
-}
-
-// ================================================================
-// RIGHT-CLICK DRAG SELECTION + CONTEXT MENU
-// ================================================================
-var rcState={active:false,plotId:null,wrap:null,startX:0,startY:0,box:null,
-    x0:0,y0:0,x1:0,y1:0,hasSelection:false};
-var rcZoomed={}; // {plotId: true} tracks which plots are zoomed in
-
-function setupRightClickSelect(wrap,plotId){
-    const plotDiv=document.getElementById(plotId);
-    if(!plotDiv)return;
-
-    wrap.addEventListener('contextmenu',e=>{
-        e.preventDefault();
-        if(rcState.hasSelection&&rcState.plotId===plotId){
-            // Show selection-based menu
-            showContextMenu(e.clientX,e.clientY,plotId,'selection');
-        } else {
-            // Plain right-click — show general menu
-            showContextMenu(e.clientX,e.clientY,plotId,'general');
-        }
-    });
-
-    wrap.addEventListener('mousedown',e=>{
-        if(e.button!==2)return;
-        rcClearSelection();
-        rcCloseMenu();
-        const rect=plotDiv.getBoundingClientRect();
-        if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom)return;
-
-        rcState.active=true;
-        rcState.plotId=plotId;
-        rcState.wrap=wrap;
-        rcState.startX=e.clientX;
-        rcState.startY=e.clientY;
-        rcState.hasSelection=false;
-
-        const box=document.createElement('div');
-        box.className='rc-select-box';
-        wrap.appendChild(box);
-        rcState.box=box;
-        e.preventDefault();
-    });
-}
-
-document.addEventListener('mousemove',e=>{
-    if(!rcState.active)return;
-    const wrap=rcState.wrap;
-    const wrapRect=wrap.getBoundingClientRect();
-    const x=Math.min(e.clientX,rcState.startX)-wrapRect.left;
-    const y=Math.min(e.clientY,rcState.startY)-wrapRect.top;
-    const w=Math.abs(e.clientX-rcState.startX);
-    const h=Math.abs(e.clientY-rcState.startY);
-    rcState.box.style.left=x+'px';
-    rcState.box.style.top=y+'px';
-    rcState.box.style.width=w+'px';
-    rcState.box.style.height=h+'px';
-});
-
-document.addEventListener('mouseup',e=>{
-    if(!rcState.active||e.button!==2)return;
-    rcState.active=false;
-
-    const plotDiv=document.getElementById(rcState.plotId);
-    if(!plotDiv||!plotDiv.layout)return;
-
-    // Convert pixel bounds to data coordinates
-    const plotRect=plotDiv.querySelector('.plotly .main-svg')?.getBoundingClientRect()||plotDiv.getBoundingClientRect();
-    const xa=plotDiv.layout.xaxis,ya=plotDiv.layout.yaxis;
-    const xRange=xa.range||[0,1],yRange=ya.range||[0,1];
-    const gl=plotDiv.querySelector('.plot-container .draglayer')?.getBoundingClientRect();
-    const plotArea=gl||plotRect;
-
-    function pxToDataX(px){return xRange[0]+(px-plotArea.left)/(plotArea.width)*(xRange[1]-xRange[0])}
-    function pxToDataY(py){return yRange[1]-(py-plotArea.top)/(plotArea.height)*(yRange[1]-yRange[0])}
-
-    const sx=Math.min(rcState.startX,e.clientX),ex=Math.max(rcState.startX,e.clientX);
-    const sy=Math.min(rcState.startY,e.clientY),ey=Math.max(rcState.startY,e.clientY);
-
-    if(Math.abs(e.clientX-rcState.startX)>5||Math.abs(e.clientY-rcState.startY)>5){
-        rcState.x0=pxToDataX(sx);rcState.x1=pxToDataX(ex);
-        rcState.y0=pxToDataY(ey);rcState.y1=pxToDataY(sy);
-        rcState.hasSelection=true;
-        // Box stays visible — menu shown on contextmenu event
-    } else {
-        // Tiny drag = no selection
-        rcState.box?.remove();rcState.box=null;
-        rcState.hasSelection=false;
-    }
-});
-
-// Left-click anywhere dismisses selection box
-document.addEventListener('mousedown',e=>{
-    if(e.button===0&&rcState.hasSelection){
-        // Check if click is on the context menu
-        if(e.target.closest('.rc-context-menu'))return;
-        rcClearSelection();
-        rcCloseMenu();
-    }
-});
-
-function rcClearSelection(){
-    if(rcState.box){rcState.box.remove();rcState.box=null}
-    rcState.hasSelection=false;
-}
-function rcCloseMenu(){document.getElementById('rc-menu')?.remove()}
-
-function showContextMenu(mx,my,plotId,mode){
-    rcCloseMenu();
-    const menu=document.createElement('div');
-    menu.className='rc-context-menu';menu.id='rc-menu';
-    menu.style.left=mx+'px';menu.style.top=my+'px';
-    const hasLabels=PINNED_LABELS[plotId]&&PINNED_LABELS[plotId].length>0;
-    const isZoomed=rcZoomed[plotId];
-
-    let items='';
-    if(mode==='selection'){
-        items+=`<div class="rc-item" onclick="rcZoom('${plotId}')">&#128269; Zoom into selection</div>`;
-        items+=`<div class="rc-item" onclick="rcLabelSelected('${plotId}')">&#127991; Label selected points</div>`;
-        items+=`<div class="rc-item rc-color-row">&#127912; Color selected <input type="color" id="rc-color-pick" value="#ff4444" onclick="event.stopPropagation()" onchange="rcColorSelected('${plotId}',this.value)" style="width:28px;height:20px;border:1px solid var(--border);border-radius:3px;cursor:pointer;margin-left:auto;background:var(--card);padding:0"></div>`;
-        items+=`<div class="rc-sep"></div>`;
-    }
-    items+=`<div class="rc-item" onclick="rcEditSelected('${plotId}')">&#9881; Graph settings</div>`;
-    if(isZoomed){
-        items+=`<div class="rc-sep"></div>`;
-        items+=`<div class="rc-item" onclick="rcResetZoom('${plotId}')">&#8634; Reset zoom</div>`;
-    }
-    if(hasLabels){
-        items+=`<div class="rc-sep"></div>`;
-        items+=`<div class="rc-item" onclick="rcResetLabels('${plotId}')">&#10005; Clear all labels</div>`;
-    }
-    items+=`<div class="rc-item" onclick="rcResetColors('${plotId}')">&#8634; Reset colors</div>`;
-    menu.innerHTML=items;
-
-    document.body.appendChild(menu);
-    const r=menu.getBoundingClientRect();
-    if(r.right>window.innerWidth)menu.style.left=(mx-r.width)+'px';
-    if(r.bottom>window.innerHeight)menu.style.top=(my-r.height)+'px';
-}
-
-function rcZoom(plotId){
-    rcCloseMenu();rcClearSelection();
-    const el=document.getElementById(plotId);if(!el)return;
-    rcZoomed[plotId]=true;
-    Plotly.relayout(el,{
-        'xaxis.range':[rcState.x0,rcState.x1],
-        'yaxis.range':[rcState.y0,rcState.y1],
-        'xaxis.autorange':false,'yaxis.autorange':false
-    });
-}
-
-function rcResetZoom(plotId){
-    rcCloseMenu();rcClearSelection();
-    delete rcZoomed[plotId];
-    const el=document.getElementById(plotId);if(!el)return;
-    Plotly.relayout(el,{
-        'xaxis.autorange':true,'yaxis.autorange':true,
-        'xaxis.autorange':false,'yaxis.autorange':false
-    });
-}
-
-function rcLabelSelected(plotId){
-    rcCloseMenu();rcClearSelection();
-    const el=document.getElementById(plotId);
-    if(!el||!el.data)return;
-    el.data.forEach(trace=>{
-        if(!trace.x||!trace.y)return;
-        for(let i=0;i<trace.x.length;i++){
-            const x=trace.x[i],y=trace.y[i];
-            if(x>=rcState.x0&&x<=rcState.x1&&y>=rcState.y0&&y<=rcState.y1){
-                const label=trace.customdata?.[i]||trace.text?.[i]||'';
-                if(!label)continue;
-                const key=x+'_'+y;
-                if(!PINNED_LABELS[plotId])PINNED_LABELS[plotId]=[];
-                if(!PINNED_LABELS[plotId].some(p=>p.key===key)){
-                    PINNED_LABELS[plotId].push({x,y,text:String(label),key});
-                }
-            }
-        }
-    });
-    applyPinnedLabels(el,plotId);
-}
-
-function rcEditSelected(plotId){
-    rcCloseMenu();rcClearSelection();
-    openGraphSettingsForPlot(plotId);
-}
-
-function rcResetLabels(plotId){
-    rcCloseMenu();rcClearSelection();
-    PINNED_LABELS[plotId]=[];
-    const el=document.getElementById(plotId);
-    if(el)applyPinnedLabels(el,plotId);
-}
-
-function rcColorSelected(plotId,color){
-    rcCloseMenu();
-    const el=document.getElementById(plotId);
-    if(!el||!el.data)return;
-    const x0=rcState.x0,x1=rcState.x1,y0=rcState.y0,y1=rcState.y1;
-    rcClearSelection();
-
-    // For each trace, recolor points inside the selection
-    el.data.forEach((trace,ti)=>{
-        if(!trace.x||!trace.y||!trace.marker)return;
-        // Build per-point color array
-        const n=trace.x.length;
-        let colors;
-        if(Array.isArray(trace.marker.color)){
-            colors=[...trace.marker.color];
-        } else {
-            colors=new Array(n).fill(trace.marker.color||'#e6edf3');
-        }
-        let changed=false;
-        for(let i=0;i<n;i++){
-            const x=trace.x[i],y=trace.y[i];
-            if(x>=x0&&x<=x1&&y>=y0&&y<=y1){
-                colors[i]=color;
-                changed=true;
-            }
-        }
-        if(changed) Plotly.restyle(el,{'marker.color':[colors]},[ti]);
-    });
-}
-
-function rcResetColors(plotId){
-    rcCloseMenu();rcClearSelection();
-    // Re-render the plot to restore original colors
-    const{data:qd}=getQData();const fidx=getFilteredIdx();
-    const cp=CANVAS_PLOTS.find(p=>p.plotId===plotId);
-    if(cp) renderPlot(cp,qd,fidx);
-}
 </script>
 </body>
 </html>

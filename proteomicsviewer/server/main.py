@@ -37,6 +37,11 @@ def serve_index():
     return FileResponse(str(_templates_dir / "index.html"))
 
 
+@app.get("/proker-charts.js", include_in_schema=False)
+def serve_charts_js():
+    return FileResponse(str(_templates_dir / "proker-charts.js"), media_type="application/javascript")
+
+
 # ── API routes ────────────────────────────────────────────────────
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
