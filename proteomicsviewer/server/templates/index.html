@@ -1183,7 +1183,7 @@ function addPlotToCanvas(type){
     // Create minimal plot element
     const plotWrap=document.createElement('div');plotWrap.className='canvas-plot';plotWrap.id='card-'+plotId;
     plotWrap.style.height='420px';
-    plotWrap.innerHTML=`<input class="plot-title-input" value="${title.replace(/"/g,'&quot;')}" onchange="renamePlot('${plotId}',this.value)"><button class="cp-close" onclick="removePlot('${plotId}')" title="Remove">&times;</button><div id="${plotId}" style="width:100%;height:calc(100% - 24px)"></div><div class="cp-handle se" data-corner="se"></div><div class="cp-handle sw" data-corner="sw"></div><div class="cp-handle ne" data-corner="ne"></div><div class="cp-handle nw" data-corner="nw"></div>`;
+    plotWrap.innerHTML=`<button class="cp-close" onclick="removePlot('${plotId}')" title="Remove">&times;</button><div id="${plotId}" style="width:100%;height:100%"></div><div class="cp-handle se" data-corner="se"></div><div class="cp-handle sw" data-corner="sw"></div><div class="cp-handle ne" data-corner="ne"></div><div class="cp-handle nw" data-corner="nw"></div>`;
     canvas.appendChild(plotWrap);
     setupPlotResize(plotWrap,plotId);
 
@@ -1277,15 +1277,17 @@ function buildEnrichmentConfig(chart,p,qd,fidx){
     const data=[];
     for(let fi=0;fi<fidx.length;fi++){
         const mA=grpMean(fi,gx,qd,fidx),mB=grpMean(fi,gy,qd,fidx);
-        if(mA===0&&mB===0)continue;if(!isLog2&&mB===0)continue;
-        const val=isLog2?Math.log2((mA+1)/(mB+1)):(mA/mB);
+        if(mA===0&&mB===0)continue;
+        // For enrichment, skip proteins not detected in both groups (unique proteins belong in Unique plot)
+        if(mA===0||mB===0)continue;
+        const val=isLog2?Math.log2(mA/mB):(mA/mB);
         let hover=pLabel(fidx,fi)+'<br>'+(isLog2?'log2FC':'Ratio')+': '+(val<100?val.toFixed(3):val.toFixed(1))+'<br>'+gx+': '+fmtVal(mA)+'<br>'+gy+': '+fmtVal(mB);
         if(isAggSum()) hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);
         data.push({val,label:pLabel(fidx,fi),full:pFullLabel(fidx,fi),hover});
     }
     data.sort((a,b)=>a.val-b.val);
     chart.setData([{x:data.map((_,i)=>i+1),y:data.map(d=>d.val),mode:'markers',marker:{size:5,color:'#e6edf3',symbol:'circle'},text:data.map(d=>d.hover),customdata:data.map(d=>d.full)}]);
-    chart.setXTitle('Rank').setYTitle(isLog2?'log2('+gx+'/'+gy+')':'Enrichment ('+gx+'/'+gy+')').render();
+    chart.setChartTitle(p.title||'').setXTitle('Rank').setYTitle(isLog2?'log2('+gx+'/'+gy+')':'Enrichment ('+gx+'/'+gy+')').render();
 }
 
 function buildUniqueConfig(chart,p,qd,fidx){
@@ -1306,7 +1308,7 @@ function buildUniqueConfig(chart,p,qd,fidx){
     const band=shown.length>1?(shown[0].abund-shown[shown.length-1].abund)/50:1;
     const jittered=shown.map((d,i)=>{let jx=0,crowd=0;for(let j=i-1;j>=0&&j>=i-8;j--){if(Math.abs(shown[i].abund-shown[j].abund)<(band||1))crowd++}if(crowd>0)jx=(crowd%2===1?1:-1)*Math.ceil(crowd/2)*0.06;return{x:jx,y:d.abund,label:d.label,full:d.full}});
     chart.setData([{x:jittered.map(d=>d.x),y:jittered.map(d=>d.y),mode:'markers',marker:{size:7,color:grpColor(featured),symbol:'circle'},text:jittered.map(d=>d.label+'<br>Abundance: '+fmtVal(d.y)),customdata:jittered.map(d=>d.full)}]);
-    chart.setXTitle('').setYTitle('Abundance');
+    chart.setChartTitle(p.title||'').setXTitle('').setYTitle('Abundance');
     const wrap=chart.container.closest('.canvas-plot');
     if(wrap&&!wrap.dataset.userResized){wrap.style.width='320px';wrap.dataset.userResized=''}
     chart.render();
@@ -1322,7 +1324,7 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     const traces=[];
     ['ns','up','down'].forEach(cat=>{const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);if(!idx.length)return;
         traces.push({x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),mode:'markers',marker:{size:cat==='ns'?3:5,color:cat==='up'?grpColor(gx):cat==='down'?grpColor(gy):'#30363d',opacity:cat==='ns'?0.3:0.8,symbol:'circle'},text:idx.map(i=>labels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),customdata:idx.map(i=>fulls[i])})});
-    chart.setData(traces).setXTitle('Log2 Fold Change').setYTitle('-Log10(FDR adj. P-value)').render();
+    chart.setChartTitle(p.title||'').setData(traces).setXTitle('Log2 Fold Change').setYTitle('-Log10(FDR adj. P-value)').render();
 }
 
 function buildDotplotConfig(chart,p,qd,fidx){
@@ -1337,7 +1339,7 @@ function buildDotplotConfig(chart,p,qd,fidx){
     if(both.length)traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',marker:{size:5,color:'#8b949e',opacity:0.7,symbol:'circle'},text:both.map(d=>d.hover),customdata:both.map(d=>d.full)});
     if(xOnly.length)traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(()=>minNzY*0.18),mode:'markers',marker:{size:5,color:grpColor(gx),opacity:0.7,symbol:'triangle-right'},text:xOnly.map(d=>d.hover),customdata:xOnly.map(d=>d.full)});
     if(yOnly.length)traces.push({x:yOnly.map(()=>minNzX*0.18),y:yOnly.map(d=>d.y),mode:'markers',marker:{size:5,color:grpColor(gy),opacity:0.7,symbol:'triangle-up'},text:yOnly.map(d=>d.hover),customdata:yOnly.map(d=>d.full)});
-    chart.setData(traces).setXTitle(gx+axSuffix).setYTitle(gy+axSuffix).render();
+    chart.setChartTitle(p.title||'').setData(traces).setXTitle(gx+axSuffix).setYTitle(gy+axSuffix).render();
 }
 
 function buildPCAConfig(chart,p,qd,fidx){
@@ -1346,7 +1348,7 @@ function buildPCAConfig(chart,p,qd,fidx){
     if(sampleNames.length<3){chart.setData([]).setXTitle('').setYTitle('Need ≥3 samples').render();return}
     const pca=computePCA(sampleNames,qd,fidx);
     const traces=groups.map(g=>{const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),mode:'markers',marker:{size:10,color:grpColor(g),symbol:'circle'},text:idx.map(i=>pca.scores[i].name),customdata:idx.map(i=>g+': '+pca.scores[i].name)}});
-    chart.setData(traces).setXTitle('PC1 ('+pca.varExpl[0].toFixed(1)+'%)').setYTitle('PC2 ('+pca.varExpl[1].toFixed(1)+'%)').render();
+    chart.setChartTitle(p.title||'').setData(traces).setXTitle('PC1 ('+pca.varExpl[0].toFixed(1)+'%)').setYTitle('PC2 ('+pca.varExpl[1].toFixed(1)+'%)').render();
 }
 
 // ================================================================
@@ -1621,7 +1623,7 @@ function loadSession(file){
                     const canvas=document.getElementById('canvas');canvas?.classList.remove('empty-canvas');
                     const hint=document.getElementById('canvas-drop');if(hint)hint.remove();
                     const pw=document.createElement('div');pw.className='canvas-plot';pw.id='card-'+plotId;pw.style.height='420px';
-                    pw.innerHTML=`<input class="plot-title-input" value="${(cp.title||'').replace(/"/g,'&quot;')}" onchange="renamePlot('${plotId}',this.value)"><button class="cp-close" onclick="removePlot('${plotId}')">&times;</button><div id="${plotId}" style="width:100%;height:calc(100% - 24px)"></div>`;
+                    pw.innerHTML=`<button class="cp-close" onclick="removePlot('${plotId}')">&times;</button><div id="${plotId}" style="width:100%;height:100%"></div>`;
                     canvas.appendChild(pw);setupPlotResize(pw,plotId);
                     setTimeout(()=>renderPlot(CANVAS_PLOTS[CANVAS_PLOTS.length-1],qd,fidx),100);
                 });

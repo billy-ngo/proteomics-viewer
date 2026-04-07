@@ -11,7 +11,7 @@ class ProkerChart {
     constructor(container, options = {}) {
         this.container = typeof container === 'string' ? document.getElementById(container) : container;
         this.opts = {
-            margin: { top: 12, right: 40, bottom: 55, left: 65 },
+            margin: { top: 30, right: 40, bottom: 55, left: 65 },
             theme: {
                 bg: '#0d1117', plot: '#161b22', grid: '#21262d', line: '#30363d',
                 text: '#e6edf3', textSec: '#8b949e', accent: '#58a6ff',
@@ -57,6 +57,7 @@ class ProkerChart {
     setData(traces) { this.traces = traces; return this; }
     setXTitle(t) { this.xTitle = t; return this; }
     setYTitle(t) { this.yTitle = t; return this; }
+    setChartTitle(t) { this._chartTitle = t; return this; }
     setXRange(min, max) { this.xRange = (min != null && max != null) ? [min, max] : null; return this; }
     setYRange(min, max) { this.yRange = (min != null && max != null) ? [min, max] : null; return this; }
     setTheme(t) { Object.assign(this.opts.theme, t); return this; }
@@ -152,11 +153,22 @@ class ProkerChart {
         });
         svg += `</g>`;
 
-        // X axis title
-        svg += `<text x="${m.left + pw / 2}" y="${h - 6}" text-anchor="middle" fill="${T.text}" font-size="13" font-weight="600" class="axis-title" data-axis="x" style="cursor:pointer">${this._esc(this.xTitle)}</text>`;
+        // Chart title (centered, draggable)
+        if (this._chartTitle) {
+            const tx = this._titlePos ? this._titlePos.x : m.left + pw / 2;
+            const ty = this._titlePos ? this._titlePos.y : 18;
+            svg += `<text x="${tx}" y="${ty}" text-anchor="middle" fill="${T.text}" font-size="14" font-weight="700" class="chart-title draggable-text" style="cursor:move">${this._esc(this._chartTitle)}</text>`;
+        }
 
-        // Y axis title (rotated)
-        svg += `<text x="15" y="${m.top + ph / 2}" text-anchor="middle" fill="${T.text}" font-size="13" font-weight="600" class="axis-title" data-axis="y" transform="rotate(-90,15,${m.top + ph / 2})" style="cursor:pointer">${this._esc(this.yTitle)}</text>`;
+        // X axis title (draggable)
+        const xTitleX = this._xTitlePos ? this._xTitlePos.x : m.left + pw / 2;
+        const xTitleY = this._xTitlePos ? this._xTitlePos.y : h - 6;
+        svg += `<text x="${xTitleX}" y="${xTitleY}" text-anchor="middle" fill="${T.text}" font-size="13" font-weight="600" class="axis-title draggable-text" data-axis="x" style="cursor:move">${this._esc(this.xTitle)}</text>`;
+
+        // Y axis title (rotated, draggable)
+        const yTitleX = this._yTitlePos ? this._yTitlePos.x : 15;
+        const yTitleY = this._yTitlePos ? this._yTitlePos.y : m.top + ph / 2;
+        svg += `<text x="${yTitleX}" y="${yTitleY}" text-anchor="middle" fill="${T.text}" font-size="13" font-weight="600" class="axis-title draggable-text" data-axis="y" transform="rotate(-90,${yTitleX},${yTitleY})" style="cursor:move">${this._esc(this.yTitle)}</text>`;
 
         // Data points (clip to plot area)
         svg += `<defs><clipPath id="clip-${this._uid()}"><rect x="${m.left}" y="${m.top}" width="${pw}" height="${ph}"/></clipPath></defs>`;
@@ -265,13 +277,46 @@ class ProkerChart {
             });
         });
 
-        // Axis title click → edit
-        svg.querySelectorAll('.axis-title').forEach(el => {
-            el.style.cursor = 'pointer';
-            el.addEventListener('click', e => {
+        // Draggable text elements (titles) — drag to move, click to edit
+        svg.querySelectorAll('.draggable-text').forEach(el => {
+            let dragging = false, startMX, startMY, origX, origY, moved = false;
+            el.addEventListener('mousedown', e => {
                 e.stopPropagation();
-                this._editAxisTitle(el);
+                dragging = true; moved = false;
+                startMX = e.clientX; startMY = e.clientY;
+                origX = parseFloat(el.getAttribute('x'));
+                origY = parseFloat(el.getAttribute('y'));
+                document.body.style.cursor = 'move';
             });
+            const onMove = e => {
+                if (!dragging) return;
+                moved = true;
+                const dx = e.clientX - startMX, dy = e.clientY - startMY;
+                const nx = origX + dx, ny = origY + dy;
+                el.setAttribute('x', nx); el.setAttribute('y', ny);
+                // Update transform for rotated Y title
+                if (el.getAttribute('transform')) {
+                    el.setAttribute('transform', `rotate(-90,${nx},${ny})`);
+                }
+            };
+            const onUp = e => {
+                if (!dragging) return;
+                dragging = false;
+                document.body.style.cursor = '';
+                const nx = parseFloat(el.getAttribute('x'));
+                const ny = parseFloat(el.getAttribute('y'));
+                // Save position
+                if (el.classList.contains('chart-title')) this._titlePos = {x:nx,y:ny};
+                else if (el.dataset.axis === 'x') this._xTitlePos = {x:nx,y:ny};
+                else if (el.dataset.axis === 'y') this._yTitlePos = {x:nx,y:ny};
+                // If didn't move much, treat as click → edit
+                if (!moved || (Math.abs(e.clientX-startMX)<3 && Math.abs(e.clientY-startMY)<3)) {
+                    if (el.classList.contains('chart-title')) this._editChartTitle(el);
+                    else this._editAxisTitle(el);
+                }
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
         });
 
         // Tick label click → edit range
@@ -473,31 +518,40 @@ class ProkerChart {
     clearAnnotations() { this.annotations = []; this.render(); return this; }
 
     // ── Axis title editing ───────────────────────────────────────
-    _editAxisTitle(el) {
-        const axis = el.dataset.axis;
-        const current = axis === 'x' ? this.xTitle : this.yTitle;
+    _editChartTitle(el) {
+        const current = this._chartTitle || '';
         const rect = el.getBoundingClientRect();
+        this._showEditInput(rect, current, v => { this._chartTitle = v; this.render(); });
+    }
+
+    // Shared edit input helper
+    _showEditInput(rect, current, onCommit) {
+        document.querySelectorAll('.proker-edit-input').forEach(e => e.remove());
         const inp = document.createElement('input');
         inp.type = 'text'; inp.value = current;
         inp.className = 'proker-edit-input';
-        inp.style.cssText = `position:fixed;z-index:300;font-size:12px;font-family:Inter,system-ui;padding:4px 8px;background:var(--card,#21262d);color:var(--text,#e6edf3);border:2px solid var(--accent,#58a6ff);border-radius:4px;outline:none;width:${Math.max(140, rect.width + 20)}px;`;
+        inp.style.cssText = `position:fixed;z-index:300;font-size:13px;font-family:Inter,system-ui,sans-serif;padding:6px 10px;background:#1a1f29;color:#e6edf3;border:1px solid #58a6ff;border-radius:6px;outline:none;box-shadow:0 4px 16px rgba(0,0,0,0.5);width:${Math.max(160, rect.width + 30)}px;`;
         inp.style.left = (rect.left - 10) + 'px';
-        inp.style.top = (rect.top - 6) + 'px';
+        inp.style.top = (rect.top - 8) + 'px';
         document.body.appendChild(inp);
         inp.focus(); inp.select();
         let done = false;
-        const commit = () => {
-            if (done) return; done = true;
-            const v = inp.value.trim(); inp.remove();
-            if (!v || v === current) return;
-            if (axis === 'x') this.xTitle = v; else this.yTitle = v;
-            this.render();
-        };
+        const commit = () => { if (done) return; done = true; const v = inp.value.trim(); inp.remove(); if (v && v !== current) onCommit(v); };
         inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') { done = true; inp.remove(); } });
         inp.addEventListener('blur', commit);
     }
 
-    // ── Range editing ────────────────────────────────────────────
+    _editAxisTitle(el) {
+        const axis = el.dataset.axis;
+        const current = axis === 'x' ? this.xTitle : this.yTitle;
+        const rect = el.getBoundingClientRect();
+        this._showEditInput(rect, current, v => {
+            if (axis === 'x') this.xTitle = v; else this.yTitle = v;
+            this.render();
+        });
+    }
+
+    // ── Range editing (polished popup) ───────────────────────────
     _editRange(el) {
         const axis = el.dataset.axis;
         const domain = axis === 'x' ? this._xScale.domain() : this._yScale.domain();
@@ -506,10 +560,34 @@ class ProkerChart {
         document.querySelectorAll('.proker-edit-input').forEach(e => e.remove());
         const div = document.createElement('div');
         div.className = 'proker-edit-input';
-        div.style.cssText = 'position:fixed;z-index:300;background:var(--card,#21262d);border:2px solid var(--accent,#58a6ff);border-radius:4px;padding:6px 8px;display:flex;gap:6px;align-items:center;box-shadow:0 4px 12px rgba(0,0,0,0.4)';
-        div.style.left = rect.left + 'px';
-        div.style.top = (rect.top - 8) + 'px';
-        div.innerHTML = `<span style="font-size:10px;color:var(--text-sec,#8b949e)">Min</span><input type="number" step="any" value="${domain[0].toPrecision(4)}" style="width:75px;font-size:11px;font-family:monospace;padding:2px 4px;background:var(--bg,#0d1117);color:var(--text,#e6edf3);border:1px solid var(--border,#30363d);border-radius:3px"><span style="font-size:10px;color:var(--text-sec,#8b949e)">Max</span><input type="number" step="any" value="${domain[1].toPrecision(4)}" style="width:75px;font-size:11px;font-family:monospace;padding:2px 4px;background:var(--bg,#0d1117);color:var(--text,#e6edf3);border:1px solid var(--border,#30363d);border-radius:3px"><button style="font-size:10px;padding:3px 10px;background:var(--accent,#58a6ff);color:#fff;border:none;border-radius:3px;cursor:pointer;font-family:inherit">Set</button>`;
+        div.style.cssText = 'position:fixed;z-index:300;background:#1a1f29;border:1px solid rgba(88,166,255,0.4);border-radius:8px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,0.5);font-family:Inter,system-ui,sans-serif';
+        div.style.left = Math.max(8, rect.left - 30) + 'px';
+        div.style.top = (rect.top - 50) + 'px';
+
+        const fmtVal = v => {
+            if (Number.isInteger(v)) return v.toString();
+            if (Math.abs(v) >= 100) return v.toFixed(0);
+            if (Math.abs(v) >= 1) return v.toFixed(1);
+            return v.toPrecision(3);
+        };
+
+        div.innerHTML = `
+            <div style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">${axis === 'x' ? 'X' : 'Y'}-Axis Range</div>
+            <div style="display:flex;gap:8px;align-items:center">
+                <div style="flex:1">
+                    <div style="font-size:9px;color:#656d76;margin-bottom:2px">MIN</div>
+                    <input type="number" step="any" value="${fmtVal(domain[0])}" style="width:100%;font-size:12px;font-family:monospace;padding:5px 8px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;outline:none">
+                </div>
+                <div style="color:#30363d;font-size:16px;padding-top:12px">\u2014</div>
+                <div style="flex:1">
+                    <div style="font-size:9px;color:#656d76;margin-bottom:2px">MAX</div>
+                    <input type="number" step="any" value="${fmtVal(domain[1])}" style="width:100%;font-size:12px;font-family:monospace;padding:5px 8px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;outline:none">
+                </div>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end">
+                <button class="range-cancel" style="font-size:11px;padding:4px 12px;background:transparent;color:#8b949e;border:1px solid #30363d;border-radius:4px;cursor:pointer;font-family:inherit">Cancel</button>
+                <button class="range-apply" style="font-size:11px;padding:4px 14px;background:#58a6ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:inherit;font-weight:600">Apply</button>
+            </div>`;
         document.body.appendChild(div);
         const inputs = div.querySelectorAll('input');
         inputs[0].focus(); inputs[0].select();
@@ -518,12 +596,13 @@ class ProkerChart {
             if (done) return; done = true;
             const mn = parseFloat(inputs[0].value), mx = parseFloat(inputs[1].value);
             div.remove();
-            if (isNaN(mn) || isNaN(mx)) return;
+            if (isNaN(mn) || isNaN(mx) || mn >= mx) return;
             if (axis === 'x') this.setXRange(mn, mx); else this.setYRange(mn, mx);
             this._zoomed = true;
             this.render();
         };
-        div.querySelector('button').onclick = commit;
+        div.querySelector('.range-apply').onclick = commit;
+        div.querySelector('.range-cancel').onclick = () => { done = true; div.remove(); };
         inputs.forEach(inp => inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') { done = true; div.remove(); } }));
         div.addEventListener('click', e => e.stopPropagation());
     }
