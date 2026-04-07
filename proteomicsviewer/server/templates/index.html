@@ -258,6 +258,10 @@ async function uploadFile(file,append){
             <svg width="12" height="12" viewBox="0 0 12 12" style="flex-shrink:0"><rect x="0" y="0" width="5.5" height="5.5" rx="1" fill="#66bb6a"/><rect x="6.5" y="0" width="5.5" height="5.5" rx="1" fill="#42a5f5"/><rect x="0" y="6.5" width="5.5" height="5.5" rx="1" fill="#ffa726"/><rect x="6.5" y="6.5" width="5.5" height="5.5" rx="1" fill="#ab47bc"/></svg>
             Theme
         </button>
+        <button class="hdr-btn" onclick="toggleGraphSettingsPanel()" title="Graph appearance settings">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style="flex-shrink:0"><circle cx="6" cy="6" r="2"/><path d="M6 0v2M6 10v2M0 6h2M10 6h2M1.8 1.8l1.4 1.4M8.8 8.8l1.4 1.4M1.8 10.2l1.4-1.4M8.8 3.2l1.4-1.4" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
+            Graph Settings
+        </button>
         <button class="hdr-btn" onclick="toggleExportPanel()" title="Export current plots as SVG or PNG">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M6 1v7M3 5.5L6 8.5 9 5.5M2 11h8"/></svg>
             Export Image
@@ -287,6 +291,36 @@ async function uploadFile(file,append){
 <!-- Info Panel (matches BiNgo about overlay exactly) -->
 <!-- Session Panel (BiNgo-style modal) -->
 <!-- Export Panel (BiNgo-style) -->
+<!-- Graph Settings Panel -->
+<div id="graph-settings-panel" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:480px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.6);max-height:80vh;overflow-y:auto">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+            <div style="font-size:18px;font-weight:700" id="gs-title">Graph Settings</div>
+            <button onclick="document.getElementById('graph-settings-panel').classList.add('hidden')" style="width:28px;height:28px;border:none;background:transparent;color:var(--text-sec);cursor:pointer;font-size:20px;display:flex;align-items:center;justify-content:center;border-radius:4px">&times;</button>
+        </div>
+        <!-- Apply to selector (batch mode) -->
+        <div id="gs-batch-selector" class="hidden" style="margin-bottom:14px">
+            <div style="font-size:11px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Apply to</div>
+            <div id="gs-plot-checks" style="max-height:120px;overflow-y:auto"></div>
+        </div>
+        <!-- Settings -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px">
+            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Dot size</div><input type="range" id="gs-dot-size" min="2" max="16" value="5" style="width:100%"><span id="gs-dot-size-val" style="font-size:11px;color:var(--accent)">5</span></div>
+            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Dot shape</div><select id="gs-dot-shape" style="width:100%"><option value="circle">Circle</option><option value="square">Square</option><option value="diamond">Diamond</option><option value="cross">Cross</option><option value="triangle-up">Triangle</option><option value="star">Star</option></select></div>
+            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Dot color</div><input type="color" id="gs-dot-color" value="#e6edf3" style="width:100%;height:30px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);cursor:pointer"></div>
+            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Dot opacity</div><input type="range" id="gs-dot-opacity" min="10" max="100" value="70" style="width:100%"><span id="gs-dot-opacity-val" style="font-size:11px;color:var(--accent)">0.7</span></div>
+            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Plot background</div><input type="color" id="gs-plot-bg" value="#161b22" style="width:100%;height:30px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);cursor:pointer"></div>
+            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Paper background</div><input type="color" id="gs-paper-bg" value="#0d1117" style="width:100%;height:30px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);cursor:pointer"></div>
+            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Grid color</div><input type="color" id="gs-grid-color" value="#21262d" style="width:100%;height:30px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);cursor:pointer"></div>
+            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Font size</div><input type="range" id="gs-font-size" min="8" max="20" value="12" style="width:100%"><span id="gs-font-size-val" style="font-size:11px;color:var(--accent)">12</span></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+            <button class="btn-primary" onclick="applyGraphSettings()" style="flex:1">Apply</button>
+            <button class="hdr-btn" onclick="document.getElementById('graph-settings-panel').classList.add('hidden')" style="padding:8px 20px">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <div id="export-panel" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:400px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.6)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
@@ -424,7 +458,10 @@ async function uploadFile(file,append){
     <div class="panel-section">
         <div class="section-label">Data Processing Options</div>
         <div class="proc-option">
-            <label class="proc-option-header"><input type="checkbox" id="proc-lfq" onchange="updateProcPreview()"><div><div class="proc-option-label">LFQ Analysis</div><div class="proc-option-desc">Use label-free quantification intensities</div></div></label>
+            <label class="proc-option-header"><input type="checkbox" id="proc-intensity" checked onchange="toggleIntensityOpts();updateProcPreview()"><div><div class="proc-option-label">Intensity Analysis</div><div class="proc-option-desc">Use intensity values (uncheck to use raw spectral counts)</div></div></label>
+            <div class="proc-option-body" id="intensity-opts">
+                <label class="checkbox-row"><input type="checkbox" id="proc-lfq" checked onchange="updateProcPreview()"> LFQ (label-free quantification)</label>
+            </div>
         </div>
         <div class="proc-option">
             <div class="proc-option-header" style="cursor:default">
@@ -544,7 +581,7 @@ var ANALYSES=[];    // [{id,name,groupX,groupY}]
 var DERIVED=[];     // [{name,op,left,right}]
 var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
-const PL={paper_bgcolor:'#0d1117',plot_bgcolor:'#161b22',font:{family:'Inter,system-ui',color:'#e6edf3',size:12},margin:{l:55,r:20,t:10,b:65},dragmode:false,xaxis:{gridcolor:'#21262d',zerolinecolor:'#30363d',linecolor:'#30363d',fixedrange:true},yaxis:{gridcolor:'#21262d',zerolinecolor:'#30363d',linecolor:'#30363d',fixedrange:true},hoverlabel:{bgcolor:'#21262d',bordercolor:'#30363d',font:{color:'#e6edf3',family:'Inter,system-ui',size:12}}};
+const PL={paper_bgcolor:'#0d1117',plot_bgcolor:'#161b22',font:{family:'Inter,system-ui',color:'#e6edf3',size:12},margin:{l:55,r:20,t:10,b:65},dragmode:false,xaxis:{gridcolor:'#21262d',zerolinecolor:'#30363d',linecolor:'#30363d'},yaxis:{gridcolor:'#21262d',zerolinecolor:'#30363d',linecolor:'#30363d'},hoverlabel:{bgcolor:'#21262d',bordercolor:'#30363d',font:{color:'#e6edf3',family:'Inter,system-ui',size:12}}};
 
 // ================================================================
 // DIVIDER
@@ -704,6 +741,7 @@ function startHeartbeat(){setInterval(()=>fetch('/api/heartbeat').catch(()=>{}),
 // ================================================================
 // PROCESSING
 // ================================================================
+function toggleIntensityOpts(){document.getElementById('intensity-opts').classList.toggle('hidden',!document.getElementById('proc-intensity').checked)}
 function toggleNorm(){document.getElementById('norm-opts').classList.toggle('hidden',!document.getElementById('proc-norm').checked);toggleNormOrg()}
 function toggleNormOrg(){const show=document.getElementById('proc-norm').checked&&document.getElementById('norm-scope').value==='organism';document.getElementById('norm-org-panel').classList.toggle('hidden',!show);if(show)populateNormOrg()}
 function populateNormOrg(){if(!RAW)return;const c=document.getElementById('norm-org-list');const prefixes=new Set();RAW.proteins.forEach(p=>{const m=(p.majority_id||p.id||'').match(/^([A-Za-z][A-Za-z0-9]*_)/);if(m)prefixes.add(m[1])});const sorted=[...prefixes].sort();
@@ -789,10 +827,17 @@ let PROC_QT = '';   // which quant type is active
 function buildProcessedData(){
     if(!RAW) return;
 
-    // 1. Quant type selection (Processing: LFQ checkbox)
-    const lfq = document.getElementById('proc-lfq')?.checked;
-    PROC_QT = lfq && RAW.quant_types.includes('LFQ intensity') ? 'LFQ intensity'
-        : RAW.quant_types.includes('Intensity') ? 'Intensity' : RAW.quant_types[0];
+    // 1. Quant type selection (Processing: Intensity + LFQ checkboxes)
+    const useIntensity = document.getElementById('proc-intensity')?.checked;
+    const useLFQ = document.getElementById('proc-lfq')?.checked;
+    if(!useIntensity){
+        // Raw spectral counts
+        PROC_QT = RAW.quant_types.includes('MS/MS count') ? 'MS/MS count' : RAW.quant_types[0];
+    } else if(useLFQ && RAW.quant_types.includes('LFQ intensity')){
+        PROC_QT = 'LFQ intensity';
+    } else {
+        PROC_QT = RAW.quant_types.includes('Intensity') ? 'Intensity' : RAW.quant_types[0];
+    }
     const rawQd = RAW.quant_data[PROC_QT] || {};
 
     // 2. Filter proteins (contaminants, reverse, by-site always removed)
@@ -920,6 +965,12 @@ function grpVals(fi,grp,qd,fidx){
 function grpColor(grp){const b=BINS.find(b=>b.label===grp);return b?b.color:DERIVED.find(d=>d.name===grp)?'#bc8cff':'#8b949e'}
 function pLabel(fidx,fi){const p=RAW.proteins[fidx[fi]];const g=p.gene_name||p.majority_id||p.id;return g.length>40?g.slice(0,37)+'...':g}
 function pFullLabel(fidx,fi){const p=RAW.proteins[fidx[fi]];return (p.majority_id||p.id)+'\n'+(p.gene_name||'')}
+function grpSampleBreakdown(fi,grp,qd){
+    // Returns per-sample values as hover text lines (only useful in sum mode)
+    const bin=BINS.find(b=>b.label===grp);
+    if(!bin)return '';
+    return bin.samples.map(s=>'  '+s+': '+(qd[s]?qd[s][fi]:0).toExponential(2)).join('<br>');
+}
 
 // ================================================================
 // STATS
@@ -1111,14 +1162,14 @@ function removePlot(plotId){
 }
 function setupPlotResize(wrap,plotId){
     const plotEl=()=>document.getElementById(plotId);
-    let dragging=false,corner='',startX=0,startY=0,startH=0;
+    let dragging=false,corner='',startX=0,startY=0,startW=0,startH=0;
 
-    // Attach to each handle element
     wrap.querySelectorAll('.cp-handle').forEach(handle=>{
         handle.addEventListener('mousedown',e=>{
             dragging=true;
             corner=handle.dataset.corner;
-            startX=e.clientX;startY=e.clientY;startH=wrap.offsetHeight;
+            startX=e.clientX;startY=e.clientY;
+            startW=wrap.offsetWidth;startH=wrap.offsetHeight;
             document.body.style.cursor=handle.style.cursor;
             document.body.style.userSelect='none';
             e.preventDefault();e.stopPropagation();
@@ -1127,10 +1178,13 @@ function setupPlotResize(wrap,plotId){
 
     document.addEventListener('mousemove',e=>{
         if(!dragging)return;
-        const dy=e.clientY-startY;
-        let h=startH;
-        if(corner==='se'||corner==='sw') h=startH+dy;
-        else if(corner==='ne'||corner==='nw') h=startH-dy;
+        const dx=e.clientX-startX, dy=e.clientY-startY;
+        let w=startW, h=startH;
+        if(corner==='se'){w=startW+dx;h=startH+dy}
+        else if(corner==='sw'){w=startW-dx;h=startH+dy}
+        else if(corner==='ne'){w=startW+dx;h=startH-dy}
+        else if(corner==='nw'){w=startW-dx;h=startH-dy}
+        wrap.style.width=Math.max(300,w)+'px';
         wrap.style.height=Math.max(200,h)+'px';
         const el=plotEl();if(el&&el.data)Plotly.Plots.resize(el);
     });
@@ -1181,6 +1235,25 @@ function setupClickLabel(div,plotId){
         }
         applyPinnedLabels(div,plotId);
     });
+
+    // Persist dragged label positions back to PINNED_LABELS
+    div.on('plotly_relayout',function(update){
+        if(!update)return;
+        const pins=PINNED_LABELS[plotId];if(!pins||!pins.length)return;
+        const anns=(div.layout||{}).annotations||[];
+        // Check for annotation position changes (annotations[i].ax, annotations[i].ay)
+        for(const key of Object.keys(update)){
+            const m=key.match(/^annotations\[(\d+)\]\.(ax|ay)$/);
+            if(m){
+                const idx=+m[1], prop=m[2], val=update[key];
+                const ann=anns[idx];
+                if(ann&&ann._pinKey){
+                    const pin=pins.find(p=>p.key===ann._pinKey);
+                    if(pin) pin[prop]=val;
+                }
+            }
+        }
+    });
 }
 
 function applyPinnedLabels(div,plotId){
@@ -1225,12 +1298,13 @@ function applyPinnedLabels(div,plotId){
 
         annotations.push({
             x:pin.x, y:pin.y, text:pin.text,
-            showarrow:needsArrow, arrowhead:0, arrowwidth:1, arrowcolor:'var(--text-sec)',
-            ax:ax, ay:ay,
+            showarrow:true, arrowhead:0, arrowwidth:1, arrowcolor:'var(--text-sec)',
+            ax:pin.ax!==undefined?pin.ax:ax, ay:pin.ay!==undefined?pin.ay:ay,
             font:{size:10,color:'var(--text)'},
             bgcolor:'var(--surface)', bordercolor:'var(--border)', borderwidth:1,
             borderpad:3, opacity:0.95,
-            _pinned:true, // marker to distinguish from other annotations
+            captureevents:true,
+            _pinned:true, _pinKey:pin.key,
         });
     });
 
@@ -1247,12 +1321,14 @@ function renderPlot(p,qd,fidx){
     else if(p.type==='volcano')plotVolcano(div,p,qd,fidx);
     else if(p.type==='dotplot')plotDotplot(div,p,qd,fidx);
     else if(p.type==='pca')plotPCA(div,p,qd,fidx);
-    // Attach click handler (remove old first to prevent duplicates) and reapply pins
+    // Attach click + drag handlers (remove old first to prevent duplicates) and reapply pins
     div.removeAllListeners?.('plotly_click');
+    div.removeAllListeners?.('plotly_relayout');
     setupClickLabel(div,p.plotId);
     if(PINNED_LABELS[p.plotId]&&PINNED_LABELS[p.plotId].length){
         setTimeout(()=>applyPinnedLabels(div,p.plotId),50);
     }
+    setupPlotDblClick(div.closest('.canvas-plot'),p.plotId);
 }
 
 function plotEnrichment(div,p,qd,fidx){
@@ -1272,9 +1348,13 @@ function plotEnrichment(div,p,qd,fidx){
     data.sort((a,b)=>a.val-b.val);
     const xVals=data.map((_,i)=>i+1);
     const yVals=data.map(d=>d.val);
-    const labels=data.map(d=>d.label);
     const hoverLabel=isLog2?'log2('+gx+'/'+gy+')':'Ratio';
-    const customHover=data.map(d=>d.label+'<br>'+hoverLabel+': '+(d.val<100?d.val.toFixed(3):d.val.toFixed(1))+'<br>'+gx+': '+d.rawX.toExponential(2)+'<br>'+gy+': '+d.rawY.toExponential(2)+'<br>Rank: ');
+    const sums=isAggSum();
+    const customHover=data.map(d=>{
+        let h=d.label+'<br>'+hoverLabel+': '+(d.val<100?d.val.toFixed(3):d.val.toFixed(1))+'<br>'+gx+': '+d.rawX.toExponential(2)+'<br>'+gy+': '+d.rawY.toExponential(2);
+        if(sums){h+='<br>---<br>'+gx+' samples:<br>'+grpSampleBreakdown(d.fi,gx,qd)+'<br>'+gy+' samples:<br>'+grpSampleBreakdown(d.fi,gy,qd)}
+        return h+'<br>Rank: ';
+    });
 
     const traces=[];
     const fullLabels=data.map(d=>d.fullLabel);
@@ -1288,7 +1368,7 @@ function plotEnrichment(div,p,qd,fidx){
     Plotly.react(div,traces,{...PL,title:false,
         xaxis:{...PL.xaxis,title:'Rank',linecolor:'#e6edf3',linewidth:1},
         yaxis:{...PL.yaxis,title:yTitle,linecolor:'#e6edf3',linewidth:1},
-        showlegend:false},{responsive:true,displayModeBar:false,scrollZoom:false});
+        showlegend:false},{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,axisTitleText:true}});
 }
 
 function plotUnique(div,p,qd,fidx){
@@ -1352,11 +1432,11 @@ function plotUnique(div,p,qd,fidx){
         yaxis:{...PL.yaxis,title:'Abundance',linecolor:'#e6edf3',linewidth:1},
         margin:{...PL.margin,r:140},
         showlegend:false,
-    },{responsive:true,displayModeBar:false,scrollZoom:false});
+    },{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,axisTitleText:true}});
 }
 
 function plotVolcano(div,p,qd,fidx){
-    if(isAggSum()){Plotly.react(div,[],{...PL,annotations:[{text:'Volcano plots require Averages mode (change in Processing tab)',showarrow:false,font:{size:13,color:'var(--warning)'},xref:'paper',yref:'paper',x:.5,y:.5}]},{responsive:true,displayModeBar:false,scrollZoom:false});return}
+    if(isAggSum()){Plotly.react(div,[],{...PL,annotations:[{text:'Volcano plots require Averages mode (change in Processing tab)',showarrow:false,font:{size:13,color:'var(--warning)'},xref:'paper',yref:'paper',x:.5,y:.5}]},{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,axisTitleText:true}});return}
     const gx=p.config.gx,gy=p.config.gy,fcT=p.config.fc,fdrT=p.config.fdr,doImpute=p.config.impute;
     const fc=[],rawP=[],labels=[];
     for(let fi=0;fi<fidx.length;fi++){
@@ -1376,7 +1456,7 @@ function plotVolcano(div,p,qd,fidx){
     const shapes=[{type:'line',x0:fcT,x1:fcT,y0:0,y1:1,yref:'paper',line:{color:'#30363d',width:1,dash:'dash'}},{type:'line',x0:-fcT,x1:-fcT,y0:0,y1:1,yref:'paper',line:{color:'#30363d',width:1,dash:'dash'}},{type:'line',x0:0,x1:1,xref:'paper',y0:-Math.log10(fdrT),y1:-Math.log10(fdrT),line:{color:'#30363d',width:1,dash:'dash'}}];
     const sigIdx=cats.map((c,i)=>c!=='ns'?i:-1).filter(i=>i>=0).sort((a,b)=>negLog[b]-negLog[a]).slice(0,10);
     const annotations=sigIdx.map(i=>({x:fc[i],y:negLog[i],text:labels[i],showarrow:true,arrowhead:0,arrowcolor:'#8b949e',font:{size:10,color:'#e6edf3'},bgcolor:'rgba(13,17,23,.7)',borderpad:2,ax:0,ay:-20}));
-    Plotly.react(div,traces,{...PL,shapes,annotations,title:false,xaxis:{...PL.xaxis,title:'Log2 Fold Change'},yaxis:{...PL.yaxis,title:'-Log10(FDR adj. P-value)'}},{responsive:true,displayModeBar:false,scrollZoom:false});
+    Plotly.react(div,traces,{...PL,shapes,annotations,title:false,xaxis:{...PL.xaxis,title:'Log2 Fold Change'},yaxis:{...PL.yaxis,title:'-Log10(FDR adj. P-value)'}},{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,axisTitleText:true}});
 }
 
 function plotDotplot(div,p,qd,fidx){
@@ -1394,9 +1474,9 @@ function plotDotplot(div,p,qd,fidx){
         if(mx===0&&my===0)continue;
         const label=pLabel(fidx,fi);
         const full=pFullLabel(fidx,fi);
-        if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,full,fc:Math.log2(my/mx),rawX:mx,rawY:my});
-        else if(mx>0) xOnly.push({x:txFn(mx),y:0,label,full,rawX:mx});
-        else yOnly.push({x:0,y:txFn(my),label,full,rawY:my});
+        if(mx>0&&my>0) both.push({fi,x:txFn(mx),y:txFn(my),label,full,fc:Math.log2(my/mx),rawX:mx,rawY:my});
+        else if(mx>0) xOnly.push({fi,x:txFn(mx),y:0,label,full,rawX:mx});
+        else yOnly.push({fi,x:0,y:txFn(my),label,full,rawY:my});
     }
 
     // Smart axis compression for single-group proteins
@@ -1411,17 +1491,22 @@ function plotDotplot(div,p,qd,fidx){
     const yOnlyPlot=yOnly.map(d=>({x:breakX*0.3,y:d.y,label:d.label}));
 
     const traces=[];
+    const sums=isAggSum();
+    function dotHoverBoth(d){let h=d.label+'<br>'+gx+' raw: '+d.rawX.toExponential(2)+'<br>'+gy+' raw: '+d.rawY.toExponential(2);if(sums){h+='<br>---<br>'+gx+' samples:<br>'+grpSampleBreakdown(d.fi,gx,qd)+'<br>'+gy+' samples:<br>'+grpSampleBreakdown(d.fi,gy,qd)}return h}
+    function dotHoverX(d){let h=d.label+'<br>'+gx+' raw: '+d.rawX.toExponential(2);if(sums){h+='<br>---<br>'+gx+' samples:<br>'+grpSampleBreakdown(d.fi,gx,qd)}return h}
+    function dotHoverY(d){let h=d.label+'<br>'+gy+' raw: '+d.rawY.toExponential(2);if(sums){h+='<br>---<br>'+gy+' samples:<br>'+grpSampleBreakdown(d.fi,gy,qd)}return h}
+
     if(both.length) traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',type:'scattergl',
         marker:{size:5,color:both.map(d=>d.fc),colorscale:[[0,'#58a6ff'],[.5,'#8b949e'],[1,'#f85149']],cmin:-3,cmax:3,opacity:.7},
-        text:both.map(d=>d.label+'<br>'+gx+' raw: '+d.rawX.toExponential(2)+'<br>'+gy+' raw: '+d.rawY.toExponential(2)),
+        text:both.map(dotHoverBoth),
         customdata:both.map(d=>d.full),hovertemplate:'%{text}<extra></extra>',name:'Both',showlegend:false});
     if(xOnlyPlot.length) traces.push({x:xOnlyPlot.map(d=>d.x),y:xOnlyPlot.map(d=>d.y),mode:'markers',type:'scatter',
         marker:{size:5,color:grpColor(gx),opacity:.7,symbol:'triangle-right'},
-        text:xOnlyPlot.map(d=>d.label+'<br>'+gx+' raw: '+d.rawX.toExponential(2)),
+        text:xOnlyPlot.map(dotHoverX),
         customdata:xOnlyPlot.map(d=>d.full),hovertemplate:'%{text}<br>Only in '+gx+'<extra></extra>',name:'Only '+gx,showlegend:true});
     if(yOnlyPlot.length) traces.push({x:yOnlyPlot.map(d=>d.x),y:yOnlyPlot.map(d=>d.y),mode:'markers',type:'scatter',
         marker:{size:5,color:grpColor(gy),opacity:.7,symbol:'triangle-up'},
-        text:yOnlyPlot.map(d=>d.label+'<br>'+gy+' raw: '+d.rawY.toExponential(2)),
+        text:yOnlyPlot.map(dotHoverY),
         customdata:yOnlyPlot.map(d=>d.full),hovertemplate:'%{text}<br>Only in '+gy+'<extra></extra>',name:'Only '+gy,showlegend:true});
 
     if(both.length){const mn=Math.min(minNzX,minNzY),mx2=Math.max(maxX,maxY);traces.push({x:[mn,mx2],y:[mn,mx2],mode:'lines',line:{color:'#30363d',width:1,dash:'dash'},hoverinfo:'skip',showlegend:false})}
@@ -1449,17 +1534,17 @@ function plotDotplot(div,p,qd,fidx){
         xaxis:{...PL.xaxis,title:xTitle,linecolor:'#e6edf3',linewidth:1},
         yaxis:{...PL.yaxis,title:yTitle,linecolor:'#e6edf3',linewidth:1},
         legend:{bgcolor:'rgba(0,0,0,0)',font:{color:'#8b949e',size:10}}};
-    Plotly.react(div,traces,layout,{responsive:true,displayModeBar:false,scrollZoom:false});
+    Plotly.react(div,traces,layout,{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,axisTitleText:true}});
 }
 
 function plotPCA(div,p,qd,fidx){
     const groups=p.config.gx.split(',');
     const sampleNames=[];const sampleGroups=[];
     groups.forEach(g=>{const bin=BINS.find(b=>b.label===g);if(bin)bin.samples.forEach(s=>{sampleNames.push(s);sampleGroups.push(g)})});
-    if(sampleNames.length<3){Plotly.react(div,[],{...PL,annotations:[{text:'Need at least 3 samples',showarrow:false,font:{size:14,color:'#8b949e'},xref:'paper',yref:'paper',x:.5,y:.5}]},{responsive:true,displayModeBar:false,scrollZoom:false});return}
+    if(sampleNames.length<3){Plotly.react(div,[],{...PL,annotations:[{text:'Need at least 3 samples',showarrow:false,font:{size:14,color:'#8b949e'},xref:'paper',yref:'paper',x:.5,y:.5}]},{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,axisTitleText:true}});return}
     const pca=computePCA(sampleNames,qd,fidx);
     const traces=groups.map(g=>{const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),text:idx.map(i=>pca.scores[i].name),mode:'markers+text',type:'scatter',name:g,marker:{size:10,color:grpColor(g)},textposition:'top center',textfont:{size:10,color:'#8b949e'},hovertemplate:'%{text}<br>PC1: %{x:.2f}<br>PC2: %{y:.2f}<extra></extra>'}});
-    Plotly.react(div,traces,{...PL,title:false,xaxis:{...PL.xaxis,title:`PC1 (${pca.varExpl[0].toFixed(1)}%)`},yaxis:{...PL.yaxis,title:`PC2 (${pca.varExpl[1].toFixed(1)}%)`}},{responsive:true,displayModeBar:false,scrollZoom:false});
+    Plotly.react(div,traces,{...PL,title:false,xaxis:{...PL.xaxis,title:`PC1 (${pca.varExpl[0].toFixed(1)}%)`},yaxis:{...PL.yaxis,title:`PC2 (${pca.varExpl[1].toFixed(1)}%)`}},{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,axisTitleText:true}});
 }
 
 // ================================================================
@@ -1566,7 +1651,7 @@ function openNativeColorPicker(key){
     inp.click();
 }
 
-function closePanels(){['theme-panel','info-panel','session-panel','export-panel'].forEach(id=>document.getElementById(id)?.classList.add('hidden'))}
+function closePanels(){['theme-panel','info-panel','session-panel','export-panel','graph-settings-panel'].forEach(id=>document.getElementById(id)?.classList.add('hidden'))}
 function toggleExportPanel(){if(!CANVAS_PLOTS.length){alert('No plots to export');return}const wasOpen=!document.getElementById('export-panel').classList.contains('hidden');closePanels();if(!wasOpen)document.getElementById('export-panel').classList.remove('hidden')}
 function doExport(fmt){
     const w=+(document.getElementById('export-width')?.value||1200);
@@ -1633,7 +1718,8 @@ function buildSessionObject(){
         derived:DERIVED.map(d=>({name:d.name,op:d.op,left:d.left,right:d.right})),
         canvasPlots:CANVAS_PLOTS.map(p=>({type:p.type,config:p.config,title:p.title})),
         processing:{
-            lfq:document.getElementById('proc-lfq')?.checked||false,
+            intensity:document.getElementById('proc-intensity')?.checked!==false,
+            lfq:document.getElementById('proc-lfq')?.checked!==false,
             agg:document.getElementById('proc-agg')?.value||'average',
             norm:document.getElementById('proc-norm')?.checked||false,
             normScope:document.getElementById('norm-scope')?.value||'all',
@@ -1667,7 +1753,7 @@ function loadSession(file){
                 const p=s.processing;
                 const setChk=(id,v)=>{const el=document.getElementById(id);if(el)el.checked=!!v};
                 const setVal=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v||''};
-                setChk('proc-lfq',p.lfq);setVal('proc-agg',p.agg);
+                setChk('proc-intensity',p.intensity!==false);setChk('proc-lfq',p.lfq!==false);toggleIntensityOpts();setVal('proc-agg',p.agg);
                 setChk('proc-norm',p.norm);setVal('norm-scope',p.normScope);
                 setChk('norm-rm-contam',p.normRmContam);
                 setChk('proc-prune',p.prune);setVal('prune-metric',p.pruneMetric);
@@ -1731,7 +1817,7 @@ const TOUR_STEPS=[
         '<div class="tl">\u2022 <b>+ Add Group</b> to create new bins</div>'},
     {target:'processing',title:'Processing',position:'bottom',action:'processing',desc:
         'Configure how your data is processed:'+
-        '<div class="tl">\u2022 <b>LFQ Analysis</b> \u2014 use label-free quantification</div>'+
+        '<div class="tl">\u2022 <b>Intensity Analysis</b> \u2014 use intensity values (with optional LFQ), or uncheck for raw spectral counts</div>'+
         '<div class="tl">\u2022 <b>Normalization</b> \u2014 total-sum normalization, optionally within a specific organism (locus tag prefix)</div>'+
         '<div class="tl">\u2022 <b>Pruning</b> \u2014 filter low-abundance proteins by spectral count or intensity</div>'+
         '<div class="tl">\u2022 <b>Aggregation</b> \u2014 averages (default) or sums</div>'+
@@ -1856,6 +1942,118 @@ document.addEventListener('keydown',e=>{
 
 // Tour bullet styles
 (function(){const s=document.createElement('style');s.textContent='.tl{display:flex;gap:6px;margin-top:4px}.tl::before{content:"\\2022";opacity:.5;flex-shrink:0}.td{margin-top:8px;opacity:.7;font-size:12px}';document.head.appendChild(s)})();
+
+// ================================================================
+// GRAPH SETTINGS
+// ================================================================
+var gsTargetPlots=[]; // plotIds to apply settings to
+
+// Range display updaters
+document.getElementById('gs-dot-size').addEventListener('input',function(){document.getElementById('gs-dot-size-val').textContent=this.value});
+document.getElementById('gs-dot-opacity').addEventListener('input',function(){document.getElementById('gs-dot-opacity-val').textContent=(this.value/100).toFixed(1)});
+document.getElementById('gs-font-size').addEventListener('input',function(){document.getElementById('gs-font-size-val').textContent=this.value});
+
+function openGraphSettingsForPlot(plotId){
+    gsTargetPlots=[plotId];
+    document.getElementById('gs-title').textContent='Graph Settings';
+    document.getElementById('gs-batch-selector').classList.add('hidden');
+    // Read current values from the plot
+    const el=document.getElementById(plotId);
+    if(el&&el.data&&el.data[0]){
+        const m=el.data[0].marker||{};
+        document.getElementById('gs-dot-size').value=m.size||5;
+        document.getElementById('gs-dot-size-val').textContent=m.size||5;
+        if(typeof m.color==='string') document.getElementById('gs-dot-color').value=m.color;
+        document.getElementById('gs-dot-opacity').value=Math.round((m.opacity||0.7)*100);
+        document.getElementById('gs-dot-opacity-val').textContent=(m.opacity||0.7).toFixed(1);
+        document.getElementById('gs-dot-shape').value=m.symbol||'circle';
+    }
+    if(el&&el.layout){
+        document.getElementById('gs-plot-bg').value=el.layout.plot_bgcolor||'#161b22';
+        document.getElementById('gs-paper-bg').value=el.layout.paper_bgcolor||'#0d1117';
+        const gc=el.layout.xaxis?.gridcolor||'#21262d';
+        document.getElementById('gs-grid-color').value=gc;
+        document.getElementById('gs-font-size').value=el.layout.font?.size||12;
+        document.getElementById('gs-font-size-val').textContent=el.layout.font?.size||12;
+    }
+    closePanels();
+    document.getElementById('graph-settings-panel').classList.remove('hidden');
+}
+
+function toggleGraphSettingsPanel(){
+    if(!CANVAS_PLOTS.length){alert('No plots on canvas');return}
+    const wasOpen=!document.getElementById('graph-settings-panel').classList.contains('hidden');
+    closePanels();
+    if(wasOpen)return;
+    // Batch mode — show all plots as checkboxes
+    gsTargetPlots=CANVAS_PLOTS.map(p=>p.plotId);
+    document.getElementById('gs-title').textContent='Graph Settings (All Plots)';
+    document.getElementById('gs-batch-selector').classList.remove('hidden');
+    const checks=document.getElementById('gs-plot-checks');
+    checks.innerHTML=CANVAS_PLOTS.map(p=>
+        `<label class="checkbox-row"><input type="checkbox" value="${p.plotId}" checked onchange="gsBatchChanged()">${p.title||p.type}</label>`
+    ).join('');
+    document.getElementById('graph-settings-panel').classList.remove('hidden');
+}
+
+function gsBatchChanged(){
+    gsTargetPlots=[...document.querySelectorAll('#gs-plot-checks input:checked')].map(cb=>cb.value);
+}
+
+function applyGraphSettings(){
+    const size=+document.getElementById('gs-dot-size').value;
+    const shape=document.getElementById('gs-dot-shape').value;
+    const color=document.getElementById('gs-dot-color').value;
+    const opacity=(+document.getElementById('gs-dot-opacity').value)/100;
+    const plotBg=document.getElementById('gs-plot-bg').value;
+    const paperBg=document.getElementById('gs-paper-bg').value;
+    const gridColor=document.getElementById('gs-grid-color').value;
+    const fontSize=+document.getElementById('gs-font-size').value;
+
+    gsTargetPlots.forEach(plotId=>{
+        const el=document.getElementById(plotId);
+        if(!el||!el.data)return;
+        // Update each trace's marker
+        const traceUpdates={};
+        el.data.forEach((trace,i)=>{
+            if(trace.mode&&trace.mode.includes('markers')){
+                // For traces with colorscale (dotplot), only update size/shape/opacity
+                if(Array.isArray(trace.marker?.color)){
+                    traceUpdates['marker.size']=traceUpdates['marker.size']||[];
+                    traceUpdates['marker.size'][i]=size;
+                    traceUpdates['marker.opacity']=traceUpdates['marker.opacity']||[];
+                    traceUpdates['marker.opacity'][i]=opacity;
+                    traceUpdates['marker.symbol']=traceUpdates['marker.symbol']||[];
+                    traceUpdates['marker.symbol'][i]=shape;
+                } else {
+                    Plotly.restyle(el,{'marker.size':size,'marker.color':color,'marker.opacity':opacity,'marker.symbol':shape},[i]);
+                }
+            }
+        });
+        // Update layout
+        Plotly.relayout(el,{
+            plot_bgcolor:plotBg,paper_bgcolor:paperBg,
+            'xaxis.gridcolor':gridColor,'yaxis.gridcolor':gridColor,
+            'font.size':fontSize
+        });
+        // Store settings on the canvas plot object for persistence
+        const cp=CANVAS_PLOTS.find(p=>p.plotId===plotId);
+        if(cp){
+            cp.graphSettings={size,shape,color,opacity,plotBg,paperBg,gridColor,fontSize};
+        }
+    });
+    document.getElementById('graph-settings-panel').classList.add('hidden');
+}
+
+// Double-click on a plot opens its settings
+function setupPlotDblClick(wrap,plotId){
+    const plotDiv=document.getElementById(plotId);
+    if(!plotDiv)return;
+    plotDiv.on('plotly_doubleclick',function(){
+        openGraphSettingsForPlot(plotId);
+        return false; // prevent Plotly's default double-click (autoscale)
+    });
+}
 </script>
 </body>
 </html>
