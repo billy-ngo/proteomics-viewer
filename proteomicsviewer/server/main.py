@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from proteomicsviewer.server.state import state
 from proteomicsviewer.server.parser import parse_protein_groups
 
-app = FastAPI(title="ProteomicsViewer API", version="1.0.0")
+app = FastAPI(title="Pro-ker Proteomics Viewer API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,

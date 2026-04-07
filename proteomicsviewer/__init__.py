@@ -1,3 +1,3 @@
-"""ProteomicsViewer — an interactive browser-based proteomics data visualization tool."""
+"""Pro-ker Proteomics Viewer — an interactive browser-based proteomics data visualization tool."""
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"

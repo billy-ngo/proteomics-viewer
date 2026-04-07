@@ -1,11 +1,11 @@
 """
-ProteomicsViewer CLI — launch the viewer from the command line.
+Pro-ker Proteomics Viewer CLI — launch the viewer from the command line.
 
 Usage:
-    protview                    # start on default port 8050
-    protview data.txt           # start and auto-load a file
-    protview --port 9000        # start on a custom port
-    protview --no-browser       # start without opening the browser
+    proker                      # start on default port 8050
+    proker data.txt             # start and auto-load a file
+    proker --port 9000          # start on a custom port
+    proker --no-browser         # start without opening the browser
 """
 
 import argparse
@@ -109,8 +109,8 @@ def _open_when_ready(url, timeout=10):
 # ── Entry point ───────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(
-        prog="protview",
-        description="ProteomicsViewer — interactive proteomics data visualization",
+        prog="proker",
+        description="Pro-ker Proteomics Viewer — interactive proteomics data visualization",
     )
     parser.add_argument("file", nargs="?", default=None,
                         help="Path to a proteinGroups.txt file to auto-load")

@@ -3,1165 +3,1326 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ProteomicsViewer</title>
+<title>Pro-ker</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230d1117'/%3E%3Cg transform='translate(4,6) rotate(-12,22,26)'%3E%3Crect x='2' y='2' width='32' height='44' rx='3' fill='white' opacity='.85'/%3E%3Ctext x='6' y='13' font-size='10' font-weight='bold' fill='%23dc2626' font-family='Georgia,serif'%3E2%3C/text%3E%3Ctext x='7' y='20' font-size='5.5' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif'%3EBN%3C/text%3E%3Ctext x='11' y='32' font-size='12' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif'%3EBN%3C/text%3E%3C/g%3E%3Cg transform='translate(4,6) rotate(8,38,26)'%3E%3Crect x='22' y='0' width='32' height='44' rx='3' fill='white'/%3E%3Ctext x='26' y='11' font-size='10' font-weight='bold' fill='%23dc2626' font-family='Georgia,serif'%3E2%3C/text%3E%3Ctext x='27' y='18' font-size='5.5' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif'%3EBN%3C/text%3E%3Ctext x='31' y='30' font-size='12' font-weight='800' fill='%23dc2626' font-family='Arial,sans-serif'%3EBN%3C/text%3E%3C/g%3E%3C/svg%3E">
 <script src="https://cdn.plot.ly/plotly-2.35.0.min.js" charset="utf-8"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root {
-    --bg: #0d1117;
-    --surface: #161b22;
-    --card: #21262d;
-    --border: #30363d;
-    --text: #e6edf3;
-    --text-sec: #8b949e;
-    --accent: #58a6ff;
-    --danger: #f85149;
-    --success: #3fb950;
-    --warning: #d29922;
-    --purple: #bc8cff;
-    --left-w: 380px;
-    --radius: 6px;
-    --tabbar-h: 44px;
-    --status-h: 28px;
-}
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; overflow: hidden; }
-body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.5; }
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-sec); }
-.hidden { display: none !important; }
-
-/* ── Tab Bar ──────────────────────────────────────────── */
-#tabbar {
-    height: var(--tabbar-h); background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; padding: 0 20px; gap: 0;
-}
-.app-name {
-    font-size: 15px; font-weight: 700; letter-spacing: -0.3px;
-    margin-right: 32px; white-space: nowrap;
-}
-.tab-buttons { display: flex; height: 100%; gap: 0; }
-.tab-btn {
-    height: 100%; padding: 0 18px; border: none; background: none;
-    color: var(--text-sec); font-family: inherit; font-size: 13px; font-weight: 500;
-    cursor: pointer; position: relative; transition: color 0.15s; white-space: nowrap;
-}
-.tab-btn:hover { color: var(--text); }
-.tab-btn.active { color: var(--accent); }
-.tab-btn.active::after {
-    content: ''; position: absolute; bottom: 0; left: 8px; right: 8px;
-    height: 2px; background: var(--accent); border-radius: 1px 1px 0 0;
-}
-.tab-btn:disabled { color: var(--border); cursor: default; }
-.tab-btn:disabled:hover { color: var(--border); }
-
-/* ── Workspace ────────────────────────────────────────── */
-#workspace {
-    display: flex; height: calc(100vh - var(--tabbar-h) - var(--status-h));
-}
-
-/* ── Resizable Divider ────────────────────────────────── */
-#divider {
-    width: 5px; cursor: col-resize; background: transparent;
-    position: relative; flex-shrink: 0; z-index: 10;
-}
-#divider::after {
-    content: ''; position: absolute; top: 0; bottom: 0; left: 2px;
-    width: 1px; background: var(--border); transition: background 0.15s, width 0.15s, left 0.15s;
-}
-#divider:hover::after, #divider.dragging::after {
-    width: 3px; left: 1px; background: var(--accent);
-}
-
-/* ── Left Panel ───────────────────────────────────────── */
-#left-panel {
-    width: var(--left-w); min-width: 260px; max-width: 700px;
-    background: var(--surface);
-    overflow-y: auto; overflow-x: hidden;
-}
-.panel-section {
-    padding: 20px;
-    border-bottom: 1px solid var(--border);
-}
-.section-label {
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.5px; color: var(--text-sec); margin-bottom: 12px;
-}
-
-/* Upload zone (inside left panel) */
-.upload-zone {
-    border: 2px dashed var(--border); border-radius: 10px;
-    padding: 32px 20px; text-align: center; cursor: pointer; transition: all 0.2s;
-}
-.upload-zone:hover, .upload-zone.dragover { border-color: var(--accent); background: rgba(88,166,255,0.06); }
-.upload-zone svg { width: 40px; height: 40px; margin-bottom: 8px; opacity: 0.4; }
-.upload-zone .uz-text { color: var(--text-sec); font-size: 13px; }
-.upload-zone .uz-hint { font-size: 11px; color: var(--text-sec); opacity: 0.5; margin-top: 4px; }
-#file-input { display: none; }
-.upload-error { color: var(--danger); font-size: 12px; margin-top: 10px; min-height: 16px; text-align: center; }
-
-/* ── Sample Chips ─────────────────────────────────────── */
-.sample-area {
-    min-height: 40px; padding: 6px; border-radius: var(--radius);
-    display: flex; flex-wrap: wrap; gap: 6px; position: relative;
-    user-select: none;
-}
-.sample-chip {
-    display: inline-flex; align-items: center; height: 28px;
-    padding: 0 10px; border-radius: 14px;
-    font-size: 12px; font-weight: 500; cursor: grab;
-    border: 2px solid transparent; transition: all 0.12s;
-    background: var(--card);
-}
-.sample-chip:hover { filter: brightness(1.2); }
-.sample-chip.selected { border-color: var(--accent); background: rgba(88,166,255,0.15); }
-.sample-chip.dragging { opacity: 0.4; }
-.sample-chip .chip-dot {
-    width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; flex-shrink: 0;
-}
-
-/* Rubber-band selection */
-.rubber-band {
-    position: fixed; border: 1px solid var(--accent);
-    background: rgba(88,166,255,0.12); z-index: 1000; pointer-events: none;
-}
-
-/* ── Bins ──────────────────────────────────────────────── */
-.unassigned-pool {
-    background: var(--bg); border-radius: var(--radius);
-    border: 1px solid var(--border); padding: 8px; margin-bottom: 14px;
-}
-.pool-header {
-    display: flex; justify-content: space-between; align-items: center;
-    font-size: 11px; color: var(--text-sec); font-weight: 500; margin-bottom: 6px; padding: 0 4px;
-}
-.pool-count {
-    background: var(--card); padding: 1px 8px; border-radius: 10px; font-size: 10px;
-}
-
-.bin-card {
-    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
-    margin-bottom: 10px; overflow: hidden; transition: border-color 0.15s;
-}
-.bin-card.drag-over { border-color: var(--accent); background: rgba(88,166,255,0.04); }
-.bin-header {
-    display: flex; align-items: center; gap: 6px; padding: 8px 10px;
-    background: rgba(255,255,255,0.02);
-}
-.bin-color {
-    width: 16px; height: 16px; border-radius: 50%; border: none;
-    cursor: pointer; padding: 0; flex-shrink: 0;
-}
-.bin-label {
-    flex: 1; padding: 3px 6px; background: transparent; border: 1px solid transparent;
-    border-radius: 3px; color: var(--text); font-size: 13px; font-weight: 600;
-    font-family: inherit; outline: none;
-}
-.bin-label:hover { border-color: var(--border); }
-.bin-label:focus { border-color: var(--accent); background: var(--card); }
-.bin-sample-count {
-    font-size: 10px; color: var(--text-sec); background: var(--card);
-    padding: 1px 7px; border-radius: 10px; white-space: nowrap;
-}
-.bin-delete {
-    width: 22px; height: 22px; border: none; background: transparent;
-    color: var(--text-sec); cursor: pointer; border-radius: 3px; font-size: 14px;
-    display: flex; align-items: center; justify-content: center; font-family: inherit;
-}
-.bin-delete:hover { background: rgba(248,81,73,0.15); color: var(--danger); }
-.bin-body {
-    padding: 8px; min-height: 36px;
-}
-.bin-body.empty-hint::after {
-    content: 'Drag samples here'; display: block;
-    color: var(--border); font-size: 11px; text-align: center; padding: 4px;
-}
-
-.add-group-btn {
-    width: 100%; padding: 8px; border: 1px dashed var(--border); border-radius: var(--radius);
-    background: transparent; color: var(--text-sec); cursor: pointer;
-    font-size: 12px; font-family: inherit; transition: all 0.15s;
-}
-.add-group-btn:hover { border-color: var(--accent); color: var(--accent); }
-
-.continue-btn {
-    width: 100%; padding: 10px; margin-top: 16px;
-    background: var(--accent); color: #fff; border: none; border-radius: var(--radius);
-    font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
-    transition: opacity 0.15s;
-}
-.continue-btn:hover { opacity: 0.85; }
-.continue-btn:disabled { opacity: 0.3; cursor: default; }
-
-/* ── Right Panel ──────────────────────────────────────── */
-#right-panel {
-    flex: 1; display: flex; flex-direction: column; overflow: hidden;
-}
-.right-content { flex: 1; overflow-y: auto; padding: 24px; }
-
-/* Welcome card */
-.welcome-card {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    height: 100%; color: var(--text-sec);
-}
-.welcome-card svg { width: 64px; height: 64px; opacity: 0.2; margin-bottom: 16px; }
-.welcome-card .wc-text { font-size: 15px; }
-
-/* Summary card */
-.summary-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px;
-}
-.stat-card {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 14px 16px;
-}
-.stat-card .stat-val { font-size: 22px; font-weight: 700; margin-bottom: 2px; }
-.stat-card .stat-lbl { font-size: 11px; color: var(--text-sec); }
-.stat-card.wide { grid-column: 1 / -1; }
-.quant-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.quant-tag {
-    padding: 3px 10px; background: var(--bg); border-radius: 12px;
-    font-size: 11px; color: var(--text-sec); border: 1px solid var(--border);
-}
-#sample-chart { width: 100%; height: 300px; }
-
-/* ── Status Bar ───────────────────────────────────────── */
-#statusbar {
-    height: var(--status-h); background: var(--surface);
-    border-top: 1px solid var(--border);
-    padding: 0 20px; display: flex; align-items: center; gap: 16px;
-    font-size: 11px; color: var(--text-sec);
-}
-.status-dot {
-    width: 6px; height: 6px; border-radius: 50%; display: inline-block;
-    margin-right: 4px; background: var(--success);
-}
-
-/* ── Processing Tab Styles ────────────────────────────── */
-.proc-option {
-    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
-    margin-bottom: 10px; overflow: hidden;
-}
-.proc-option-header {
-    display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer;
-    user-select: none;
-}
-.proc-option-header input[type="checkbox"] {
-    accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; flex-shrink: 0;
-}
-.proc-option-label { font-size: 13px; font-weight: 500; }
-.proc-option-desc { font-size: 11px; color: var(--text-sec); margin-top: 1px; }
-.proc-option-body {
-    padding: 0 12px 12px 37px;
-}
-.proc-sub { margin-top: 8px; }
-.proc-sub-label { font-size: 11px; color: var(--text-sec); margin-bottom: 4px; font-weight: 500; }
-
-/* Inline form elements for the prune sentence builder */
-.sentence-builder {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
-    font-size: 12px; color: var(--text-sec); line-height: 2.2;
-}
-.sentence-builder span { white-space: nowrap; }
-.sentence-builder select {
-    width: auto; min-width: 110px; padding: 3px 22px 3px 6px;
-    font-size: 11px; height: 26px;
-}
-.sentence-builder input[type="number"] {
-    width: 70px; padding: 3px 6px; font-size: 11px; height: 26px;
-    text-align: center;
-}
-.sentence-builder .sb-group-select {
-    min-width: 100px;
-}
-
-/* Processing right panel */
-.proc-preview {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 16px 20px;
-}
-.proc-preview h3 {
-    font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--text-sec);
-    text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px;
-}
-.proc-step {
-    display: flex; align-items: flex-start; gap: 10px; padding: 8px 0;
-    border-bottom: 1px solid var(--border);
-}
-.proc-step:last-child { border-bottom: none; }
-.proc-step-num {
-    width: 22px; height: 22px; border-radius: 50%;
-    background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.proc-step-num.inactive { background: var(--border); }
-.proc-step-text { font-size: 12px; color: var(--text); padding-top: 2px; }
-.proc-step-text.inactive { color: var(--text-sec); text-decoration: line-through; opacity: 0.5; }
-
-select, input[type="number"], input[type="text"] {
-    transition: border-color 0.15s;
-}
+:root{--bg:#0d1117;--surface:#161b22;--card:#21262d;--border:#30363d;--text:#e6edf3;--text-sec:#8b949e;--accent:#58a6ff;--danger:#f85149;--success:#3fb950;--warning:#d29922;--purple:#bc8cff;--left-w:380px;--radius:6px;--tabbar-h:44px;--status-h:28px}
+html.light{--bg:#f4f5f7;--surface:#ffffff;--card:#e8eaed;--border:#d0d7de;--text:#1f2328;--text-sec:#656d76;--accent:#0969da;--danger:#cf222e;--success:#1a7f37;--warning:#9a6700;--purple:#8250df}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.hidden{display:none!important}
+/* Tab Bar */
+#tabbar{height:var(--tabbar-h);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px}
+.app-name{font-size:15px;font-weight:700;letter-spacing:-.3px;margin-right:32px;white-space:nowrap}
+.tab-buttons{display:flex;height:100%;gap:0}
+.tab-btn{height:100%;padding:0 18px;border:none;background:none;color:var(--text-sec);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;position:relative;transition:color .15s;white-space:nowrap}
+.tab-btn:hover{color:var(--text)}.tab-btn.active{color:var(--accent)}
+.tab-btn.active::after{content:'';position:absolute;bottom:0;left:8px;right:8px;height:2px;background:var(--accent);border-radius:1px 1px 0 0}
+.tab-btn:disabled{color:var(--border);cursor:default}.tab-btn:disabled:hover{color:var(--border)}
+/* Workspace */
+#workspace{display:flex;height:calc(100vh - var(--tabbar-h) - var(--status-h))}
+/* Divider */
+#divider{width:5px;cursor:col-resize;background:transparent;position:relative;flex-shrink:0;z-index:10}
+#divider::after{content:'';position:absolute;top:0;bottom:0;left:2px;width:1px;background:var(--border);transition:all .15s}
+#divider:hover::after,#divider.dragging::after{width:3px;left:1px;background:var(--accent)}
+/* Left Panel */
+#left-panel{width:var(--left-w);min-width:260px;max-width:700px;background:var(--surface);overflow-y:auto;overflow-x:hidden}
+.panel-section{padding:16px 20px;border-bottom:1px solid var(--border)}
+.section-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-sec);margin-bottom:10px}
+/* Right Panel */
+#right-panel{flex:1;display:flex;flex-direction:column;overflow:hidden}
+/* Form Controls */
+select,input[type="number"],input[type="text"]{width:100%;padding:6px 8px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:12px;font-family:inherit;outline:none;transition:border-color .15s}
+select:focus,input:focus{border-color:var(--accent)}
+select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b949e' d='M3 5l3 3 3-3'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;padding-right:24px}
+.checkbox-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer;font-size:12px}
+.checkbox-row input[type="checkbox"]{accent-color:var(--accent);cursor:pointer}
+.btn-sm{padding:4px 12px;background:var(--card);color:var(--text-sec);border:1px solid var(--border);border-radius:var(--radius);font-size:11px;cursor:pointer;font-family:inherit}
+.btn-sm:hover{border-color:var(--accent);color:var(--accent)}
+.btn-primary{padding:8px 14px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;width:100%}
+.btn-primary:hover{opacity:.85}.btn-primary:disabled{opacity:.3;cursor:default}
+/* Compact upload */
+.compact-upload{display:flex;align-items:center;gap:8px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
+.compact-upload .cu-file{font-size:11px;color:var(--text-sec);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.compact-upload .cu-btn{padding:3px 10px;font-size:10px}
+/* Upload zone */
+.upload-zone{border:2px dashed var(--border);border-radius:10px;padding:32px 20px;text-align:center;cursor:pointer;transition:all .2s}
+.upload-zone:hover,.upload-zone.dragover{border-color:var(--accent);background:rgba(88,166,255,.06)}
+.upload-zone svg{width:40px;height:40px;margin-bottom:8px;opacity:.4}
+.upload-zone .uz-text{color:var(--text-sec);font-size:13px}.upload-zone .uz-hint{font-size:11px;color:var(--text-sec);opacity:.5;margin-top:4px}
+#file-input{display:none}
+.upload-error{color:var(--danger);font-size:12px;margin-top:10px;min-height:16px;text-align:center}
+/* Sample chips */
+.sample-area{min-height:36px;padding:6px;border-radius:var(--radius);display:flex;flex-wrap:wrap;gap:6px;user-select:none}
+.sample-chip{display:inline-flex;align-items:center;height:28px;padding:0 10px;border-radius:14px;font-size:12px;font-weight:500;cursor:grab;border:2px solid transparent;transition:all .12s;background:var(--card)}
+.sample-chip:hover{filter:brightness(1.2)}.sample-chip.selected{border-color:var(--accent);background:rgba(88,166,255,.15)}
+.sample-chip.dragging{opacity:.4}.sample-chip .chip-dot{width:8px;height:8px;border-radius:50%;margin-right:6px;flex-shrink:0}
+.rubber-band{position:fixed;border:1px solid var(--accent);background:rgba(88,166,255,.12);z-index:1000;pointer-events:none}
+/* Bins */
+.unassigned-pool{background:var(--bg);border-radius:var(--radius);border:1px solid var(--border);padding:8px;margin-bottom:14px}
+.pool-header{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text-sec);font-weight:500;margin-bottom:6px;padding:0 4px}
+.pool-count{background:var(--card);padding:1px 8px;border-radius:10px;font-size:10px}
+.bin-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;overflow:hidden;transition:border-color .15s}
+.bin-card.drag-over{border-color:var(--accent);background:rgba(88,166,255,.04)}
+.bin-header{display:flex;align-items:center;gap:6px;padding:8px 10px;background:rgba(255,255,255,.02)}
+.bin-color{width:16px;height:16px;border-radius:50%;border:none;cursor:pointer;padding:0;flex-shrink:0}
+.bin-label{flex:1;padding:3px 6px;background:transparent;border:1px solid transparent;border-radius:3px;color:var(--text);font-size:13px;font-weight:600;font-family:inherit;outline:none}
+.bin-label:hover{border-color:var(--border)}.bin-label:focus{border-color:var(--accent);background:var(--card)}
+.bin-sample-count{font-size:10px;color:var(--text-sec);background:var(--card);padding:1px 7px;border-radius:10px}
+.bin-delete{width:22px;height:22px;border:none;background:transparent;color:var(--text-sec);cursor:pointer;border-radius:3px;font-size:14px;display:flex;align-items:center;justify-content:center}
+.bin-delete:hover{background:rgba(248,81,73,.15);color:var(--danger)}
+.bin-body{padding:8px;min-height:36px}
+.bin-body.empty-hint::after{content:'Drag samples here';display:block;color:var(--border);font-size:11px;text-align:center;padding:4px}
+.add-group-btn{width:100%;padding:7px;border:1px dashed var(--border);border-radius:var(--radius);background:transparent;color:var(--text-sec);cursor:pointer;font-size:11px;font-family:inherit;transition:all .15s}
+.add-group-btn:hover{border-color:var(--accent);color:var(--accent)}
+/* Processing */
+.proc-option{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
+.proc-option-header{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;user-select:none}
+.proc-option-header input[type="checkbox"]{accent-color:var(--accent);width:15px;height:15px;cursor:pointer;flex-shrink:0}
+.proc-option-label{font-size:13px;font-weight:500}.proc-option-desc{font-size:11px;color:var(--text-sec);margin-top:1px}
+.proc-option-body{padding:0 12px 12px 37px}
+.proc-sub{margin-top:8px}.proc-sub-label{font-size:11px;color:var(--text-sec);margin-bottom:4px;font-weight:500}
+.sentence-builder{display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:12px;color:var(--text-sec);line-height:2.2}
+.sentence-builder span{white-space:nowrap}
+.sentence-builder select{width:auto;min-width:110px;padding:3px 22px 3px 6px;font-size:11px;height:26px}
+.sentence-builder input[type="number"]{width:70px;padding:3px 6px;font-size:11px;height:26px;text-align:center}
+/* Analysis saved items */
+.ana-item{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.ana-item .ana-name{font-size:13px;font-weight:600;flex:1}.ana-item .ana-desc{font-size:11px;color:var(--text-sec)}
+.ana-item .ana-del{width:20px;height:20px;border:none;background:transparent;color:var(--text-sec);cursor:pointer;font-size:12px;border-radius:3px;display:flex;align-items:center;justify-content:center}
+.ana-item .ana-del:hover{color:var(--danger);background:rgba(248,81,73,.15)}
+.ana-form{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:10px}
+.ana-form .af-row{margin-bottom:8px}
+.ana-form .af-lbl{font-size:11px;color:var(--text-sec);margin-bottom:3px;font-weight:500;display:block}
+/* Viz palette */
+.viz-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin-bottom:6px;cursor:grab;transition:all .15s;display:flex;align-items:center;gap:10px}
+.viz-card:hover{border-color:var(--accent);background:rgba(88,166,255,.04)}
+.viz-card .vc-icon{font-size:20px;width:32px;text-align:center;flex-shrink:0}
+.viz-card .vc-name{font-size:12px;font-weight:600}.viz-card .vc-desc{font-size:10px;color:var(--text-sec);margin-top:1px}
+.viz-config{background:var(--bg);border:1px solid var(--accent);border-radius:var(--radius);padding:12px;margin-bottom:10px}
+.viz-config .vc-title{font-size:11px;font-weight:600;color:var(--accent);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+/* Canvas */
+.welcome-card{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-sec);padding:24px}
+.welcome-card svg{width:64px;height:64px;opacity:.2;margin-bottom:16px}.welcome-card .wc-text{font-size:15px}
+#canvas{flex:1;overflow-y:auto;padding:8px 12px}
+#canvas.empty-canvas{display:flex;align-items:center;justify-content:center}
+.canvas-plot{position:relative;margin-bottom:4px}
+.canvas-plot .cp-close{position:absolute;top:2px;right:6px;width:18px;height:18px;border:none;background:transparent;color:transparent;cursor:pointer;font-size:13px;z-index:5;display:flex;align-items:center;justify-content:center;border-radius:3px;transition:all .15s}
+.canvas-plot:hover .cp-close{color:var(--text-sec)}
+.canvas-plot .cp-close:hover{color:var(--danger);background:rgba(248,81,73,.2)}
+.canvas-plot .plot-title-input{display:block;background:transparent;border:1px solid transparent;border-radius:3px;color:var(--text);font-size:12px;font-weight:600;font-family:inherit;padding:2px 6px;outline:none;width:calc(100% - 30px)}
+.canvas-plot .plot-title-input:focus{border-color:var(--accent);background:var(--card)}
+.canvas-drop-hint{border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:200px;color:var(--border);font-size:13px;transition:all .15s}
+.canvas-drop-hint.drag-over{border-color:var(--accent);color:var(--accent);background:rgba(88,166,255,.04)}
+/* Export bar */
+.export-bar{display:flex;gap:6px;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--surface)}
+.export-bar .spacer{flex:1}
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:flex;align-items:center;justify-content:center}
+.modal-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px;width:420px;max-width:90vw}
+.modal-box h3{font-size:15px;font-weight:700;margin-bottom:8px}.modal-box p{font-size:13px;color:var(--text-sec);margin-bottom:20px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end}
+.modal-actions button{padding:7px 16px;border-radius:var(--radius);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;border:1px solid var(--border)}
+.modal-actions .m-cancel{background:transparent;color:var(--text-sec)}.modal-actions .m-cancel:hover{color:var(--text)}
+.modal-actions .m-danger{background:var(--danger);color:#fff;border-color:var(--danger)}.modal-actions .m-danger:hover{opacity:.85}
+.modal-actions .m-accent{background:var(--accent);color:#fff;border-color:var(--accent)}.modal-actions .m-accent:hover{opacity:.85}
+/* Status Bar */
+#statusbar{height:var(--status-h);background:var(--surface);border-top:1px solid var(--border);padding:0 20px;display:flex;align-items:center;gap:16px;font-size:11px;color:var(--text-sec)}
+.status-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px;background:var(--success)}
+/* Range */
+.ana-range{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.ana-range input[type="range"]{flex:1;height:4px;-webkit-appearance:none;appearance:none;background:var(--border);border-radius:2px;outline:none}
+.ana-range input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;background:var(--accent);border-radius:50%;cursor:pointer}
+.ana-range-val{font-size:11px;color:var(--accent);min-width:28px;text-align:right}
+/* Collapsible */
+.collapse-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;cursor:pointer;user-select:none;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-sec);border-bottom:1px solid var(--border)}
+.collapse-hdr:hover{color:var(--text)}.collapse-hdr .chev{transition:transform .2s;font-size:10px}
+.collapse-sec.open .chev{transform:rotate(90deg)}.collapse-body{display:none;padding:12px 20px 16px}
+.collapse-sec.open .collapse-body{display:block}
 </style>
 </head>
-<body>
+<body ondragover="event.preventDefault()" ondrop="event.preventDefault()">
+<script>
+window.onerror=function(msg,url,line){document.title='JS ERROR: '+msg+' line:'+line;console.error('INIT ERROR:',msg,'line:',line)};
+// Early-defined upload functions so inline handlers work
+var RAW=null, pendingFile=null;
+function handleIncoming(file){
+    if(RAW){pendingFile=file;document.getElementById('file-modal').classList.remove('hidden');return}
+    uploadFile(file,false);
+}
+async function uploadFile(file,append){
+    document.getElementById('upload-error').textContent='';
+    var form=new FormData();form.append('file',file);
+    try{
+        var resp=await fetch('/api/upload',{method:'POST',body:form});
+        if(!resp.ok){var err=await resp.json();throw new Error(err.detail||'Upload failed')}
+        var data=await resp.json();
+        if(append&&RAW){mergeData(data)}else{RAW=data}
+        initGrouping();
+    }catch(e){document.getElementById('upload-error').textContent=e.message}
+}
+</script>
+<!-- Modal (file conflict) -->
+<div id="file-modal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <h3>Data Already Loaded</h3>
+        <p>An analysis is already in progress. What would you like to do?</p>
+        <div class="modal-actions">
+            <button class="m-cancel" onclick="closeFileModal()">Cancel</button>
+            <button class="m-danger" onclick="fileModalReplace()">Replace Current</button>
+            <button class="m-accent" onclick="fileModalAppend()">Append to Analysis</button>
+        </div>
+    </div>
+</div>
 
-<!-- Tab Bar -->
 <nav id="tabbar">
-    <span class="app-name">ProteomicsViewer</span>
+    <svg class="app-logo" viewBox="0 0 64 52" width="28" height="23" style="margin-right:8px;flex-shrink:0"><g transform="rotate(-12,22,26)"><rect x="2" y="2" width="32" height="44" rx="3" fill="white" opacity=".85"/><text x="6" y="13" font-size="10" font-weight="bold" fill="#dc2626" font-family="Georgia,serif">2</text><text x="7" y="20" font-size="5.5" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif">BN</text><text x="11" y="32" font-size="12" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif">BN</text></g><g transform="rotate(8,38,26)"><rect x="22" y="0" width="32" height="44" rx="3" fill="white"/><text x="26" y="11" font-size="10" font-weight="bold" fill="#dc2626" font-family="Georgia,serif">2</text><text x="27" y="18" font-size="5.5" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif">BN</text><text x="31" y="30" font-size="12" font-weight="800" fill="#dc2626" font-family="Arial,sans-serif">BN</text></g></svg>
+    <span class="app-name">Pro-ker</span>
     <div class="tab-buttons">
         <button class="tab-btn active" data-tab="upload" onclick="switchTab('upload')">Data Upload</button>
         <button class="tab-btn" data-tab="processing" onclick="switchTab('processing')" disabled id="tab-processing">Processing</button>
+        <button class="tab-btn" data-tab="analysis" onclick="switchTab('analysis')" disabled id="tab-analysis">Analysis</button>
+        <button class="tab-btn" data-tab="visualization" onclick="switchTab('visualization')" disabled id="tab-viz">Visualization</button>
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+        <button class="btn-sm" onclick="saveSession()" title="Save session">Save</button>
+        <button class="btn-sm" onclick="document.getElementById('session-load-input').click()" title="Load session">Load</button>
+        <input type="file" id="session-load-input" accept=".json" style="display:none" onchange="loadSession(this.files[0]);this.value=''">
+        <button class="btn-sm" onclick="toggleTheme()" id="theme-btn" title="Toggle theme" style="font-size:14px;padding:2px 8px">&#9790;</button>
     </div>
 </nav>
 
-<!-- Workspace -->
 <div id="workspace">
-    <!-- Left Panel -->
-    <aside id="left-panel">
+<aside id="left-panel">
 
-        <!-- === UPLOAD TAB LEFT === -->
-        <div class="tab-panel" data-for="upload">
-
-            <!-- Upload Section -->
-            <div id="upload-section" class="panel-section">
-                <div class="section-label">Load Data</div>
-                <div class="upload-zone" id="upload-zone">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>
-                    </svg>
-                    <div class="uz-text">Drop proteinGroups.txt here</div>
-                    <div class="uz-hint">or click to browse</div>
-                </div>
-                <input type="file" id="file-input" accept=".txt,.tsv,.csv">
-                <div class="upload-error" id="upload-error"></div>
-            </div>
-
-            <!-- Grouping Section (hidden until data loads) -->
-            <div id="grouping-section" class="hidden">
-                <div class="panel-section">
-                    <div class="section-label">Assign Samples to Groups</div>
-
-                    <!-- Unassigned Pool -->
-                    <div class="unassigned-pool" id="unassigned-pool">
-                        <div class="pool-header">
-                            <span>Unassigned</span>
-                            <span class="pool-count" id="unassigned-count">0</span>
-                        </div>
-                        <div class="sample-area" id="unassigned-area" data-target="unassigned"></div>
-                    </div>
-
-                    <!-- Bins -->
-                    <div id="bins-container"></div>
-                    <button class="add-group-btn" onclick="addBin()">+ Add Group</button>
-                    <button class="continue-btn" id="continue-btn" disabled>Continue</button>
-                </div>
-            </div>
-
+<!-- ── UPLOAD TAB ── -->
+<input type="file" id="file-input" accept=".txt,.tsv,.csv"
+    onchange="if(this.files.length){handleIncoming(this.files[0]);this.value=''}"
+    style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0,0,0,0)">
+<div class="tab-panel" data-for="upload">
+    <!-- Compact re-upload (shown after file loaded) -->
+    <div id="compact-upload" class="compact-upload hidden">
+        <span class="cu-file" id="cu-filename"></span>
+        <button class="btn-sm cu-btn" onclick="document.getElementById('file-input').click()">Change file</button>
+    </div>
+    <div id="upload-section" class="panel-section">
+        <div class="section-label">Load Data</div>
+        <div class="upload-zone" id="upload-zone"
+             onclick="document.getElementById('file-input').click()"
+             ondragover="event.preventDefault();event.stopPropagation();this.classList.add('dragover')"
+             ondragleave="this.classList.remove('dragover')"
+             ondrop="event.preventDefault();event.stopPropagation();this.classList.remove('dragover');if(event.dataTransfer.files.length)handleIncoming(event.dataTransfer.files[0])">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="pointer-events:none"><path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+            <div class="uz-text" style="pointer-events:none">Drop proteinGroups.txt here</div>
+            <div class="uz-hint" style="pointer-events:none">or click to browse</div>
         </div>
-
-        <!-- === PROCESSING TAB LEFT === -->
-        <div class="tab-panel hidden" data-for="processing">
-            <div class="panel-section">
-                <div class="section-label">Data Processing Options</div>
-
-                <!-- 1. LFQ Analysis -->
-                <div class="proc-option">
-                    <label class="proc-option-header">
-                        <input type="checkbox" id="proc-lfq" onchange="updateProcessingPreview()">
-                        <div>
-                            <div class="proc-option-label">LFQ Analysis</div>
-                            <div class="proc-option-desc">Use label-free quantification intensities</div>
-                        </div>
-                    </label>
-                </div>
-
-                <!-- 2. Normalization -->
-                <div class="proc-option">
-                    <label class="proc-option-header">
-                        <input type="checkbox" id="proc-norm" onchange="toggleNormOpts();updateProcessingPreview()">
-                        <div>
-                            <div class="proc-option-label">Normalization</div>
-                            <div class="proc-option-desc">Normalize values across samples</div>
-                        </div>
-                    </label>
-                    <div class="proc-option-body hidden" id="norm-opts">
-                        <div class="proc-sub">
-                            <div class="proc-sub-label">Normalization scope</div>
-                            <select id="norm-scope" onchange="updateProcessingPreview()">
-                                <option value="all">Across all detected peptides</option>
-                                <option value="species">Within a given species</option>
-                            </select>
-                        </div>
-                        <div class="proc-sub hidden" id="norm-species-input">
-                            <div class="proc-sub-label">Species name</div>
-                            <input type="text" id="norm-species" placeholder="e.g. Homo sapiens" onchange="updateProcessingPreview()">
-                        </div>
-                        <div class="proc-sub" style="margin-top:10px">
-                            <label class="proc-option-header" style="padding:6px 0;cursor:pointer">
-                                <input type="checkbox" id="norm-remove-contam" onchange="updateProcessingPreview()">
-                                <div>
-                                    <div class="proc-option-label" style="font-size:12px">Remove contaminants before normalizing</div>
-                                </div>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 3. Prune Peptides -->
-                <div class="proc-option">
-                    <label class="proc-option-header">
-                        <input type="checkbox" id="proc-prune" onchange="togglePruneOpts();updateProcessingPreview()">
-                        <div>
-                            <div class="proc-option-label">Prune Peptides Below Threshold</div>
-                            <div class="proc-option-desc">Filter out low-abundance proteins</div>
-                        </div>
-                    </label>
-                    <div class="proc-option-body hidden" id="prune-opts">
-                        <div class="sentence-builder">
-                            <span>Peptides will not be analyzed if their</span>
-                            <select id="prune-metric" onchange="updateProcessingPreview()">
-                                <option value="spectral">spectral counts</option>
-                                <option value="intensity">minimum intensity</option>
-                            </select>
-                            <span>is below</span>
-                            <input type="number" id="prune-value" value="2" min="0" step="1" onchange="updateProcessingPreview()">
-                            <select id="prune-agg" onchange="updateProcessingPreview()">
-                                <option value="total">in total</option>
-                                <option value="average">on average</option>
-                                <option value="any">in any sample</option>
-                            </select>
-                            <select id="prune-scope" onchange="togglePruneGroupSelect();updateProcessingPreview()">
-                                <option value="all">across all groups</option>
-                                <option value="any">across any group</option>
-                                <option value="specified">across a specified group</option>
-                            </select>
-                            <select id="prune-group" class="sb-group-select hidden" onchange="updateProcessingPreview()">
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
+        <div class="upload-error" id="upload-error"></div>
+    </div>
+    <div id="grouping-section" class="hidden">
+        <div class="panel-section">
+            <div class="section-label">Assign Samples to Groups</div>
+            <div class="unassigned-pool" id="unassigned-pool">
+                <div class="pool-header"><span>Unassigned</span><span class="pool-count" id="unassigned-count">0</span></div>
+                <div class="sample-area" id="unassigned-area" data-target="unassigned"></div>
             </div>
+            <div id="bins-container"></div>
+            <button class="add-group-btn" onclick="addBin()">+ Add Group</button>
+            <button class="btn-primary" id="continue-btn" disabled style="margin-top:14px">Continue to Processing</button>
         </div>
-
-    </aside>
-
-    <!-- Divider -->
-    <div id="divider"></div>
-
-    <!-- Right Panel -->
-    <main id="right-panel">
-        <!-- Welcome (before data) -->
-        <div class="right-content" id="right-welcome">
-            <div class="welcome-card">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-                    <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-                    <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-                </svg>
-                <div class="wc-text">Data visualization will appear here</div>
-            </div>
-        </div>
-
-        <!-- Data summary (after upload, for upload tab) -->
-        <div class="right-content hidden" id="right-summary">
-            <div class="summary-grid" id="summary-grid"></div>
-            <div id="sample-chart"></div>
-        </div>
-
-        <!-- Processing preview (for processing tab) -->
-        <div class="right-content hidden" id="right-processing">
-            <div class="proc-preview">
-                <h3>Processing Pipeline Preview</h3>
-                <div id="proc-steps">
-                    <div style="color:var(--text-sec);font-size:13px;padding:12px 0">
-                        Select processing options on the left to build your pipeline.
-                    </div>
-                </div>
-            </div>
-        </div>
-    </main>
+    </div>
 </div>
 
-<!-- Status Bar -->
-<div id="statusbar">
-    <span><span class="status-dot" id="status-dot"></span><span id="status-text">No data loaded</span></span>
-    <span id="status-groups"></span>
+<!-- ── PROCESSING TAB ── -->
+<div class="tab-panel hidden" data-for="processing">
+    <div class="panel-section">
+        <div class="section-label">Data Processing Options</div>
+        <div class="proc-option">
+            <label class="proc-option-header"><input type="checkbox" id="proc-lfq" onchange="updateProcPreview()"><div><div class="proc-option-label">LFQ Analysis</div><div class="proc-option-desc">Use label-free quantification intensities</div></div></label>
+        </div>
+        <div class="proc-option">
+            <div class="proc-option-header" style="cursor:default">
+                <div style="width:15px;flex-shrink:0"></div>
+                <div>
+                    <div class="proc-option-label">Group Aggregation</div>
+                    <div class="proc-option-desc">How replicate values within a group are combined</div>
+                </div>
+            </div>
+            <div style="padding:0 12px 12px 37px">
+                <select id="proc-agg" onchange="updateProcPreview()">
+                    <option value="average">Averages (default)</option>
+                    <option value="sum">Sums</option>
+                </select>
+                <div id="agg-warn" class="hidden" style="margin-top:6px;font-size:11px;color:var(--warning)">Note: Statistical tests (t-test, p-values, volcano plots) cannot be performed when using sums, as individual replicate variance is lost.</div>
+            </div>
+        </div>
+        <div class="proc-option">
+            <label class="proc-option-header"><input type="checkbox" id="proc-norm" onchange="toggleNorm();updateProcPreview()"><div><div class="proc-option-label">Normalization</div><div class="proc-option-desc">Normalize values across samples</div></div></label>
+            <div class="proc-option-body hidden" id="norm-opts">
+                <div class="proc-sub"><div class="proc-sub-label">Normalization scope</div>
+                    <select id="norm-scope" onchange="toggleNormOrg();updateProcPreview()"><option value="all">Across all detected peptides</option><option value="organism">Within a given organism</option></select>
+                </div>
+                <div class="proc-sub hidden" id="norm-org-panel">
+                    <div class="proc-sub-label">Select organism(s) by locus tag prefix</div>
+                    <div id="norm-org-list" style="max-height:160px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:4px;margin-top:4px"></div>
+                </div>
+                <div class="proc-sub" style="margin-top:10px">
+                    <label class="proc-option-header" style="padding:6px 0"><input type="checkbox" id="norm-rm-contam" onchange="updateProcPreview()"><div><div class="proc-option-label" style="font-size:12px">Remove contaminants before normalizing</div></div></label>
+                </div>
+            </div>
+        </div>
+        <div class="proc-option">
+            <label class="proc-option-header"><input type="checkbox" id="proc-prune" onchange="togglePrune();updateProcPreview()"><div><div class="proc-option-label">Prune Peptides Below Threshold</div><div class="proc-option-desc">Filter out low-abundance proteins</div></div></label>
+            <div class="proc-option-body hidden" id="prune-opts">
+                <div class="sentence-builder">
+                    <span>Peptides will not be analyzed if their</span>
+                    <select id="prune-metric" onchange="updateProcPreview()"><option value="spectral">spectral counts</option><option value="intensity">minimum intensity</option></select>
+                    <span>is below</span><input type="number" id="prune-value" value="2" min="0" step="1" onchange="updateProcPreview()">
+                    <select id="prune-agg" onchange="updateProcPreview()"><option value="total">in total</option><option value="average">on average</option><option value="any">in any sample</option></select>
+                    <select id="prune-scope" onchange="togglePruneGrp();updateProcPreview()"><option value="all">across all groups</option><option value="any">across any group</option><option value="specified">across a specified group</option></select>
+                    <select id="prune-group" class="hidden" onchange="updateProcPreview()"></select>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+
+<!-- ── ANALYSIS TAB ── -->
+<div class="tab-panel hidden" data-for="analysis">
+    <div class="panel-section">
+        <div class="section-label">Saved Analyses</div>
+        <div id="ana-list"></div>
+        <div id="ana-form-wrap"></div>
+        <button class="btn-primary" onclick="showAnaForm()" style="margin-top:6px">+ New Analysis</button>
+    </div>
+    <div class="collapse-sec open" style="border-top:1px solid var(--border)">
+        <div class="collapse-hdr" onclick="this.parentElement.classList.toggle('open')">Derived Groups <span class="chev">&#9656;</span></div>
+        <div class="collapse-body">
+            <div style="display:flex;gap:6px;margin-bottom:6px">
+                <select id="dg-left" style="flex:1"></select>
+                <select id="dg-op" style="width:50px;flex:none"><option value="divide">/</option><option value="subtract">-</option><option value="add">+</option><option value="multiply">*</option></select>
+                <select id="dg-right" style="flex:1"></select>
+            </div>
+            <div style="display:flex;gap:6px"><input type="text" id="dg-name" placeholder="Name" style="flex:1"><button class="btn-sm" onclick="createDerived()">Create</button></div>
+            <div id="dg-list" style="margin-top:8px"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ── VISUALIZATION TAB ── -->
+<div class="tab-panel hidden" data-for="visualization">
+    <div class="panel-section">
+        <div class="section-label">Add Visualization</div>
+        <div id="viz-palette">
+            <div class="viz-card" draggable="true" data-vtype="enrichment" onclick="showVizConfig('enrichment')"><div class="vc-icon">&#8596;</div><div><div class="vc-name">Ranked Enrichment</div><div class="vc-desc">Log2 fold enrichment, rank order</div></div></div>
+            <div class="viz-card" draggable="true" data-vtype="unique" onclick="showVizConfig('unique')"><div class="vc-icon">&#9673;</div><div><div class="vc-name">Unique Proteins</div><div class="vc-desc">Proteins in one group but not others</div></div></div>
+            <div class="viz-card" draggable="true" data-vtype="volcano" onclick="showVizConfig('volcano')"><div class="vc-icon">&#9651;</div><div><div class="vc-name">Volcano Plot</div><div class="vc-desc">Fold-change vs FDR-adjusted P-value</div></div></div>
+            <div class="viz-card" draggable="true" data-vtype="dotplot" onclick="showVizConfig('dotplot')"><div class="vc-icon">&#8226;&#8226;</div><div><div class="vc-name">Dot Plot</div><div class="vc-desc">Abundance in group X vs group Y</div></div></div>
+            <div class="viz-card" draggable="true" data-vtype="pca" onclick="showVizConfig('pca')"><div class="vc-icon">&#10038;</div><div><div class="vc-name">PCA</div><div class="vc-desc">Principal component analysis of samples</div></div></div>
+        </div>
+        <div id="viz-config-area"></div>
+    </div>
+</div>
+
+</aside>
+<div id="divider"></div>
+<main id="right-panel">
+    <div id="right-welcome" class="welcome-card">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <div class="wc-text">Data visualization will appear here</div>
+    </div>
+    <div id="canvas-wrap" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div class="export-bar">
+            <button class="btn-sm" onclick="exportAllSVG()">Export SVG</button>
+            <button class="btn-sm" onclick="exportAllPNG()">Export PNG</button>
+            <button class="btn-sm" onclick="exportCSV()">Export CSV</button>
+            <span class="spacer"></span>
+        </div>
+        <div id="canvas" class="empty-canvas">
+            <div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>
+        </div>
+    </div>
+</main>
+</div>
+<div id="statusbar"><span><span class="status-dot"></span><span id="status-text">No data loaded</span></span><span id="status-groups"></span></div>
 
 <script>
-// ====================================================================
+// ================================================================
 // STATE
-// ====================================================================
-let RAW = null;
-const COLORS = ['#58a6ff','#f85149','#3fb950','#d29922','#bc8cff','#ff7b72','#7ee787',
-    '#79c0ff','#d2a8ff','#ffa657','#f0883e','#a5d6ff','#ffd8b5','#56d364','#db61a2'];
+// ================================================================
+// RAW, pendingFile declared in early script block
+const COLORS=['#58a6ff','#f85149','#3fb950','#d29922','#bc8cff','#ff7b72','#7ee787','#79c0ff','#d2a8ff','#ffa657','#f0883e','#a5d6ff','#ffd8b5','#56d364','#db61a2'];
+var UNASSIGNED=[], BINS=[], SELECTED=new Set(), nextBinId=1, SAMPLE_COLORS={};
+var ACTIVE_TAB='upload';
+var ANALYSES=[];    // [{id,name,groupX,groupY}]
+var DERIVED=[];     // [{name,op,left,right}]
+var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
+var nextAnaId=1, nextPlotId=1;
+const PL={paper_bgcolor:'#0d1117',plot_bgcolor:'#161b22',font:{family:'Inter,system-ui',color:'#e6edf3',size:12},margin:{l:55,r:20,t:10,b:65},dragmode:false,xaxis:{gridcolor:'#21262d',zerolinecolor:'#30363d',linecolor:'#30363d',fixedrange:true},yaxis:{gridcolor:'#21262d',zerolinecolor:'#30363d',linecolor:'#30363d',fixedrange:true},hoverlabel:{bgcolor:'#21262d',bordercolor:'#30363d',font:{color:'#e6edf3',family:'Inter,system-ui',size:12}}};
 
-// Sample grouping state
-let UNASSIGNED = [];          // sample names not in any bin
-let BINS = [];                // [{id, label, color, samples:[]}]
-let SELECTED = new Set();     // currently selected sample names
-let nextBinId = 1;
+// ================================================================
+// DIVIDER
+// ================================================================
+(function(){const d=document.getElementById('divider'),l=document.getElementById('left-panel');let dr=false,sx=0,sw=0;
+d.addEventListener('mousedown',e=>{dr=true;sx=e.clientX;sw=l.offsetWidth;d.classList.add('dragging');document.body.style.cursor='col-resize';document.body.style.userSelect='none';e.preventDefault()});
+document.addEventListener('mousemove',e=>{if(!dr)return;const w=Math.max(260,Math.min(700,sw+(e.clientX-sx)));l.style.width=w+'px';l.style.minWidth=w+'px'});
+document.addEventListener('mouseup',()=>{if(!dr)return;dr=false;d.classList.remove('dragging');document.body.style.cursor='';document.body.style.userSelect='';resizeAllPlots()})})();
 
-// Per-sample colors (based on auto-detected group prefix)
-let SAMPLE_COLORS = {};       // {sampleName: color}
+function resizeAllPlots(){CANVAS_PLOTS.forEach(p=>{const el=document.getElementById(p.plotId);if(el&&el.data)Plotly.Plots.resize(el)})}
+window.addEventListener('resize',resizeAllPlots);
 
-// Active tab
-let ACTIVE_TAB = 'upload';
-
-// Layout constants
-const PLOTLY_LAYOUT_BASE = {
-    paper_bgcolor: '#0d1117', plot_bgcolor: '#161b22',
-    font: { family: 'Inter, system-ui, sans-serif', color: '#e6edf3', size: 12 },
-    margin: { l: 50, r: 20, t: 30, b: 70 },
-    xaxis: { gridcolor: '#21262d', zerolinecolor: '#30363d', linecolor: '#30363d' },
-    yaxis: { gridcolor: '#21262d', zerolinecolor: '#30363d', linecolor: '#30363d' },
-    hoverlabel: { bgcolor: '#21262d', bordercolor: '#30363d',
-        font: { color: '#e6edf3', family: 'Inter, system-ui', size: 12 } },
-};
-
-// ====================================================================
-// RESIZABLE DIVIDER
-// ====================================================================
-(function() {
-    const divider = document.getElementById('divider');
-    const left = document.getElementById('left-panel');
-    let dragging = false, startX = 0, startW = 0;
-
-    divider.addEventListener('mousedown', e => {
-        dragging = true; startX = e.clientX; startW = left.offsetWidth;
-        divider.classList.add('dragging');
-        document.body.style.cursor = 'col-resize';
-        document.body.style.userSelect = 'none';
-        e.preventDefault();
-    });
-    document.addEventListener('mousemove', e => {
-        if (!dragging) return;
-        const w = Math.max(260, Math.min(700, startW + (e.clientX - startX)));
-        left.style.width = w + 'px';
-        left.style.minWidth = w + 'px';
-        // Resize any active plotly charts
-        const charts = document.querySelectorAll('#sample-chart, #plot');
-        charts.forEach(c => { if (c && c.data) Plotly.Plots.resize(c); });
-    });
-    document.addEventListener('mouseup', () => {
-        if (!dragging) return;
-        dragging = false;
-        divider.classList.remove('dragging');
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        const charts = document.querySelectorAll('#sample-chart, #plot');
-        charts.forEach(c => { if (c && c.data) Plotly.Plots.resize(c); });
-    });
-})();
-
-// ====================================================================
-// TAB MANAGEMENT
-// ====================================================================
-function switchTab(tab) {
-    ACTIVE_TAB = tab;
-    document.querySelectorAll('.tab-btn').forEach(b =>
-        b.classList.toggle('active', b.dataset.tab === tab));
-    document.querySelectorAll('.tab-panel').forEach(p =>
-        p.classList.toggle('hidden', p.dataset.for !== tab));
-
-    // Right panel switching
-    document.getElementById('right-welcome').classList.add('hidden');
-    document.getElementById('right-summary').classList.add('hidden');
-    document.getElementById('right-processing').classList.add('hidden');
-
-    if (tab === 'upload') {
-        if (RAW) document.getElementById('right-summary').classList.remove('hidden');
-        else document.getElementById('right-welcome').classList.remove('hidden');
-    } else if (tab === 'processing') {
-        document.getElementById('right-processing').classList.remove('hidden');
-        updateProcessingPreview();
-    }
+// ================================================================
+// TABS
+// ================================================================
+function switchTab(tab){
+    ACTIVE_TAB=tab;
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('hidden',p.dataset.for!==tab));
+    if(tab==='analysis'){buildProcessedData();populateGroupSelects();renderAnaList()}
+    if(tab==='visualization'){buildProcessedData();populateGroupSelects()}
+    setTimeout(resizeAllPlots,60);
 }
 
-// ====================================================================
+// ================================================================
 // FILE UPLOAD
-// ====================================================================
-const uploadZone = document.getElementById('upload-zone');
-const fileInput = document.getElementById('file-input');
+// ================================================================
+const uploadZone=document.getElementById('upload-zone'), fileInput=document.getElementById('file-input');
+uploadZone.addEventListener('click',()=>fileInput.click());
+uploadZone.addEventListener('dragover',e=>{e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='copy';uploadZone.classList.add('dragover')},false);
+uploadZone.addEventListener('dragleave',e=>{e.preventDefault();uploadZone.classList.remove('dragover')},false);
+uploadZone.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();uploadZone.classList.remove('dragover');if(e.dataTransfer.files.length)handleIncoming(e.dataTransfer.files[0])},false);
+fileInput.addEventListener('change',()=>{if(fileInput.files.length){handleIncoming(fileInput.files[0]);fileInput.value=''}});
 
-uploadZone.addEventListener('click', () => fileInput.click());
-uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
-uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
-uploadZone.addEventListener('drop', e => {
-    e.preventDefault(); uploadZone.classList.remove('dragover');
-    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
-});
-fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+// Global drag intercept — catch file drops anywhere on the page
+// Use Array.from on types (DOMStringList) for cross-browser compat
+function hasFileType(dt){try{return dt&&dt.types&&Array.from(dt.types).includes('Files')}catch(e){return false}}
+document.addEventListener('dragover',e=>{if(hasFileType(e.dataTransfer)){e.preventDefault();e.dataTransfer.dropEffect='copy'}},false);
+document.addEventListener('drop',e=>{if(!hasFileType(e.dataTransfer))return;e.preventDefault();e.stopPropagation();if(e.dataTransfer.files.length)handleIncoming(e.dataTransfer.files[0])},false);
 
-async function handleFile(file) {
-    document.getElementById('upload-error').textContent = '';
-    const form = new FormData();
-    form.append('file', file);
-    try {
-        const resp = await fetch('/api/upload', { method: 'POST', body: form });
-        if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || 'Upload failed'); }
-        RAW = await resp.json();
-        initGrouping();
-    } catch (e) {
-        document.getElementById('upload-error').textContent = e.message;
-    }
+// handleIncoming and uploadFile defined in early script block
+function closeFileModal(){pendingFile=null;document.getElementById('file-modal').classList.add('hidden')}
+function fileModalReplace(){document.getElementById('file-modal').classList.add('hidden');resetState();uploadFile(pendingFile,false);pendingFile=null}
+function fileModalAppend(){document.getElementById('file-modal').classList.add('hidden');uploadFile(pendingFile,true);pendingFile=null}
+
+function resetState(){RAW=null;BINS=[];UNASSIGNED=[];ANALYSES=[];DERIVED=[];CANVAS_PLOTS=[];nextBinId=1;nextAnaId=1;nextPlotId=1;SELECTED.clear();
+    document.getElementById('canvas').innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>';
+    document.getElementById('canvas').classList.add('empty-canvas');
+    document.getElementById('canvas-wrap').classList.add('hidden');document.getElementById('right-welcome').classList.remove('hidden');
+    document.getElementById('upload-section').classList.remove('hidden');
+    document.getElementById('grouping-section').classList.add('hidden');
+    document.getElementById('compact-upload').classList.add('hidden');
+    ['tab-processing','tab-analysis','tab-viz'].forEach(id=>document.getElementById(id).disabled=true);
 }
 
-// Try auto-load
-(async function () {
-    try {
-        const resp = await fetch('/api/data');
-        if (resp.ok) { RAW = await resp.json(); if (RAW.proteins) initGrouping(); }
-    } catch (e) { }
-})();
-
-// ====================================================================
-// GROUPING INIT
-// ====================================================================
-function initGrouping() {
-    // Assign colors to samples based on group prefix
-    SAMPLE_COLORS = {};
-    let ci = 0;
-    const prefixColors = {};
-    RAW.samples.forEach(s => {
-        const prefix = s.match(/^[A-Za-z]+/)?.[0] || 'X';
-        if (!prefixColors[prefix]) { prefixColors[prefix] = COLORS[ci++ % COLORS.length]; }
-        SAMPLE_COLORS[s] = prefixColors[prefix];
+function mergeData(newData){
+    // Append new samples to existing data
+    const existingSamples=new Set(RAW.samples);
+    const newSamples=newData.samples.filter(s=>!existingSamples.has(s));
+    if(!newSamples.length){alert('No new samples found in file');return}
+    RAW.samples.push(...newSamples);
+    newSamples.forEach(s=>{
+        RAW.quant_types.forEach(qt=>{
+            if(newData.quant_data[qt]&&newData.quant_data[qt][s]){
+                // Pad with zeros if protein counts differ
+                const vals=newData.quant_data[qt][s];
+                while(vals.length<RAW.proteins.length)vals.push(0);
+                RAW.quant_data[qt][s]=vals.slice(0,RAW.proteins.length);
+            }else{
+                RAW.quant_data[qt][s]=new Array(RAW.proteins.length).fill(0);
+            }
+        });
     });
-
-    // Auto-create bins from suggested groups, samples pre-assigned
-    BINS = [];
-    UNASSIGNED = [];
-    nextBinId = 1;
-    const assigned = new Set();
-
-    for (const [name, samples] of Object.entries(RAW.suggested_groups)) {
-        const color = SAMPLE_COLORS[samples[0]] || COLORS[(nextBinId - 1) % COLORS.length];
-        BINS.push({ id: nextBinId++, label: name, color, samples: [...samples] });
-        samples.forEach(s => assigned.add(s));
+    for(const[prefix,samples]of Object.entries(newData.suggested_groups)){
+        const newInGroup=samples.filter(s=>newSamples.includes(s));
+        if(newInGroup.length){
+            if(RAW.suggested_groups[prefix])RAW.suggested_groups[prefix].push(...newInGroup);
+            else RAW.suggested_groups[prefix]=newInGroup;
+        }
     }
-    UNASSIGNED = RAW.samples.filter(s => !assigned.has(s));
+    RAW.total_proteins=RAW.proteins.length;
+    RAW.filename+=' + '+newData.filename;
+}
 
-    // Show grouping UI, hide upload section
+(async function(){try{const r=await fetch('/api/data');if(r.ok){RAW=await r.json();if(RAW.proteins)initGrouping()}}catch(e){}})();
+
+// ================================================================
+// GROUPING
+// ================================================================
+function initGrouping(){
+    SAMPLE_COLORS={};let ci=0;const pc={};
+    RAW.samples.forEach(s=>{const px=s.match(/^[A-Za-z]+/)?.[0]||'X';if(!pc[px])pc[px]=COLORS[ci++%COLORS.length];SAMPLE_COLORS[s]=pc[px]});
+    BINS=[];UNASSIGNED=[];nextBinId=1;const assigned=new Set();
+    for(const[name,samples]of Object.entries(RAW.suggested_groups)){
+        const color=SAMPLE_COLORS[samples[0]]||COLORS[(nextBinId-1)%COLORS.length];
+        BINS.push({id:nextBinId++,label:name,color,samples:[...samples]});samples.forEach(s=>assigned.add(s));
+    }
+    UNASSIGNED=RAW.samples.filter(s=>!assigned.has(s));
     document.getElementById('upload-section').classList.add('hidden');
     document.getElementById('grouping-section').classList.remove('hidden');
-
-    // Show right panel summary
-    document.getElementById('right-welcome').classList.add('hidden');
-    document.getElementById('right-summary').classList.remove('hidden');
-
-    renderAll();
-    startHeartbeat();
+    document.getElementById('compact-upload').classList.remove('hidden');
+    document.getElementById('cu-filename').textContent=RAW.filename;
+    buildProcessedData();
+    renderAll();startHeartbeat();
 }
 
-// ====================================================================
-// RENDER
-// ====================================================================
-function renderAll() {
-    renderUnassigned();
-    renderBins();
-    renderSummary();
-    renderSampleChart();
-    updateStatus();
-    updateContinueBtn();
+function renderAll(){renderUnassigned();renderBins();updateStatus();updateContinueBtn();buildProcessedData();refreshAllPlots()}
+
+function createChip(sample){
+    const c=document.createElement('div');c.className='sample-chip'+(SELECTED.has(sample)?' selected':'');c.dataset.sample=sample;c.draggable=true;
+    c.innerHTML=`<span class="chip-dot" style="background:${SAMPLE_COLORS[sample]||'#8b949e'}"></span>${sample}`;
+    c.addEventListener('mousedown',()=>{c._wasClick=true});
+    c.addEventListener('click',e=>{if(!c._wasClick)return;if(e.ctrlKey||e.metaKey){toggleSel(sample)}else{if(SELECTED.size===1&&SELECTED.has(sample))SELECTED.clear();else{SELECTED.clear();SELECTED.add(sample)}updateChipSel()}});
+    c.addEventListener('dragstart',e=>{c._wasClick=false;if(!SELECTED.has(sample)){SELECTED.clear();SELECTED.add(sample);updateChipSel()}
+        e.dataTransfer.setData('application/json',JSON.stringify({samples:[...SELECTED],source:findSource(sample)}));e.dataTransfer.effectAllowed='move';
+        const g=document.createElement('div');g.style.cssText='position:fixed;top:-100px;padding:4px 12px;background:#58a6ff;color:#fff;border-radius:12px;font-size:12px;font-weight:600';g.textContent=SELECTED.size>1?SELECTED.size+' samples':sample;document.body.appendChild(g);e.dataTransfer.setDragImage(g,g.offsetWidth/2,14);requestAnimationFrame(()=>g.remove());
+        SELECTED.forEach(s=>{const el=document.querySelector(`.sample-chip[data-sample="${s}"]`);if(el)el.classList.add('dragging')})});
+    c.addEventListener('dragend',()=>{document.querySelectorAll('.dragging').forEach(x=>x.classList.remove('dragging'));document.querySelectorAll('.drag-over').forEach(x=>x.classList.remove('drag-over'))});
+    return c;
+}
+function renderUnassigned(){const a=document.getElementById('unassigned-area');a.innerHTML='';UNASSIGNED.forEach(s=>a.appendChild(createChip(s)));document.getElementById('unassigned-count').textContent=UNASSIGNED.length}
+function renderBins(){const c=document.getElementById('bins-container');c.innerHTML='';BINS.forEach(bin=>{
+    const card=document.createElement('div');card.className='bin-card';card.dataset.binId=bin.id;
+    const hdr=document.createElement('div');hdr.className='bin-header';
+    hdr.innerHTML=`<input type="color" class="bin-color" value="${bin.color}"><input class="bin-label" value="${bin.label}" spellcheck="false"><span class="bin-sample-count">${bin.samples.length}</span><button class="bin-delete">&times;</button>`;
+    card.appendChild(hdr);
+    hdr.querySelector('.bin-color').addEventListener('input',e=>{bin.color=e.target.value});
+    hdr.querySelector('.bin-label').addEventListener('change',e=>{bin.label=e.target.value.trim()||bin.label});
+    hdr.querySelector('.bin-delete').addEventListener('click',()=>{UNASSIGNED.push(...bin.samples);BINS=BINS.filter(b=>b.id!==bin.id);SELECTED.clear();renderAll()});
+    const body=document.createElement('div');body.className='sample-area bin-body'+(bin.samples.length===0?' empty-hint':'');body.dataset.target=String(bin.id);
+    bin.samples.forEach(s=>body.appendChild(createChip(s)));card.appendChild(body);setupDropTarget(body,bin.id);c.appendChild(card)})}
+function updateChipSel(){document.querySelectorAll('.sample-chip').forEach(c=>c.classList.toggle('selected',SELECTED.has(c.dataset.sample)))}
+function toggleSel(s){if(SELECTED.has(s))SELECTED.delete(s);else SELECTED.add(s);updateChipSel()}
+function findSource(s){if(UNASSIGNED.includes(s))return'unassigned';for(const b of BINS)if(b.samples.includes(s))return b.id;return'unassigned'}
+function setupDropTarget(el,tid){
+    el.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='move';el.closest('.bin-card')?.classList.add('drag-over')});
+    el.addEventListener('dragleave',e=>{if(!el.contains(e.relatedTarget))el.closest('.bin-card')?.classList.remove('drag-over')});
+    el.addEventListener('drop',e=>{e.preventDefault();el.closest('.bin-card')?.classList.remove('drag-over');try{const d=JSON.parse(e.dataTransfer.getData('application/json'));moveSamples(d.samples,tid)}catch(er){}})}
+(function(){const pool=document.getElementById('unassigned-area');
+    pool.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='move';pool.closest('.unassigned-pool')?.classList.add('drag-over')});
+    pool.addEventListener('dragleave',e=>{if(!pool.contains(e.relatedTarget))pool.closest('.unassigned-pool')?.classList.remove('drag-over')});
+    pool.addEventListener('drop',e=>{e.preventDefault();pool.closest('.unassigned-pool')?.classList.remove('drag-over');try{const d=JSON.parse(e.dataTransfer.getData('application/json'));moveSamples(d.samples,'unassigned')}catch(er){}})})();
+function moveSamples(names,tid){names.forEach(s=>{UNASSIGNED=UNASSIGNED.filter(u=>u!==s);BINS.forEach(b=>{b.samples=b.samples.filter(x=>x!==s)});if(tid==='unassigned')UNASSIGNED.push(s);else{const b=BINS.find(b=>b.id===tid);if(b)b.samples.push(s)}});SELECTED.clear();renderAll()}
+
+// Rubber-band
+let rbActive=false,rbSX=0,rbSY=0,rbEl=null,rbArea=null;
+document.addEventListener('mousedown',e=>{const a=e.target.closest('.sample-area');if(!a||e.target.closest('.sample-chip'))return;rbActive=true;rbSX=e.clientX;rbSY=e.clientY;rbArea=a;rbEl=document.createElement('div');rbEl.className='rubber-band';document.body.appendChild(rbEl);if(!e.ctrlKey&&!e.metaKey)SELECTED.clear();updateChipSel();e.preventDefault()});
+document.addEventListener('mousemove',e=>{if(!rbActive)return;const x=Math.min(e.clientX,rbSX),y=Math.min(e.clientY,rbSY),w=Math.abs(e.clientX-rbSX),h=Math.abs(e.clientY-rbSY);rbEl.style.left=x+'px';rbEl.style.top=y+'px';rbEl.style.width=w+'px';rbEl.style.height=h+'px';const r={left:x,top:y,right:x+w,bottom:y+h};rbArea.querySelectorAll('.sample-chip').forEach(ch=>{const cr=ch.getBoundingClientRect();if(!(cr.right<r.left||cr.left>r.right||cr.bottom<r.top||cr.top>r.bottom))SELECTED.add(ch.dataset.sample)});updateChipSel()});
+document.addEventListener('mouseup',()=>{if(!rbActive)return;rbActive=false;if(rbEl){rbEl.remove();rbEl=null}rbArea=null});
+
+function addBin(){const id=nextBinId++;let i=BINS.length+1,lbl='Group '+i;while(BINS.some(b=>b.label===lbl)){i++;lbl='Group '+i}BINS.push({id,label:lbl,color:COLORS[(id-1)%COLORS.length],samples:[]});renderAll()}
+function updateContinueBtn(){const ok=BINS.filter(b=>b.samples.length>0).length>=2;document.getElementById('continue-btn').disabled=!ok;['tab-processing','tab-analysis','tab-viz'].forEach(id=>document.getElementById(id).disabled=!ok)}
+document.getElementById('continue-btn').addEventListener('click',()=>{populatePruneGrp();switchTab('processing')});
+function updateStatus(){if(!RAW)return;const filtered=PROC_FIDX.length;const removed=RAW.total_proteins-filtered;document.getElementById('status-text').textContent=filtered+' proteins'+(removed>0?' ('+removed+' filtered)':'');const a=BINS.reduce((n,b)=>n+b.samples.length,0);document.getElementById('status-groups').textContent=BINS.length+' groups | '+a+'/'+RAW.samples.length+' assigned'}
+function startHeartbeat(){setInterval(()=>fetch('/api/heartbeat').catch(()=>{}),10000)}
+
+// ================================================================
+// PROCESSING
+// ================================================================
+function toggleNorm(){document.getElementById('norm-opts').classList.toggle('hidden',!document.getElementById('proc-norm').checked);toggleNormOrg()}
+function toggleNormOrg(){const show=document.getElementById('proc-norm').checked&&document.getElementById('norm-scope').value==='organism';document.getElementById('norm-org-panel').classList.toggle('hidden',!show);if(show)populateNormOrg()}
+function populateNormOrg(){if(!RAW)return;const c=document.getElementById('norm-org-list');const prefixes=new Set();RAW.proteins.forEach(p=>{const m=(p.majority_id||p.id||'').match(/^([A-Za-z][A-Za-z0-9]*_)/);if(m)prefixes.add(m[1])});const sorted=[...prefixes].sort();
+    const counts={};sorted.forEach(px=>{counts[px]=0});RAW.proteins.forEach(p=>{const m=(p.majority_id||p.id||'').match(/^([A-Za-z][A-Za-z0-9]*_)/);if(m&&counts[m[1]]!==undefined)counts[m[1]]++});
+    const prev=new Set();c.querySelectorAll('input:checked').forEach(cb=>prev.add(cb.value));
+    c.innerHTML=sorted.map(px=>`<label class="checkbox-row" style="padding:3px 4px"><input type="checkbox" value="${px}" ${prev.has(px)?'checked':''} onchange="updateProcPreview()"><span style="font-size:12px;font-family:monospace;color:var(--accent)">${px}</span><span style="font-size:10px;color:var(--text-sec);margin-left:auto">${counts[px]}</span></label>`).join('')}
+function getSelOrgs(){return[...document.querySelectorAll('#norm-org-list input:checked')].map(cb=>cb.value)}
+function togglePrune(){document.getElementById('prune-opts').classList.toggle('hidden',!document.getElementById('proc-prune').checked)}
+function togglePruneGrp(){document.getElementById('prune-group').classList.toggle('hidden',document.getElementById('prune-scope').value!=='specified')}
+function populatePruneGrp(){const s=document.getElementById('prune-group');s.innerHTML='';BINS.filter(b=>b.samples.length>0).forEach(b=>{const o=document.createElement('option');o.value=b.label;o.textContent=b.label;s.appendChild(o)})}
+function updateProcPreview(){
+    // Show/hide sums warning
+    const isSums = document.getElementById('proc-agg')?.value === 'sum';
+    document.getElementById('agg-warn')?.classList.toggle('hidden', !isSums);
+    // Rebuild the processed data from all upstream settings and re-render all canvas plots
+    buildProcessedData();
+    refreshAllPlots();
 }
 
-function createChip(sample) {
-    const chip = document.createElement('div');
-    chip.className = 'sample-chip' + (SELECTED.has(sample) ? ' selected' : '');
-    chip.dataset.sample = sample;
-    chip.draggable = true;
-    chip.innerHTML = `<span class="chip-dot" style="background:${SAMPLE_COLORS[sample] || '#8b949e'}"></span>${sample}`;
+function refreshAllPlots(){
+    if(!RAW || !CANVAS_PLOTS.length) return;
+    const {data:qd} = getQData();
+    const fidx = getFilteredIdx();
+    CANVAS_PLOTS.forEach(p => renderPlot(p, qd, fidx));
+}
 
-    // Click to toggle selection
-    chip.addEventListener('mousedown', e => {
-        // Record for distinguishing click from drag
-        chip._clickX = e.clientX; chip._clickY = e.clientY; chip._wasClick = true;
+// ================================================================
+// ANALYSIS — SAVED ANALYSES
+// ================================================================
+function populateGroupSelects(){
+    const names=BINS.filter(b=>b.samples.length>0).map(b=>b.label);
+    DERIVED.forEach(d=>names.push(d.name));
+    const opts=names.map(n=>`<option value="${n}">${n}</option>`).join('');
+    ['dg-left','dg-right'].forEach(id=>{const s=document.getElementById(id);const p=s.value;s.innerHTML=opts;if(names.includes(p))s.value=p});
+}
+function renderAnaList(){
+    const c=document.getElementById('ana-list');c.innerHTML='';
+    ANALYSES.forEach(a=>{
+        c.innerHTML+=`<div class="ana-item"><div style="flex:1"><div class="ana-name">${a.name}</div><div class="ana-desc">${a.groupX} vs ${a.groupY}</div></div><button class="ana-del" onclick="deleteAna(${a.id})">&times;</button></div>`;
     });
-    chip.addEventListener('click', e => {
-        if (!chip._wasClick) return;
-        if (e.ctrlKey || e.metaKey) {
-            toggleSelect(sample);
-        } else {
-            // Select only this one (or deselect if already only selection)
-            if (SELECTED.size === 1 && SELECTED.has(sample)) {
-                SELECTED.clear();
-            } else {
-                SELECTED.clear();
-                SELECTED.add(sample);
-            }
-            updateChipSelections();
+}
+function showAnaForm(){
+    const names=BINS.filter(b=>b.samples.length>0).map(b=>b.label);
+    DERIVED.forEach(d=>names.push(d.name));
+    const opts=names.map(n=>`<option value="${n}">${n}</option>`).join('');
+    document.getElementById('ana-form-wrap').innerHTML=`<div class="ana-form">
+        <div class="af-row"><span class="af-lbl">Analysis Name</span><input type="text" id="af-name" placeholder="e.g. IP vs Control"></div>
+        <div class="af-row"><span class="af-lbl">Group X</span><select id="af-gx">${opts}</select></div>
+        <div class="af-row"><span class="af-lbl">Group Y</span><select id="af-gy">${opts}</select></div>
+        <div style="display:flex;gap:6px;margin-top:10px"><button class="btn-primary" onclick="saveAna()" style="flex:1">Save</button><button class="btn-sm" onclick="document.getElementById('ana-form-wrap').innerHTML=''">Cancel</button></div></div>`;
+    if(names.length>=2)document.getElementById('af-gy').value=names[1];
+}
+function saveAna(){
+    const name=document.getElementById('af-name').value.trim()||('Analysis '+nextAnaId);
+    const gx=document.getElementById('af-gx').value,gy=document.getElementById('af-gy').value;
+    if(!gx||!gy)return;
+    ANALYSES.push({id:nextAnaId++,name,groupX:gx,groupY:gy});
+    document.getElementById('ana-form-wrap').innerHTML='';renderAnaList();
+}
+function deleteAna(id){ANALYSES=ANALYSES.filter(a=>a.id!==id);renderAnaList()}
+
+// Derived groups
+function createDerived(){
+    const l=document.getElementById('dg-left').value,r=document.getElementById('dg-right').value,op=document.getElementById('dg-op').value;
+    let name=document.getElementById('dg-name').value.trim();
+    if(!l||!r)return;if(!name){const sym={divide:'/',subtract:'-',add:'+',multiply:'*'}[op];name=l+' '+sym+' '+r}
+    const all=BINS.filter(b=>b.samples.length>0).map(b=>b.label).concat(DERIVED.map(d=>d.name));
+    if(all.includes(name)){alert('Name exists');return}
+    DERIVED.push({name,op,left:l,right:r});document.getElementById('dg-name').value='';renderDerived();populateGroupSelects();
+}
+function renderDerived(){const c=document.getElementById('dg-list');c.innerHTML='';const sym={divide:'/',subtract:'-',add:'+',multiply:'*'};
+    DERIVED.forEach((d,i)=>{c.innerHTML+=`<div class="ana-item"><span class="ana-name" style="color:var(--purple)">${d.name}</span><span class="ana-desc">${d.left} ${sym[d.op]} ${d.right}</span><button class="ana-del" onclick="DERIVED.splice(${i},1);renderDerived();populateGroupSelects()">&times;</button></div>`})}
+
+// ================================================================
+// CENTRAL DATA PIPELINE — reads all upstream tab settings
+// ================================================================
+// Cached processed data — rebuilt whenever upstream settings change
+let PROC_QD = {};   // processed quant data {sample: [values per PROC_FIDX]}
+let PROC_FIDX = []; // filtered protein indices into RAW.proteins
+let PROC_QT = '';   // which quant type is active
+
+function buildProcessedData(){
+    if(!RAW) return;
+
+    // 1. Quant type selection (Processing: LFQ checkbox)
+    const lfq = document.getElementById('proc-lfq')?.checked;
+    PROC_QT = lfq && RAW.quant_types.includes('LFQ intensity') ? 'LFQ intensity'
+        : RAW.quant_types.includes('Intensity') ? 'Intensity' : RAW.quant_types[0];
+    const rawQd = RAW.quant_data[PROC_QT] || {};
+
+    // 2. Filter proteins (contaminants, reverse, by-site always removed)
+    //    + Processing: prune threshold
+    const pruneOn = document.getElementById('proc-prune')?.checked;
+    const pruneMetric = document.getElementById('prune-metric')?.value || 'spectral';
+    const pruneVal = +(document.getElementById('prune-value')?.value || 0);
+    const pruneAgg = document.getElementById('prune-agg')?.value || 'total';
+    const pruneScope = document.getElementById('prune-scope')?.value || 'all';
+    const pruneGroup = document.getElementById('prune-group')?.value || '';
+
+    // Determine which quant column to use for pruning metric
+    const pruneQt = pruneMetric === 'spectral'
+        ? (RAW.quant_types.includes('MS/MS count') ? 'MS/MS count' : PROC_QT)
+        : PROC_QT;
+    const pruneQd = RAW.quant_data[pruneQt] || rawQd;
+
+    // Organism filter (Processing: normalization scope)
+    const normOn = document.getElementById('proc-norm')?.checked;
+    const normScope = document.getElementById('norm-scope')?.value || 'all';
+    const selOrgs = getSelOrgs();
+    const filterByOrganism = normOn && normScope === 'organism' && selOrgs.length > 0;
+
+    PROC_FIDX = [];
+    for(let i = 0; i < RAW.proteins.length; i++){
+        const p = RAW.proteins[i];
+        // Always remove contaminants/reverse/by-site
+        if(p.potential_contaminant || p.reverse || p.only_identified_by_site) continue;
+        if(p.peptides < 1) continue;
+
+        // Organism filter: only include proteins matching selected locus tag prefixes
+        if(filterByOrganism){
+            const pid = p.majority_id || p.id || '';
+            const matchesOrg = selOrgs.some(px => pid.startsWith(px));
+            if(!matchesOrg) continue;
         }
-    });
 
-    // Drag
-    chip.addEventListener('dragstart', e => {
-        chip._wasClick = false;
-        if (!SELECTED.has(sample)) {
-            SELECTED.clear();
-            SELECTED.add(sample);
-            updateChipSelections();
+        // Prune filter
+        if(pruneOn && pruneVal > 0){
+            const samplesForPrune = getSamplesForPruneScope(pruneScope, pruneGroup);
+            if(!passesPruneThreshold(i, samplesForPrune, pruneQd, pruneVal, pruneAgg)) continue;
         }
-        const payload = JSON.stringify({
-            samples: [...SELECTED],
-            source: findSampleSource(sample)
-        });
-        e.dataTransfer.setData('application/json', payload);
-        e.dataTransfer.effectAllowed = 'move';
 
-        // Ghost label showing count
-        const ghost = document.createElement('div');
-        ghost.style.cssText = 'position:fixed;top:-100px;padding:4px 12px;background:#58a6ff;color:#fff;border-radius:12px;font-size:12px;font-weight:600;';
-        ghost.textContent = SELECTED.size > 1 ? `${SELECTED.size} samples` : sample;
-        document.body.appendChild(ghost);
-        e.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, 14);
-        requestAnimationFrame(() => ghost.remove());
-
-        // Mark dragging
-        SELECTED.forEach(s => {
-            const c = document.querySelector(`.sample-chip[data-sample="${s}"]`);
-            if (c) c.classList.add('dragging');
-        });
-    });
-    chip.addEventListener('dragend', () => {
-        document.querySelectorAll('.sample-chip.dragging').forEach(c => c.classList.remove('dragging'));
-        document.querySelectorAll('.drag-over').forEach(c => c.classList.remove('drag-over'));
-    });
-
-    return chip;
-}
-
-function renderUnassigned() {
-    const area = document.getElementById('unassigned-area');
-    area.innerHTML = '';
-    UNASSIGNED.forEach(s => area.appendChild(createChip(s)));
-    document.getElementById('unassigned-count').textContent = UNASSIGNED.length;
-}
-
-function renderBins() {
-    const container = document.getElementById('bins-container');
-    container.innerHTML = '';
-    BINS.forEach(bin => {
-        const card = document.createElement('div');
-        card.className = 'bin-card';
-        card.dataset.binId = bin.id;
-
-        const header = document.createElement('div');
-        header.className = 'bin-header';
-        header.innerHTML = `
-            <input type="color" class="bin-color" value="${bin.color}">
-            <input class="bin-label" value="${bin.label}" spellcheck="false">
-            <span class="bin-sample-count">${bin.samples.length}</span>
-            <button class="bin-delete" title="Remove group">&times;</button>
-        `;
-        card.appendChild(header);
-
-        // Color change
-        header.querySelector('.bin-color').addEventListener('input', e => {
-            bin.color = e.target.value;
-            renderSampleChart();
-        });
-        // Label change
-        header.querySelector('.bin-label').addEventListener('change', e => {
-            bin.label = e.target.value.trim() || bin.label;
-            renderSampleChart();
-        });
-        // Delete
-        header.querySelector('.bin-delete').addEventListener('click', () => {
-            UNASSIGNED.push(...bin.samples);
-            BINS = BINS.filter(b => b.id !== bin.id);
-            SELECTED.clear();
-            renderAll();
-        });
-
-        // Sample area (drop target)
-        const body = document.createElement('div');
-        body.className = 'sample-area bin-body' + (bin.samples.length === 0 ? ' empty-hint' : '');
-        body.dataset.target = String(bin.id);
-        bin.samples.forEach(s => body.appendChild(createChip(s)));
-        card.appendChild(body);
-
-        // Drop target events
-        setupDropTarget(body, bin.id);
-        container.appendChild(card);
-    });
-}
-
-function updateChipSelections() {
-    document.querySelectorAll('.sample-chip').forEach(c => {
-        c.classList.toggle('selected', SELECTED.has(c.dataset.sample));
-    });
-}
-
-function toggleSelect(sample) {
-    if (SELECTED.has(sample)) SELECTED.delete(sample);
-    else SELECTED.add(sample);
-    updateChipSelections();
-}
-
-function findSampleSource(sample) {
-    if (UNASSIGNED.includes(sample)) return 'unassigned';
-    for (const bin of BINS) {
-        if (bin.samples.includes(sample)) return bin.id;
+        PROC_FIDX.push(i);
     }
-    return 'unassigned';
+
+    // 3. Build per-sample values for filtered proteins
+    const matrix = {};
+    RAW.samples.forEach(s => {
+        matrix[s] = PROC_FIDX.map(i => rawQd[s] ? rawQd[s][i] : 0);
+    });
+
+    // 4. Normalization (Processing: normalization settings)
+    const rmContam = document.getElementById('norm-rm-contam')?.checked;
+    if(normOn){
+        // Total-sum normalization (most common for proteomics)
+        // Calculate scale factors
+        const totals = {};
+        RAW.samples.forEach(s => {
+            let sum = 0;
+            for(let fi = 0; fi < PROC_FIDX.length; fi++){
+                const pi = PROC_FIDX[fi];
+                if(rmContam && RAW.proteins[pi].potential_contaminant) continue;
+                sum += matrix[s][fi];
+            }
+            totals[s] = sum || 1;
+        });
+        const medianTotal = median(Object.values(totals));
+        RAW.samples.forEach(s => {
+            const scale = medianTotal / totals[s];
+            for(let fi = 0; fi < PROC_FIDX.length; fi++) matrix[s][fi] *= scale;
+        });
+    }
+
+    PROC_QD = matrix;
 }
 
-// ====================================================================
-// DROP TARGETS
-// ====================================================================
-function setupDropTarget(el, targetId) {
-    el.addEventListener('dragover', e => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        el.closest('.bin-card')?.classList.add('drag-over');
-    });
-    el.addEventListener('dragleave', e => {
-        if (!el.contains(e.relatedTarget)) {
-            el.closest('.bin-card')?.classList.remove('drag-over');
+function median(arr){if(!arr.length)return 0;const s=[...arr].sort((a,b)=>a-b);const m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2}
+
+function getSamplesForPruneScope(scope, groupLabel){
+    if(scope === 'all') return RAW.samples;
+    if(scope === 'any'){
+        // Return array of arrays (one per group) — caller checks "any group passes"
+        return BINS.filter(b => b.samples.length > 0).map(b => b.samples);
+    }
+    if(scope === 'specified'){
+        const bin = BINS.find(b => b.label === groupLabel);
+        return bin ? bin.samples : RAW.samples;
+    }
+    return RAW.samples;
+}
+
+function passesPruneThreshold(proteinIdx, samples, qd, threshold, agg){
+    // samples can be flat array or array-of-arrays (for "any group" mode)
+    if(Array.isArray(samples[0])){
+        // "across any group" — pass if ANY group passes
+        return samples.some(grpSamples => passesPruneThreshold(proteinIdx, grpSamples, qd, threshold, agg));
+    }
+    const vals = samples.map(s => qd[s] ? qd[s][proteinIdx] : 0);
+    if(agg === 'total') return vals.reduce((a,b) => a + b, 0) >= threshold;
+    if(agg === 'average') return (vals.reduce((a,b) => a + b, 0) / vals.length) >= threshold;
+    if(agg === 'any') return vals.some(v => v >= threshold);
+    return true;
+}
+
+// Convenience wrappers — plots use these (they read from PROC_* cache)
+function getQData(){ return {qt: PROC_QT, data: PROC_QD}; }
+function getFilteredIdx(){ return PROC_FIDX; }
+function isAggSum(){return document.getElementById('proc-agg')?.value==='sum'}
+function grpMean(fi,grp,qd,fidx){
+    const bin=BINS.find(b=>b.label===grp);
+    if(bin){const vals=bin.samples.map(s=>qd[s]?qd[s][fi]:0);if(!vals.length)return 0;return isAggSum()?vals.reduce((a,b)=>a+b,0):vals.reduce((a,b)=>a+b,0)/vals.length}
+    const dg=DERIVED.find(d=>d.name===grp);
+    if(dg){const lv=grpMean(fi,dg.left,qd,fidx),rv=grpMean(fi,dg.right,qd,fidx);if(dg.op==='divide')return rv?lv/rv:0;if(dg.op==='subtract')return lv-rv;if(dg.op==='add')return lv+rv;if(dg.op==='multiply')return lv*rv}
+    return 0;
+}
+function grpVals(fi,grp,qd,fidx){
+    const bin=BINS.find(b=>b.label===grp);
+    if(bin){
+        if(isAggSum())return[bin.samples.map(s=>qd[s]?qd[s][fi]:0).reduce((a,b)=>a+b,0)];
+        return bin.samples.map(s=>qd[s]?qd[s][fi]:0);
+    }
+    return[grpMean(fi,grp,qd,fidx)];
+}
+function grpColor(grp){const b=BINS.find(b=>b.label===grp);return b?b.color:DERIVED.find(d=>d.name===grp)?'#bc8cff':'#8b949e'}
+function pLabel(fidx,fi){const p=RAW.proteins[fidx[fi]];const g=p.gene_name||p.majority_id||p.id;return g.length>40?g.slice(0,37)+'...':g}
+
+// ================================================================
+// STATS
+// ================================================================
+function mean(a){return a.length?a.reduce((s,v)=>s+v,0)/a.length:0}
+function variance(a){if(a.length<2)return 0;const m=mean(a);return a.reduce((s,v)=>s+(v-m)**2,0)/(a.length-1)}
+function sd(a){return Math.sqrt(variance(a))}
+function sem(a){return a.length<2?0:Math.sqrt(variance(a)/a.length)}
+function pearsonR(x,y){const n=x.length,mx=mean(x),my=mean(y);let num=0,dx2=0,dy2=0;for(let i=0;i<n;i++){const dx=x[i]-mx,dy=y[i]-my;num+=dx*dy;dx2+=dx*dx;dy2+=dy*dy}return dx2&&dy2?num/Math.sqrt(dx2*dy2):0}
+function lnGamma(z){const c=[.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];if(z<.5)return Math.log(Math.PI/Math.sin(Math.PI*z))-lnGamma(1-z);z-=1;let x=c[0];for(let i=1;i<9;i++)x+=c[i]/(z+i);const t=z+7.5;return .5*Math.log(2*Math.PI)+(z+.5)*Math.log(t)-t+Math.log(x)}
+function betacf(x,a,b){let qab=a+b,qap=a+1,qam=a-1,c=1,d=1-qab*x/qap;if(Math.abs(d)<1e-30)d=1e-30;d=1/d;let h=d;for(let m=1;m<=200;m++){let m2=2*m,aa=m*(b-m)*x/((qam+m2)*(a+m2));d=1+aa*d;if(Math.abs(d)<1e-30)d=1e-30;c=1+aa/c;if(Math.abs(c)<1e-30)c=1e-30;d=1/d;h*=d*c;aa=-(a+m)*(qab+m)*x/((a+m2)*(qap+m2));d=1+aa*d;if(Math.abs(d)<1e-30)d=1e-30;c=1+aa/c;if(Math.abs(c)<1e-30)c=1e-30;d=1/d;let del=d*c;h*=del;if(Math.abs(del-1)<3e-7)break}return h}
+function betainc(x,a,b){if(x<=0)return 0;if(x>=1)return 1;const f=Math.exp(lnGamma(a+b)-lnGamma(a)-lnGamma(b)+a*Math.log(x)+b*Math.log(1-x));if(x<(a+1)/(a+b+2))return f*betacf(x,a,b)/a;return 1-f*betacf(1-x,b,a)/b}
+function ttest(a1,a2){if(a1.length<2||a2.length<2)return 1;const m1=mean(a1),m2=mean(a2),v1=variance(a1),v2=variance(a2),n1=a1.length,n2=a2.length,se=Math.sqrt(v1/n1+v2/n2);if(se===0)return 1;const t=Math.abs(m1-m2)/se,df=(v1/n1+v2/n2)**2/((v1/n1)**2/(n1-1)+(v2/n2)**2/(n2-1));if(isNaN(df)||df<1)return 1;return betainc(df/(df+t*t),df/2,.5)}
+function bhFDR(pvals){const n=pvals.length;const idx=pvals.map((p,i)=>({p,i})).sort((a,b)=>a.p-b.p);const adj=new Array(n);let prev=1;for(let r=n;r>=1;r--){const j=idx[r-1].i;adj[j]=Math.min(prev,idx[r-1].p*n/r);prev=adj[j]}return adj}
+function imputeZeros(vals){const nz=vals.filter(v=>v>0);const minV=nz.length?Math.min(...nz)/2:1;return vals.map(v=>v>0?v:minV)}
+
+// PCA (dual method for n_samples << n_features)
+function computePCA(sampleNames,qd,fidx){
+    const n=sampleNames.length,m=fidx.length;
+    // Build n×m matrix, center columns
+    const X=[];const colMean=new Array(m).fill(0);
+    sampleNames.forEach(s=>{const row=fidx.map(i=>qd[s]?qd[s][i]:0);X.push(row);row.forEach((v,j)=>colMean[j]+=v)});
+    colMean.forEach((v,j)=>colMean[j]/=n);
+    X.forEach(row=>row.forEach((v,j)=>row[j]=v-colMean[j]));
+    // K = X * X^T (n×n)
+    const K=Array.from({length:n},()=>new Array(n).fill(0));
+    for(let i=0;i<n;i++)for(let j=i;j<n;j++){let s=0;for(let k=0;k<m;k++)s+=X[i][k]*X[j][k];K[i][j]=s;K[j][i]=s}
+    // Jacobi eigendecomposition for symmetric K
+    const eig=jacobiEigen(K,n);
+    // Sort by eigenvalue descending
+    const pairs=eig.values.map((v,i)=>({val:v,idx:i})).sort((a,b)=>b.val-a.val);
+    const totalVar=pairs.reduce((s,p)=>s+Math.max(0,p.val),0);
+    const scores=sampleNames.map((s,i)=>({name:s,pc1:eig.vectors[i][pairs[0].idx],pc2:eig.vectors[i][pairs[1]?.idx||0]}));
+    const varExpl=[pairs[0].val/totalVar*100,pairs[1]?pairs[1].val/totalVar*100:0];
+    return{scores,varExpl};
+}
+function jacobiEigen(A,n){
+    // Copy A
+    const a=A.map(r=>[...r]);const v=Array.from({length:n},(_,i)=>{const row=new Array(n).fill(0);row[i]=1;return row});
+    for(let iter=0;iter<100;iter++){
+        let maxOff=0,p=0,q=1;
+        for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)if(Math.abs(a[i][j])>maxOff){maxOff=Math.abs(a[i][j]);p=i;q=j}
+        if(maxOff<1e-10)break;
+        const theta=.5*Math.atan2(2*a[p][q],a[p][p]-a[q][q]);
+        const c=Math.cos(theta),s=Math.sin(theta);
+        const rot=(M)=>{for(let i=0;i<n;i++){const mp=M[i][p],mq=M[i][q];M[i][p]=c*mp+s*mq;M[i][q]=-s*mp+c*mq}};
+        // Rotate rows
+        for(let i=0;i<n;i++){const ap=a[p][i],aq=a[q][i];a[p][i]=c*ap+s*aq;a[q][i]=-s*ap+c*aq}
+        // Rotate cols
+        for(let i=0;i<n;i++){const ap=a[i][p],aq=a[i][q];a[i][p]=c*ap+s*aq;a[i][q]=-s*ap+c*aq}
+        // Rotate eigenvectors
+        for(let i=0;i<n;i++){const vp=v[i][p],vq=v[i][q];v[i][p]=c*vp+s*vq;v[i][q]=-s*vp+c*vq}
+    }
+    return{values:a.map((r,i)=>r[i]),vectors:v};
+}
+
+// ================================================================
+// VISUALIZATION — CONFIG & CANVAS
+// ================================================================
+function showVizConfig(type){
+    const names=BINS.filter(b=>b.samples.length>0).map(b=>b.label);
+    DERIVED.forEach(d=>names.push(d.name));
+    const opts=names.map(n=>`<option value="${n}">${n}</option>`).join('');
+    const anaOpts=ANALYSES.map(a=>`<option value="${a.id}">${a.name} (${a.groupX} vs ${a.groupY})</option>`).join('');
+    const c=document.getElementById('viz-config-area');
+    let html=`<div class="viz-config"><div class="vc-title">Configure ${type}</div>`;
+    if(type==='pca'){
+        html+=`<div class="af-row"><span class="af-lbl">Samples from groups</span><div id="pca-grp-checks">${names.map(n=>`<label class="checkbox-row"><input type="checkbox" value="${n}" checked>${n}</label>`).join('')}</div></div>`;
+    } else if(type==='unique'){
+        // Unique has its own single-group selector + exclusion logic
+        html+=`<div class="af-row"><span class="af-lbl">Featured group (unique to)</span><select id="vc-uniq-grp">${opts}</select></div>`;
+        html+=`<div class="af-row"><span class="af-lbl">Uniqueness criteria</span><select id="vc-uniq-mode" onchange="toggleUniqExclude()">
+            <option value="not_control">Not found in a specified control</option>
+            <option value="not_selected">Not found in specified group(s)</option>
+            <option value="exclusive">Not found in any other group</option>
+        </select></div>`;
+        html+=`<div id="vc-uniq-ctrl-row" class="af-row"><span class="af-lbl">Control group</span><select id="vc-uniq-ctrl">${opts}</select></div>`;
+        html+=`<div id="vc-uniq-multi-row" class="af-row hidden"><span class="af-lbl">Exclude if found in</span>
+            <div id="vc-uniq-exclude-checks">${names.map(n=>`<label class="checkbox-row"><input type="checkbox" value="${n}">${n}</label>`).join('')}</div></div>`;
+        if(names.length>=2)html+=`<script>document.getElementById('vc-uniq-ctrl').value='${names[1]}'<\/script>`;
+    } else {
+        if(ANALYSES.length){
+            html+=`<div class="af-row"><span class="af-lbl">Use saved analysis</span><select id="vc-ana" onchange="vcAnaChanged()"><option value="">-- Select manually --</option>${anaOpts}</select></div>`;
         }
-    });
-    el.addEventListener('drop', e => {
-        e.preventDefault();
-        el.closest('.bin-card')?.classList.remove('drag-over');
-        try {
-            const data = JSON.parse(e.dataTransfer.getData('application/json'));
-            moveSamples(data.samples, targetId);
-        } catch (err) { }
-    });
+        html+=`<div class="af-row"><span class="af-lbl">Group X</span><select id="vc-gx">${opts}</select></div>`;
+        html+=`<div class="af-row"><span class="af-lbl">Group Y</span><select id="vc-gy">${opts}</select></div>`;
+        if(names.length>=2)html+=`<script>document.getElementById('vc-gy').value='${names[1]}'<\/script>`;
+    }
+    if(type==='enrichment'){
+        html+=`<div class="af-row"><span class="af-lbl">Plot style</span><select id="vc-enr-style"><option value="dot">Dot plot (default)</option><option value="bar">Bar chart</option></select></div>`;
+        html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-enr-log2"> log2(X/Y)</label>`;
+    }
+    if(type==='dotplot'){
+        html+=`<div class="af-row"><span class="af-lbl">Axis transform</span><select id="vc-dot-transform"><option value="log10">Log10</option><option value="log2">Log2</option><option value="raw">Raw (no transform)</option></select></div>`;
+    }
+    if(type==='volcano'){
+        html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-impute" checked> Impute missing values</label>`;
+        html+=`<div class="af-row"><span class="af-lbl">FDR threshold</span><select id="vc-fdr"><option value="0.05">0.05</option><option value="0.01">0.01</option><option value="0.001">0.001</option></select></div>`;
+        html+=`<div class="af-row"><span class="af-lbl">|Log2 FC| threshold</span><input type="number" id="vc-fc" value="1" min="0" step="0.25" style="width:80px"></div>`;
+    }
+    html+=`<button class="btn-primary" onclick="addPlotToCanvas('${type}')" style="margin-top:10px">Add to Canvas</button></div>`;
+    c.innerHTML=html;
+}
+function toggleUniqExclude(){
+    const mode=document.getElementById('vc-uniq-mode')?.value;
+    document.getElementById('vc-uniq-ctrl-row').classList.toggle('hidden',mode!=='not_control');
+    document.getElementById('vc-uniq-multi-row').classList.toggle('hidden',mode!=='not_selected');
+}
+function vcAnaChanged(){
+    const sel=document.getElementById('vc-ana');if(!sel||!sel.value)return;
+    const a=ANALYSES.find(x=>x.id===+sel.value);if(!a)return;
+    const gx=document.getElementById('vc-gx'),gy=document.getElementById('vc-gy');
+    if(gx)gx.value=a.groupX;if(gy)gy.value=a.groupY;
 }
 
-// Unassigned pool is also a drop target
-(function () {
-    const pool = document.getElementById('unassigned-area');
-    pool.addEventListener('dragover', e => {
-        e.preventDefault(); e.dataTransfer.dropEffect = 'move';
-        pool.closest('.unassigned-pool')?.classList.add('drag-over');
-    });
-    pool.addEventListener('dragleave', e => {
-        if (!pool.contains(e.relatedTarget))
-            pool.closest('.unassigned-pool')?.classList.remove('drag-over');
-    });
-    pool.addEventListener('drop', e => {
-        e.preventDefault();
-        pool.closest('.unassigned-pool')?.classList.remove('drag-over');
-        try {
-            const data = JSON.parse(e.dataTransfer.getData('application/json'));
-            moveSamples(data.samples, 'unassigned');
-        } catch (err) { }
-    });
+// Drag from palette to canvas
+document.querySelectorAll('.viz-card[draggable]').forEach(card=>{
+    card.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain',card.dataset.vtype);e.dataTransfer.effectAllowed='copy'});
+});
+(function(){
+    const canvas=document.getElementById('canvas');
+    canvas.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';document.getElementById('canvas-drop')?.classList.add('drag-over')});
+    canvas.addEventListener('dragleave',e=>{if(!canvas.contains(e.relatedTarget))document.getElementById('canvas-drop')?.classList.remove('drag-over')});
+    canvas.addEventListener('drop',e=>{e.preventDefault();document.getElementById('canvas-drop')?.classList.remove('drag-over');const vtype=e.dataTransfer.getData('text/plain');if(['enrichment','unique','volcano','dotplot','pca'].includes(vtype))showVizConfig(vtype)});
 })();
 
-function moveSamples(sampleNames, targetId) {
-    sampleNames.forEach(s => {
-        // Remove from current location
-        UNASSIGNED = UNASSIGNED.filter(u => u !== s);
-        BINS.forEach(b => { b.samples = b.samples.filter(x => x !== s); });
-        // Add to target
-        if (targetId === 'unassigned') {
-            UNASSIGNED.push(s);
-        } else {
-            const bin = BINS.find(b => b.id === targetId);
-            if (bin) bin.samples.push(s);
+function addPlotToCanvas(type){
+    buildProcessedData();
+    const {qt,data:qd}=getQData();const fidx=getFilteredIdx();
+    const plotId='plot-'+(nextPlotId++);
+    let gx='',gy='',title='';
+    if(type==='pca'){
+        const checks=[...document.querySelectorAll('#pca-grp-checks input:checked')].map(cb=>cb.value);
+        if(checks.length<2){alert('Select at least 2 groups');return}
+        title='PCA: '+checks.join(', ');
+        gx=checks.join(',');gy='';
+    } else {
+        gx=document.getElementById('vc-gx')?.value||'';gy=document.getElementById('vc-gy')?.value||'';
+        title={enrichment:'Ranked Enrichment - '+gx+'/'+gy,unique:'Unique Proteins',volcano:'Volcano: '+gx+' vs '+gy,dotplot:gx+' vs '+gy}[type];
+    }
+    const config={gx,gy,type};
+    if(type==='enrichment'){
+        config.style=document.getElementById('vc-enr-style')?.value||'dot';
+        config.log2=document.getElementById('vc-enr-log2')?.checked||false;
+    }
+    if(type==='volcano'){config.impute=document.getElementById('vc-impute')?.checked;config.fdr=+(document.getElementById('vc-fdr')?.value||.05);config.fc=+(document.getElementById('vc-fc')?.value||1)}
+    if(type==='unique'){
+        config.featuredGroup=document.getElementById('vc-uniq-grp')?.value||'';
+        config.mode=document.getElementById('vc-uniq-mode')?.value||'not_control';
+        config.controlGroup=document.getElementById('vc-uniq-ctrl')?.value||'';
+        config.excludeGroups=[...document.querySelectorAll('#vc-uniq-exclude-checks input:checked')].map(cb=>cb.value);
+        gx=config.featuredGroup;gy='';
+        title='Unique Proteins: '+config.featuredGroup;
+    }
+    if(type==='dotplot'){
+        config.topN=+(document.getElementById('vc-dot-topn')?.value||8);
+        config.transform=document.getElementById('vc-dot-transform')?.value||'log10';
+    }
+    CANVAS_PLOTS.push({id:nextPlotId-1,type,config,plotId,title});
+
+    // Show canvas, hide welcome
+    document.getElementById('right-welcome').classList.add('hidden');
+    const wrap=document.getElementById('canvas-wrap');wrap.classList.remove('hidden');wrap.style.display='flex';
+    const canvas=document.getElementById('canvas');
+    canvas.classList.remove('empty-canvas');
+    const hint=document.getElementById('canvas-drop');if(hint)hint.remove();
+
+    // Create minimal plot element
+    const plotWrap=document.createElement('div');plotWrap.className='canvas-plot';plotWrap.id='card-'+plotId;
+    plotWrap.style.height='420px';
+    plotWrap.innerHTML=`<input class="plot-title-input" value="${title.replace(/"/g,'&quot;')}" onchange="renamePlot('${plotId}',this.value)"><button class="cp-close" onclick="removePlot('${plotId}')" title="Remove">&times;</button><div id="${plotId}" style="width:100%;height:calc(100% - 24px)"></div>`;
+    canvas.appendChild(plotWrap);
+    setupPlotResize(plotWrap,plotId);
+
+    document.getElementById('viz-config-area').innerHTML='';
+    setTimeout(()=>renderPlot(CANVAS_PLOTS[CANVAS_PLOTS.length-1],qd,fidx),100);
+}
+function renamePlot(plotId,newTitle){
+    const p=CANVAS_PLOTS.find(p=>p.plotId===plotId);
+    if(p) p.title=newTitle;
+}
+function removePlot(plotId){
+    CANVAS_PLOTS=CANVAS_PLOTS.filter(p=>p.plotId!==plotId);
+    document.getElementById('card-'+plotId)?.remove();
+    if(!CANVAS_PLOTS.length){
+        const canvas=document.getElementById('canvas');canvas.classList.add('empty-canvas');
+        canvas.innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>';
+    }
+}
+function setupPlotResize(wrap,plotId){
+    // 4-corner resize: detect mousedown near any corner of the plot div
+    const EDGE=12;
+    let dragging=false,corner='',startX=0,startY=0,startW=0,startH=0,startL=0,startT=0;
+    const plotEl=()=>document.getElementById(plotId);
+
+    wrap.addEventListener('mousedown',e=>{
+        const r=wrap.getBoundingClientRect();
+        const x=e.clientX-r.left, y=e.clientY-r.top;
+        const nearL=x<EDGE, nearR=x>r.width-EDGE, nearT=y<EDGE, nearB=y>r.height-EDGE;
+        if(nearB&&nearR) corner='se';
+        else if(nearB&&nearL) corner='sw';
+        else if(nearT&&nearR) corner='ne';
+        else if(nearT&&nearL) corner='nw';
+        else return;
+        dragging=true;startX=e.clientX;startY=e.clientY;startW=r.width;startH=r.height;
+        const cs={nw:'nwse-resize',ne:'nesw-resize',sw:'nesw-resize',se:'nwse-resize'}[corner];
+        document.body.style.cursor=cs;document.body.style.userSelect='none';
+        e.preventDefault();e.stopPropagation();
+    });
+    document.addEventListener('mousemove',e=>{
+        if(!dragging)return;
+        const dx=e.clientX-startX, dy=e.clientY-startY;
+        let h=startH, w=startW;
+        if(corner==='se'){h=startH+dy;w=startW+dx}
+        else if(corner==='sw'){h=startH+dy;w=startW-dx}
+        else if(corner==='ne'){h=startH-dy;w=startW+dx}
+        else if(corner==='nw'){h=startH-dy;w=startW-dx}
+        wrap.style.height=Math.max(200,h)+'px';
+        // Width is fluid (fills container), but we can set max-width to allow narrowing
+        // For now only resize height — width follows the container
+        const el=plotEl();if(el&&el.data)Plotly.Plots.resize(el);
+    });
+    document.addEventListener('mouseup',()=>{
+        if(!dragging)return;dragging=false;corner='';
+        document.body.style.cursor='';document.body.style.userSelect='';
+        const el=plotEl();if(el&&el.data)Plotly.Plots.resize(el);
+    });
+
+    // Show resize cursor when hovering near edges
+    wrap.addEventListener('mousemove',e=>{
+        if(dragging)return;
+        const r=wrap.getBoundingClientRect();
+        const x=e.clientX-r.left, y=e.clientY-r.top;
+        const nearL=x<EDGE, nearR=x>r.width-EDGE, nearT=y<EDGE, nearB=y>r.height-EDGE;
+        if((nearB&&nearR)||(nearT&&nearL)) wrap.style.cursor='nwse-resize';
+        else if((nearB&&nearL)||(nearT&&nearR)) wrap.style.cursor='nesw-resize';
+        else wrap.style.cursor='';
+    });
+    wrap.addEventListener('mouseleave',()=>{if(!dragging)wrap.style.cursor=''});
+}
+
+// ================================================================
+// PLOT RENDERING
+// ================================================================
+function renderPlot(p,qd,fidx){
+    const div=document.getElementById(p.plotId);if(!div)return;
+    if(p.type==='enrichment')plotEnrichment(div,p,qd,fidx);
+    else if(p.type==='unique')plotUnique(div,p,qd,fidx);
+    else if(p.type==='volcano')plotVolcano(div,p,qd,fidx);
+    else if(p.type==='dotplot')plotDotplot(div,p,qd,fidx);
+    else if(p.type==='pca')plotPCA(div,p,qd,fidx);
+}
+
+function plotEnrichment(div,p,qd,fidx){
+    const gx=p.config.gx,gy=p.config.gy;
+    const style=p.config.style||'dot';
+    const isLog2=p.config.log2||false;
+    const data=[];
+    for(let fi=0;fi<fidx.length;fi++){
+        const mA=grpMean(fi,gx,qd,fidx),mB=grpMean(fi,gy,qd,fidx);
+        // Skip proteins not detected in either group
+        if(mA===0&&mB===0)continue;
+        // For ratio mode, skip if denominator is 0 (unique to X — not a ratio)
+        if(!isLog2&&mB===0)continue;
+        const val=isLog2?Math.log2((mA+1)/(mB+1)):(mA/mB);
+        data.push({fi,val,label:pLabel(fidx,fi)});
+    }
+    data.sort((a,b)=>a.val-b.val);
+    const xVals=data.map((_,i)=>i+1);
+    const yVals=data.map(d=>d.val);
+    const labels=data.map(d=>d.label);
+    const hoverLabel=isLog2?'log2('+gx+'/'+gy+')':'Ratio';
+
+    const traces=[];
+    if(style==='bar'){
+        traces.push({x:xVals,y:yVals,type:'bar',marker:{color:'#e6edf3',line:{width:0}},text:labels,hovertemplate:`%{text}<br>${hoverLabel}: %{y:.3f}<br>Rank: %{x}<extra></extra>`});
+    } else {
+        traces.push({x:xVals,y:yVals,mode:'markers',type:'scatter',marker:{size:5,color:'#e6edf3',symbol:'circle'},text:labels,hovertemplate:`%{text}<br>${hoverLabel}: %{y:.3f}<br>Rank: %{x}<extra></extra>`});
+    }
+
+    const yTitle=isLog2?'log2('+gx+'/'+gy+')':'Enrichment ('+gx+'/'+gy+')';
+    Plotly.react(div,traces,{...PL,title:false,
+        xaxis:{...PL.xaxis,title:'Rank',linecolor:'#e6edf3',linewidth:1},
+        yaxis:{...PL.yaxis,title:yTitle,linecolor:'#e6edf3',linewidth:1},
+        showlegend:false},{responsive:true,displayModeBar:false,scrollZoom:false});
+}
+
+function plotUnique(div,p,qd,fidx){
+    const featured=p.config.featuredGroup;
+    const mode=p.config.mode;
+    const allGroups=BINS.filter(b=>b.samples.length>0).map(b=>b.label);
+    if(!featured) return;
+
+    // Determine which groups the protein must NOT be found in
+    let excludeGroups=[];
+    if(mode==='not_control'){
+        excludeGroups=p.config.controlGroup?[p.config.controlGroup]:[];
+    } else if(mode==='not_selected'){
+        excludeGroups=p.config.excludeGroups||[];
+    } else if(mode==='exclusive'){
+        excludeGroups=allGroups.filter(g=>g!==featured);
+    }
+
+    const items=[];
+    for(let fi=0;fi<fidx.length;fi++){
+        const featuredMean=mean(grpVals(fi,featured,qd,fidx));
+        if(featuredMean<=0) continue; // must be detected in featured group
+
+        // Check it is NOT detected in any exclude group
+        let foundInExclude=false;
+        for(const eg of excludeGroups){
+            if(eg===featured) continue;
+            if(mean(grpVals(fi,eg,qd,fidx))>0){foundInExclude=true;break}
         }
-    });
-    SELECTED.clear();
-    renderAll();
-}
+        if(foundInExclude) continue;
 
-// ====================================================================
-// RUBBER-BAND SELECTION
-// ====================================================================
-let rbActive = false, rbStartX = 0, rbStartY = 0, rbEl = null, rbArea = null;
+        items.push({label:pLabel(fidx,fi),abund:featuredMean});
+    }
 
-document.addEventListener('mousedown', e => {
-    // Only start rubber-band on sample-area backgrounds
-    const area = e.target.closest('.sample-area');
-    if (!area || e.target.closest('.sample-chip')) return;
+    // Sort descending by abundance (highest at top, like reference image)
+    items.sort((a,b)=>b.abund-a.abund);
+    const shown=items.slice(0,40);
+    const color=grpColor(featured);
 
-    rbActive = true;
-    rbStartX = e.clientX;
-    rbStartY = e.clientY;
-    rbArea = area;
-
-    rbEl = document.createElement('div');
-    rbEl.className = 'rubber-band';
-    document.body.appendChild(rbEl);
-
-    if (!e.ctrlKey && !e.metaKey) SELECTED.clear();
-    updateChipSelections();
-    e.preventDefault();
-});
-
-document.addEventListener('mousemove', e => {
-    if (!rbActive) return;
-    const x = Math.min(e.clientX, rbStartX);
-    const y = Math.min(e.clientY, rbStartY);
-    const w = Math.abs(e.clientX - rbStartX);
-    const h = Math.abs(e.clientY - rbStartY);
-    rbEl.style.left = x + 'px';
-    rbEl.style.top = y + 'px';
-    rbEl.style.width = w + 'px';
-    rbEl.style.height = h + 'px';
-
-    // Highlight intersecting chips
-    const rect = { left: x, top: y, right: x + w, bottom: y + h };
-    rbArea.querySelectorAll('.sample-chip').forEach(chip => {
-        const cr = chip.getBoundingClientRect();
-        const intersects = !(cr.right < rect.left || cr.left > rect.right ||
-            cr.bottom < rect.top || cr.top > rect.bottom);
-        if (intersects) SELECTED.add(chip.dataset.sample);
-    });
-    updateChipSelections();
-});
-
-document.addEventListener('mouseup', () => {
-    if (!rbActive) return;
-    rbActive = false;
-    if (rbEl) { rbEl.remove(); rbEl = null; }
-    rbArea = null;
-});
-
-// ====================================================================
-// BIN MANAGEMENT
-// ====================================================================
-function addBin() {
-    const id = nextBinId++;
-    let idx = BINS.length + 1;
-    let label = `Group ${idx}`;
-    while (BINS.some(b => b.label === label)) { idx++; label = `Group ${idx}`; }
-    BINS.push({ id, label, color: COLORS[(id - 1) % COLORS.length], samples: [] });
-    renderAll();
-}
-
-function updateContinueBtn() {
-    const btn = document.getElementById('continue-btn');
-    const ready = BINS.filter(b => b.samples.length > 0).length >= 2;
-    btn.disabled = !ready;
-    // Enable/disable processing tab
-    document.getElementById('tab-processing').disabled = !ready;
-}
-
-// Continue button navigates to Processing tab
-document.getElementById('continue-btn').addEventListener('click', () => {
-    populatePruneGroupSelect();
-    switchTab('processing');
-});
-
-// ====================================================================
-// RIGHT PANEL: SUMMARY
-// ====================================================================
-function renderSummary() {
-    if (!RAW) return;
-    const grid = document.getElementById('summary-grid');
-    grid.innerHTML = `
-        <div class="stat-card">
-            <div class="stat-val">${RAW.total_proteins.toLocaleString()}</div>
-            <div class="stat-lbl">Total Proteins</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-val">${RAW.samples.length}</div>
-            <div class="stat-lbl">Samples Detected</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-val" style="color:var(--warning)">${RAW.contaminants}</div>
-            <div class="stat-lbl">Contaminants</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-val" style="color:var(--danger)">${RAW.reverse_hits}</div>
-            <div class="stat-lbl">Reverse Hits</div>
-        </div>
-        <div class="stat-card wide">
-            <div class="stat-lbl" style="margin-bottom:6px">Quantification Types</div>
-            <div class="quant-tags">
-                ${RAW.quant_types.map(q => `<span class="quant-tag">${q}</span>`).join('')}
-            </div>
-        </div>
-        <div class="stat-card wide">
-            <div class="stat-lbl">File</div>
-            <div style="font-size:13px;margin-top:4px;word-break:break-all">${RAW.filename}</div>
-        </div>
-    `;
-}
-
-function renderSampleChart() {
-    if (!RAW) return;
-    const chartDiv = document.getElementById('sample-chart');
-
-    // Build per-sample total intensity, colored by bin assignment
-    const sampleOrder = [];
-    const intensities = [];
-    const colors = [];
-    const hoverTexts = [];
-
-    // Use Intensity column for the chart
-    const qt = RAW.quant_types.includes('Intensity') ? 'Intensity' :
-        RAW.quant_types.includes('LFQ intensity') ? 'LFQ intensity' : RAW.quant_types[0];
-    const qd = RAW.quant_data[qt];
-
-    // Ordered: bins first, then unassigned
-    BINS.forEach(bin => {
-        bin.samples.forEach(s => {
-            sampleOrder.push(s);
-            intensities.push(qd[s]?.reduce((a, b) => a + b, 0) || 0);
-            colors.push(bin.color);
-            hoverTexts.push(`${s}<br>${bin.label}`);
-        });
-    });
-    UNASSIGNED.forEach(s => {
-        sampleOrder.push(s);
-        intensities.push(qd[s]?.reduce((a, b) => a + b, 0) || 0);
-        colors.push('#30363d');
-        hoverTexts.push(`${s}<br>Unassigned`);
-    });
-
-    const traces = [{
-        x: sampleOrder, y: intensities, type: 'bar',
-        marker: { color: colors },
-        text: hoverTexts, hovertemplate: '%{text}<br>Total: %{y:.2e}<extra></extra>',
+    const traces=[{
+        x:new Array(shown.length).fill(1),
+        y:shown.map(d=>d.abund),
+        mode:'markers+text', type:'scatter',
+        marker:{size:8,color,symbol:'circle'},
+        text:shown.map(d=>d.label),
+        textposition:'middle right',
+        textfont:{size:10,color:'#e6edf3'},
+        hovertemplate:'%{text}<br>Abundance: %{y:.2e}<extra></extra>',
+        cliponaxis:false
     }];
 
-    const layout = {
-        ...PLOTLY_LAYOUT_BASE, showlegend: false,
-        title: { text: `Total ${qt} per Sample`, font: { size: 13, color: '#8b949e' } },
-        xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, tickangle: -45 },
-        yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: { text: qt, font: { size: 11 } } },
+    // Build subtitle describing the criteria
+    let subtitle='';
+    if(mode==='not_control') subtitle=`in ${featured}, not in ${p.config.controlGroup||'?'}`;
+    else if(mode==='not_selected') subtitle=`in ${featured}, not in ${(p.config.excludeGroups||[]).join(', ')||'?'}`;
+    else if(mode==='exclusive') subtitle=`exclusively in ${featured}`;
+
+    Plotly.react(div,traces,{...PL,
+        title:false,
+        xaxis:{...PL.xaxis,showticklabels:false,showgrid:false,zeroline:false,range:[0.5,2.5],title:''},
+        yaxis:{...PL.yaxis,title:'Abundance',linecolor:'#e6edf3',linewidth:1},
+        margin:{...PL.margin,r:140},
+        showlegend:false,
+    },{responsive:true,displayModeBar:false,scrollZoom:false});
+}
+
+function plotVolcano(div,p,qd,fidx){
+    if(isAggSum()){Plotly.react(div,[],{...PL,annotations:[{text:'Volcano plots require Averages mode (change in Processing tab)',showarrow:false,font:{size:13,color:'var(--warning)'},xref:'paper',yref:'paper',x:.5,y:.5}]},{responsive:true,displayModeBar:false,scrollZoom:false});return}
+    const gx=p.config.gx,gy=p.config.gy,fcT=p.config.fc,fdrT=p.config.fdr,doImpute=p.config.impute;
+    const fc=[],rawP=[],labels=[];
+    for(let fi=0;fi<fidx.length;fi++){
+        let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
+        if(doImpute){vA=imputeZeros(vA);vB=imputeZeros(vB)}
+        const mA=mean(vA),mB=mean(vB);
+        if(mA===0&&mB===0)continue;
+        fc.push(Math.log2((mA+.1)/(mB+.1)));
+        rawP.push(ttest(vA,vB));
+        labels.push(pLabel(fidx,fi));
+    }
+    const adjP=bhFDR(rawP);
+    const negLog=adjP.map(p=>-Math.log10(Math.max(p,1e-300)));
+    const cats=fc.map((f,i)=>adjP[i]<fdrT&&Math.abs(f)>=fcT?(f>0?'up':'down'):'ns');
+    const cM={up:grpColor(gx),down:grpColor(gy),ns:'#30363d'};
+    const traces=['ns','up','down'].map(cat=>{const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);return{x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),text:idx.map(i=>labels[i]),mode:'markers',type:'scattergl',name:cat==='ns'?'NS':cat==='up'?'Up '+gx:'Up '+gy,marker:{size:cat==='ns'?3:5,color:cM[cat],opacity:cat==='ns'?.3:.8},hovertemplate:'%{text}<br>Log2FC: %{x:.2f}<br>-Log10(FDR): %{y:.2f}<extra></extra>'}});
+    const shapes=[{type:'line',x0:fcT,x1:fcT,y0:0,y1:1,yref:'paper',line:{color:'#30363d',width:1,dash:'dash'}},{type:'line',x0:-fcT,x1:-fcT,y0:0,y1:1,yref:'paper',line:{color:'#30363d',width:1,dash:'dash'}},{type:'line',x0:0,x1:1,xref:'paper',y0:-Math.log10(fdrT),y1:-Math.log10(fdrT),line:{color:'#30363d',width:1,dash:'dash'}}];
+    const sigIdx=cats.map((c,i)=>c!=='ns'?i:-1).filter(i=>i>=0).sort((a,b)=>negLog[b]-negLog[a]).slice(0,10);
+    const annotations=sigIdx.map(i=>({x:fc[i],y:negLog[i],text:labels[i],showarrow:true,arrowhead:0,arrowcolor:'#8b949e',font:{size:10,color:'#e6edf3'},bgcolor:'rgba(13,17,23,.7)',borderpad:2,ax:0,ay:-20}));
+    Plotly.react(div,traces,{...PL,shapes,annotations,title:false,xaxis:{...PL.xaxis,title:'Log2 Fold Change'},yaxis:{...PL.yaxis,title:'-Log10(FDR adj. P-value)'}},{responsive:true,displayModeBar:false,scrollZoom:false});
+}
+
+function plotDotplot(div,p,qd,fidx){
+    const gx=p.config.gx,gy=p.config.gy;
+    const topN=p.config.topN||8;
+    const tf=p.config.transform||'log10';
+    const txFn=tf==='log2'?(v=>Math.log2(v+1)):tf==='log10'?(v=>Math.log10(v+1)):(v=>v);
+    const axLabel=tf==='log2'?'Log2':'Log10';
+    const axSuffix=tf==='raw'?'':(tf==='log2'?' (log2)':' (log10)');
+
+    // Separate into: both detected, X-only, Y-only
+    const both=[],xOnly=[],yOnly=[];
+    for(let fi=0;fi<fidx.length;fi++){
+        const mx=grpMean(fi,gx,qd,fidx),my=grpMean(fi,gy,qd,fidx);
+        if(mx===0&&my===0)continue;
+        const label=pLabel(fidx,fi);
+        if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,fc:Math.log2(my/mx)});
+        else if(mx>0) xOnly.push({x:txFn(mx),y:0,label});
+        else yOnly.push({x:0,y:txFn(my),label});
+    }
+
+    // Smart axis compression for single-group proteins
+    const allNzX=both.map(d=>d.x).concat(xOnly.map(d=>d.x)).filter(v=>v>0);
+    const allNzY=both.map(d=>d.y).concat(yOnly.map(d=>d.y)).filter(v=>v>0);
+    const minNzX=allNzX.length?Math.min(...allNzX):0;
+    const minNzY=allNzY.length?Math.min(...allNzY):0;
+    const maxX=allNzX.length?Math.max(...allNzX):1;
+    const maxY=allNzY.length?Math.max(...allNzY):1;
+    const breakX=minNzX*0.6, breakY=minNzY*0.6;
+    const xOnlyPlot=xOnly.map(d=>({x:d.x,y:breakY*0.3,label:d.label}));
+    const yOnlyPlot=yOnly.map(d=>({x:breakX*0.3,y:d.y,label:d.label}));
+
+    const traces=[];
+    if(both.length) traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',type:'scattergl',
+        marker:{size:5,color:both.map(d=>d.fc),colorscale:[[0,'#58a6ff'],[.5,'#8b949e'],[1,'#f85149']],cmin:-3,cmax:3,opacity:.7},
+        text:both.map(d=>d.label),hovertemplate:'%{text}<br>'+gx+': %{x:.2f}<br>'+gy+': %{y:.2f}<extra></extra>',name:'Both',showlegend:false});
+    if(xOnlyPlot.length) traces.push({x:xOnlyPlot.map(d=>d.x),y:xOnlyPlot.map(d=>d.y),mode:'markers',type:'scatter',
+        marker:{size:5,color:grpColor(gx),opacity:.7,symbol:'triangle-right'},
+        text:xOnlyPlot.map(d=>d.label),hovertemplate:'%{text}<br>Only in '+gx+'<extra></extra>',name:'Only '+gx,showlegend:true});
+    if(yOnlyPlot.length) traces.push({x:yOnlyPlot.map(d=>d.x),y:yOnlyPlot.map(d=>d.y),mode:'markers',type:'scatter',
+        marker:{size:5,color:grpColor(gy),opacity:.7,symbol:'triangle-up'},
+        text:yOnlyPlot.map(d=>d.label),hovertemplate:'%{text}<br>Only in '+gy+'<extra></extra>',name:'Only '+gy,showlegend:true});
+
+    if(both.length){const mn=Math.min(minNzX,minNzY),mx2=Math.max(maxX,maxY);traces.push({x:[mn,mx2],y:[mn,mx2],mode:'lines',line:{color:'#30363d',width:1,dash:'dash'},hoverinfo:'skip',showlegend:false})}
+
+    const shapes=[];
+    if(xOnlyPlot.length||yOnlyPlot.length){
+        if(breakY>0)shapes.push({type:'line',x0:0,x1:1,xref:'paper',y0:breakY,y1:breakY,line:{color:'#30363d',width:1,dash:'dot'}});
+        if(breakX>0)shapes.push({type:'line',y0:0,y1:1,yref:'paper',x0:breakX,x1:breakX,line:{color:'#30363d',width:1,dash:'dot'}});
+    }
+
+    const annotations=[];
+    if(topN>0&&both.length){
+        const sorted=[...both].sort((a,b)=>Math.abs(b.fc)-Math.abs(a.fc)).slice(0,topN);
+        sorted.forEach((d,i)=>{
+            annotations.push({x:d.x,y:d.y,text:d.label,showarrow:true,arrowhead:0,arrowcolor:'#8b949e',arrowwidth:1,
+                font:{size:9,color:'#e6edf3'},bgcolor:'rgba(13,17,23,.7)',borderpad:2,
+                ax:20+(i%3)*15,ay:-(10+Math.floor(i/3)*12)});
+        });
+    }
+    if(both.length>2){const r=pearsonR(both.map(d=>d.x),both.map(d=>d.y));
+        annotations.push({x:.02,y:.98,xref:'paper',yref:'paper',text:'R\u00B2 = '+(r*r).toFixed(4),showarrow:false,font:{color:'#8b949e',size:12},bgcolor:'rgba(13,17,23,.8)',borderpad:4})}
+
+    const xTitle=gx+axSuffix, yTitle=gy+axSuffix;
+    const layout={...PL,shapes,annotations,title:false,
+        xaxis:{...PL.xaxis,title:xTitle,linecolor:'#e6edf3',linewidth:1},
+        yaxis:{...PL.yaxis,title:yTitle,linecolor:'#e6edf3',linewidth:1},
+        legend:{bgcolor:'rgba(0,0,0,0)',font:{color:'#8b949e',size:10}}};
+    Plotly.react(div,traces,layout,{responsive:true,displayModeBar:false,scrollZoom:false});
+}
+
+function plotPCA(div,p,qd,fidx){
+    const groups=p.config.gx.split(',');
+    const sampleNames=[];const sampleGroups=[];
+    groups.forEach(g=>{const bin=BINS.find(b=>b.label===g);if(bin)bin.samples.forEach(s=>{sampleNames.push(s);sampleGroups.push(g)})});
+    if(sampleNames.length<3){Plotly.react(div,[],{...PL,annotations:[{text:'Need at least 3 samples',showarrow:false,font:{size:14,color:'#8b949e'},xref:'paper',yref:'paper',x:.5,y:.5}]},{responsive:true,displayModeBar:false,scrollZoom:false});return}
+    const pca=computePCA(sampleNames,qd,fidx);
+    const traces=groups.map(g=>{const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),text:idx.map(i=>pca.scores[i].name),mode:'markers+text',type:'scatter',name:g,marker:{size:10,color:grpColor(g)},textposition:'top center',textfont:{size:10,color:'#8b949e'},hovertemplate:'%{text}<br>PC1: %{x:.2f}<br>PC2: %{y:.2f}<extra></extra>'}});
+    Plotly.react(div,traces,{...PL,title:false,xaxis:{...PL.xaxis,title:`PC1 (${pca.varExpl[0].toFixed(1)}%)`},yaxis:{...PL.yaxis,title:`PC2 (${pca.varExpl[1].toFixed(1)}%)`}},{responsive:true,displayModeBar:false,scrollZoom:false});
+}
+
+// ================================================================
+// EXPORTS
+// ================================================================
+// ================================================================
+// EXPORT (enhanced)
+// ================================================================
+function exportAllSVG(){CANVAS_PLOTS.forEach(p=>{const el=document.getElementById(p.plotId);if(el&&el.data)Plotly.downloadImage(el,{format:'svg',filename:(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_'),width:1200,height:700})})}
+function exportAllPNG(){CANVAS_PLOTS.forEach(p=>{const el=document.getElementById(p.plotId);if(el&&el.data)Plotly.downloadImage(el,{format:'png',filename:(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_'),width:1600,height:1000,scale:2})})}
+function exportCSV(){
+    if(!RAW)return;const{qt,data:qd}=getQData();const fidx=getFilteredIdx();const groups=BINS.filter(b=>b.samples.length>0).map(b=>b.label);
+    let csv='Protein ID,Gene Name';groups.forEach(g=>csv+=','+g+' (mean)');csv+='\n';
+    for(let fi=0;fi<fidx.length;fi++){const p=RAW.proteins[fidx[fi]];csv+=`"${p.majority_id}","${p.gene_name}"`;groups.forEach(g=>csv+=','+grpMean(fi,g,qd,fidx).toFixed(4));csv+='\n'}
+    const blob=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='proker_data.csv';a.click();
+}
+
+// ================================================================
+// THEME
+// ================================================================
+function getPlotColors(){
+    const light=document.documentElement.classList.contains('light');
+    return light?{paper:'#f4f5f7',plot:'#ffffff',grid:'#e8eaed',line:'#d0d7de',text:'#1f2328',textSec:'#656d76',dot:'#1f2328'}
+        :{paper:'#0d1117',plot:'#161b22',grid:'#21262d',line:'#30363d',text:'#e6edf3',textSec:'#8b949e',dot:'#e6edf3'};
+}
+function applyPlotTheme(){
+    const c=getPlotColors();
+    PL.paper_bgcolor=c.paper;PL.plot_bgcolor=c.plot;
+    PL.font.color=c.text;
+    PL.xaxis.gridcolor=c.grid;PL.xaxis.zerolinecolor=c.line;PL.xaxis.linecolor=c.line;
+    PL.yaxis.gridcolor=c.grid;PL.yaxis.zerolinecolor=c.line;PL.yaxis.linecolor=c.line;
+    PL.hoverlabel.bgcolor=c.plot;PL.hoverlabel.bordercolor=c.line;PL.hoverlabel.font.color=c.text;
+}
+function toggleTheme(){
+    const html=document.documentElement;
+    const isLight=html.classList.toggle('light');
+    document.getElementById('theme-btn').textContent=isLight?'\u2600':'\u263E';
+    localStorage.setItem('proker-theme',isLight?'light':'dark');
+    applyPlotTheme();
+    refreshAllPlots();
+}
+// Restore theme on load
+(function(){
+    const saved=localStorage.getItem('proker-theme');
+    if(saved==='light'){document.documentElement.classList.add('light');document.getElementById('theme-btn').textContent='\u2600';applyPlotTheme()}
+})();
+
+// ================================================================
+// SESSION SAVE / LOAD
+// ================================================================
+function saveSession(){
+    const session={
+        version:1,
+        savedAt:new Date().toISOString(),
+        app:'Pro-ker Proteomics Viewer',
+        filename:RAW?.filename||'',
+        bins:BINS.map(b=>({label:b.label,color:b.color,samples:[...b.samples]})),
+        unassigned:[...UNASSIGNED],
+        analyses:ANALYSES.map(a=>({name:a.name,groupX:a.groupX,groupY:a.groupY})),
+        derived:DERIVED.map(d=>({name:d.name,op:d.op,left:d.left,right:d.right})),
+        canvasPlots:CANVAS_PLOTS.map(p=>({type:p.type,config:p.config,title:p.title})),
+        processing:{
+            lfq:document.getElementById('proc-lfq')?.checked||false,
+            agg:document.getElementById('proc-agg')?.value||'average',
+            norm:document.getElementById('proc-norm')?.checked||false,
+            normScope:document.getElementById('norm-scope')?.value||'all',
+            normRmContam:document.getElementById('norm-rm-contam')?.checked||false,
+            prune:document.getElementById('proc-prune')?.checked||false,
+            pruneMetric:document.getElementById('prune-metric')?.value||'spectral',
+            pruneValue:document.getElementById('prune-value')?.value||'2',
+            pruneAgg:document.getElementById('prune-agg')?.value||'total',
+            pruneScope:document.getElementById('prune-scope')?.value||'all',
+        },
+        theme:document.documentElement.classList.contains('light')?'light':'dark',
     };
-
-    Plotly.react(chartDiv, traces, layout, { responsive: true, displaylogo: false, displayModeBar: false });
+    const name=RAW?.filename?.replace(/\.[^.]+$/,'')||'proker';
+    const blob=new Blob([JSON.stringify(session,null,2)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download=`proker-session-${name}-${new Date().toISOString().slice(0,10)}.json`;a.click();
 }
-
-// ====================================================================
-// STATUS
-// ====================================================================
-function updateStatus() {
-    if (!RAW) return;
-    document.getElementById('status-text').textContent = `${RAW.total_proteins} proteins loaded`;
-    const assigned = BINS.reduce((n, b) => n + b.samples.length, 0);
-    const total = RAW.samples.length;
-    document.getElementById('status-groups').textContent =
-        `${BINS.length} groups | ${assigned}/${total} samples assigned`;
+function loadSession(file){
+    if(!file)return;
+    const reader=new FileReader();
+    reader.onload=function(e){
+        try{
+            const s=JSON.parse(e.target.result);
+            if(!s.version||!s.bins){alert('Invalid session file');return}
+            // Restore processing settings
+            if(s.processing){
+                const p=s.processing;
+                const setChk=(id,v)=>{const el=document.getElementById(id);if(el)el.checked=!!v};
+                const setVal=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v||''};
+                setChk('proc-lfq',p.lfq);setVal('proc-agg',p.agg);
+                setChk('proc-norm',p.norm);setVal('norm-scope',p.normScope);
+                setChk('norm-rm-contam',p.normRmContam);
+                setChk('proc-prune',p.prune);setVal('prune-metric',p.pruneMetric);
+                setVal('prune-value',p.pruneValue);setVal('prune-agg',p.pruneAgg);
+                setVal('prune-scope',p.pruneScope);
+                toggleNorm();togglePrune();
+            }
+            // Restore theme
+            if(s.theme==='light'&&!document.documentElement.classList.contains('light'))toggleTheme();
+            else if(s.theme==='dark'&&document.documentElement.classList.contains('light'))toggleTheme();
+            // Restore groups (only if data is loaded and samples match)
+            if(RAW&&s.bins){
+                const allSamples=new Set(RAW.samples);
+                BINS=s.bins.filter(b=>b.samples.every(sa=>allSamples.has(sa))).map((b,i)=>({id:nextBinId++,label:b.label,color:b.color,samples:[...b.samples]}));
+                const assigned=new Set();BINS.forEach(b=>b.samples.forEach(sa=>assigned.add(sa)));
+                UNASSIGNED=RAW.samples.filter(sa=>!assigned.has(sa));
+                renderAll();
+            }
+            // Restore analyses & derived
+            if(s.analyses){ANALYSES=s.analyses.map(a=>({id:nextAnaId++,...a}));renderAnaList?.()}
+            if(s.derived){DERIVED=[...s.derived];renderDerived?.();populateGroupSelects?.()}
+            // Restore canvas plots
+            if(s.canvasPlots&&s.canvasPlots.length&&RAW){
+                buildProcessedData();
+                const{data:qd}=getQData();const fidx=getFilteredIdx();
+                s.canvasPlots.forEach(cp=>{
+                    const plotId='plot-'+(nextPlotId++);
+                    CANVAS_PLOTS.push({id:nextPlotId-1,type:cp.type,config:cp.config,plotId,title:cp.title});
+                    document.getElementById('right-welcome')?.classList.add('hidden');
+                    const wrap=document.getElementById('canvas-wrap');if(wrap){wrap.classList.remove('hidden');wrap.style.display='flex'}
+                    const canvas=document.getElementById('canvas');canvas?.classList.remove('empty-canvas');
+                    const hint=document.getElementById('canvas-drop');if(hint)hint.remove();
+                    const pw=document.createElement('div');pw.className='canvas-plot';pw.id='card-'+plotId;pw.style.height='420px';
+                    pw.innerHTML=`<input class="plot-title-input" value="${(cp.title||'').replace(/"/g,'&quot;')}" onchange="renamePlot('${plotId}',this.value)"><button class="cp-close" onclick="removePlot('${plotId}')">&times;</button><div id="${plotId}" style="width:100%;height:calc(100% - 24px)"></div>`;
+                    canvas.appendChild(pw);setupPlotResize(pw,plotId);
+                    setTimeout(()=>renderPlot(CANVAS_PLOTS[CANVAS_PLOTS.length-1],qd,fidx),100);
+                });
+            }
+            alert('Session restored'+(s.filename?' from: '+s.filename:''));
+        }catch(err){alert('Error loading session: '+err.message)}
+    };
+    reader.readAsText(file);
 }
-
-// ====================================================================
-// HEARTBEAT
-// ====================================================================
-function startHeartbeat() {
-    setInterval(() => fetch('/api/heartbeat').catch(() => { }), 10000);
-}
-
-// ====================================================================
-// PROCESSING TAB — TOGGLES
-// ====================================================================
-function toggleNormOpts() {
-    const checked = document.getElementById('proc-norm').checked;
-    document.getElementById('norm-opts').classList.toggle('hidden', !checked);
-    toggleNormSpecies();
-}
-
-document.getElementById('norm-scope').addEventListener('change', toggleNormSpecies);
-function toggleNormSpecies() {
-    const show = document.getElementById('proc-norm').checked &&
-        document.getElementById('norm-scope').value === 'species';
-    document.getElementById('norm-species-input').classList.toggle('hidden', !show);
-}
-
-function togglePruneOpts() {
-    const checked = document.getElementById('proc-prune').checked;
-    document.getElementById('prune-opts').classList.toggle('hidden', !checked);
-}
-
-function togglePruneGroupSelect() {
-    const show = document.getElementById('prune-scope').value === 'specified';
-    document.getElementById('prune-group').classList.toggle('hidden', !show);
-}
-
-function populatePruneGroupSelect() {
-    const sel = document.getElementById('prune-group');
-    sel.innerHTML = '';
-    BINS.filter(b => b.samples.length > 0).forEach(b => {
-        const o = document.createElement('option');
-        o.value = b.label; o.textContent = b.label;
-        sel.appendChild(o);
-    });
-}
-
-// ====================================================================
-// PROCESSING TAB — PIPELINE PREVIEW
-// ====================================================================
-function updateProcessingPreview() {
-    const container = document.getElementById('proc-steps');
-    const steps = [];
-    let stepNum = 1;
-
-    // LFQ
-    const lfq = document.getElementById('proc-lfq').checked;
-    steps.push({
-        active: lfq, num: lfq ? stepNum++ : null,
-        text: lfq ? 'Use <strong>LFQ intensities</strong> for quantification'
-            : '<s>LFQ analysis</s> — disabled',
-    });
-
-    // Normalization
-    const norm = document.getElementById('proc-norm').checked;
-    if (norm) {
-        const scope = document.getElementById('norm-scope').value;
-        const species = document.getElementById('norm-species').value.trim();
-        const removeContam = document.getElementById('norm-remove-contam').checked;
-        let desc = 'Normalize ';
-        if (scope === 'species' && species) desc += `within <strong>${species}</strong> peptides`;
-        else if (scope === 'species') desc += 'within a specified species (enter name)';
-        else desc += 'across <strong>all detected peptides</strong>';
-        if (removeContam) desc += ', <strong>removing contaminants first</strong>';
-        steps.push({ active: true, num: stepNum++, text: desc });
-    } else {
-        steps.push({ active: false, num: null, text: '<s>Normalization</s> — disabled' });
-    }
-
-    // Prune
-    const prune = document.getElementById('proc-prune').checked;
-    if (prune) {
-        const metric = document.getElementById('prune-metric');
-        const metricText = metric.options[metric.selectedIndex].text;
-        const value = document.getElementById('prune-value').value || '0';
-        const agg = document.getElementById('prune-agg');
-        const aggText = agg.options[agg.selectedIndex].text;
-        const scope = document.getElementById('prune-scope');
-        const scopeText = scope.options[scope.selectedIndex].text;
-        let desc = `Remove proteins whose <strong>${metricText}</strong> is below <strong>${value}</strong> ${aggText} ${scopeText}`;
-        if (scope.value === 'specified') {
-            const grp = document.getElementById('prune-group').value;
-            if (grp) desc += ` (<strong>${grp}</strong>)`;
-        }
-        steps.push({ active: true, num: stepNum++, text: desc });
-    } else {
-        steps.push({ active: false, num: null, text: '<s>Peptide pruning</s> — disabled' });
-    }
-
-    // Render
-    if (steps.every(s => !s.active)) {
-        container.innerHTML = '<div style="color:var(--text-sec);font-size:13px;padding:12px 0">Select processing options on the left to build your pipeline.</div>';
-        return;
-    }
-
-    container.innerHTML = steps.map(s => `
-        <div class="proc-step">
-            <div class="proc-step-num ${s.active ? '' : 'inactive'}">${s.active ? s.num : '-'}</div>
-            <div class="proc-step-text ${s.active ? '' : 'inactive'}">${s.text}</div>
-        </div>
-    `).join('');
-}
-
-// ====================================================================
-// RESIZE
-// ====================================================================
-window.addEventListener('resize', () => {
-    const c = document.getElementById('sample-chart');
-    if (c && c.data) Plotly.Plots.resize(c);
-});
 </script>
 </body>
 </html>
