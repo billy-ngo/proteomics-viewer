@@ -1,8 +1,8 @@
 """
 Pro-ker Proteomics Analysis icon generator.
 
-Produces a poker-card icon as PNG bytes using only the Python standard
-library (struct + zlib). No Pillow / PIL dependency required.
+Renders two overlapping poker cards with red "2" and "BN" — matching the
+in-app SVG logo. Pure Python (struct + zlib), no Pillow required.
 
 Public API
 ----------
@@ -17,138 +17,186 @@ import zlib
 _RED = (0xDC, 0x26, 0x26)
 _WHITE = (0xFF, 0xFF, 0xFF)
 _DARK = (0x0D, 0x11, 0x17)
-_CARD_BG = (0xF5, 0xF5, 0xF5)
-_BORDER = (0xBB, 0xBB, 0xBB)
-
-
-def _clamp(v, lo=0, hi=255):
-    return max(lo, min(hi, int(v)))
+_CARD_BG = (0xF0, 0xF0, 0xF0)
+_CARD_BG2 = (0xFF, 0xFF, 0xFF)
+_BORDER = (0xAA, 0xAA, 0xAA)
 
 
 def _make_png(width, height, rows):
-    def _chunk(chunk_type, data):
-        c = chunk_type + data
-        crc = struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
-        return struct.pack(">I", len(data)) + c + crc
-
+    def _chunk(ct, data):
+        c = ct + data
+        return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
     sig = b"\x89PNG\r\n\x1a\n"
     ihdr = _chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
-    raw = b""
-    for row in rows:
-        raw += b"\x00" + row
-    idat = _chunk(b"IDAT", zlib.compress(raw, 9))
-    iend = _chunk(b"IEND", b"")
-    return sig + ihdr + idat + iend
+    raw = b"".join(b"\x00" + r for r in rows)
+    return sig + ihdr + _chunk(b"IDAT", zlib.compress(raw, 9)) + _chunk(b"IEND", b"")
 
 
-def _in_rounded_rect(x, y, rx, ry, rw, rh, radius):
-    """Check if (x, y) is inside a rounded rectangle."""
-    if x < rx or x > rx + rw or y < ry or y > ry + rh:
+def _rot(x, y, cx, cy, angle_deg):
+    """Rotate point (x,y) around (cx,cy) by angle_deg."""
+    a = math.radians(angle_deg)
+    dx, dy = x - cx, y - cy
+    return cx + dx * math.cos(a) - dy * math.sin(a), cy + dx * math.sin(a) + dy * math.cos(a)
+
+
+def _in_rotated_rounded_rect(px, py, cx, cy, hw, hh, r, angle):
+    """Check if pixel (px,py) is inside a rotated rounded rectangle."""
+    # Transform pixel into card-local coords
+    lx, ly = _rot(px, py, cx, cy, -angle)
+    lx -= cx
+    ly -= cy
+    if abs(lx) > hw or abs(ly) > hh:
         return False
-    # Check corners
-    for cx, cy in [(rx + radius, ry + radius), (rx + rw - radius, ry + radius),
-                   (rx + radius, ry + rh - radius), (rx + rw - radius, ry + rh - radius)]:
-        if ((x < rx + radius or x > rx + rw - radius) and
-                (y < ry + radius or y > ry + rh - radius)):
-            if math.sqrt((x - cx) ** 2 + (y - cy) ** 2) > radius:
-                return False
+    # Corner rounding check
+    if abs(lx) > hw - r and abs(ly) > hh - r:
+        corner_x = (hw - r) * (1 if lx > 0 else -1)
+        corner_y = (hh - r) * (1 if ly > 0 else -1)
+        if math.sqrt((lx - corner_x) ** 2 + (ly - corner_y) ** 2) > r:
+            return False
     return True
 
 
-# Simple block-letter patterns for "B" and "N" (5x7 grid each)
-_B = [
-    [1, 1, 1, 1, 0],
-    [1, 0, 0, 0, 1],
-    [1, 0, 0, 0, 1],
-    [1, 1, 1, 1, 0],
-    [1, 0, 0, 0, 1],
-    [1, 0, 0, 0, 1],
-    [1, 1, 1, 1, 0],
-]
-_N = [
-    [1, 0, 0, 0, 1],
-    [1, 1, 0, 0, 1],
-    [1, 0, 1, 0, 1],
-    [1, 0, 0, 1, 1],
-    [1, 0, 0, 0, 1],
-    [1, 0, 0, 0, 1],
-    [1, 0, 0, 0, 1],
-]
+# Block-letter patterns (5x7 grid)
+_GLYPHS = {
+    '2': [
+        [0, 1, 1, 1, 0],
+        [1, 0, 0, 0, 1],
+        [0, 0, 0, 0, 1],
+        [0, 0, 0, 1, 0],
+        [0, 0, 1, 0, 0],
+        [0, 1, 0, 0, 0],
+        [1, 1, 1, 1, 1],
+    ],
+    'B': [
+        [1, 1, 1, 1, 0],
+        [1, 0, 0, 0, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 0],
+        [1, 0, 0, 0, 1],
+        [1, 0, 0, 0, 1],
+        [1, 1, 1, 1, 0],
+    ],
+    'N': [
+        [1, 0, 0, 0, 1],
+        [1, 1, 0, 0, 1],
+        [1, 0, 1, 0, 1],
+        [1, 0, 0, 1, 1],
+        [1, 0, 0, 0, 1],
+        [1, 0, 0, 0, 1],
+        [1, 0, 0, 0, 1],
+    ],
+}
 
 
-def _draw_letter(pixels, letter, ox, oy, scale, color, size):
-    for row_i, row in enumerate(letter):
-        for col_i, val in enumerate(row):
+def _draw_glyph(pixels, glyph, ox, oy, scale, color, size, angle=0, rcx=0, rcy=0):
+    """Draw a block-letter glyph, optionally rotated around (rcx, rcy)."""
+    for ri, row in enumerate(glyph):
+        for ci, val in enumerate(row):
             if not val:
                 continue
             for dy in range(scale):
                 for dx in range(scale):
-                    px = ox + col_i * scale + dx
-                    py = oy + row_i * scale + dy
-                    if 0 <= px < size and 0 <= py < size:
-                        pixels[py][px] = color
+                    lx = ox + ci * scale + dx
+                    ly = oy + ri * scale + dy
+                    if angle != 0:
+                        lx, ly = _rot(lx, ly, rcx, rcy, angle)
+                        lx, ly = round(lx), round(ly)
+                    if 0 <= lx < size and 0 <= ly < size:
+                        pixels[ly][lx] = color
 
 
 def generate_png(size=48):
-    """Return PNG bytes for a poker-card icon at the given size."""
+    """Return PNG bytes for two overlapping poker cards matching the in-app logo."""
     pixels = [[_DARK for _ in range(size)] for _ in range(size)]
+    s = size  # shorthand
 
-    # Card dimensions (centered, fills most of the icon)
-    margin = max(2, size // 10)
-    card_w = size - margin * 2
-    card_h = size - margin * 2
-    card_x = margin
-    card_y = margin
-    corner_r = max(2, size // 10)
+    # Card proportions (playing card ~2.5:3.5 ratio)
+    card_w = s * 0.42
+    card_h = s * 0.60
+    hw, hh = card_w / 2, card_h / 2
+    corner_r = max(2, s * 0.06)
 
-    # Draw card background
-    for y in range(size):
-        for x in range(size):
-            if _in_rounded_rect(x, y, card_x, card_y, card_w, card_h, corner_r):
+    # Card centers and angles (matching the SVG logo)
+    back_cx, back_cy, back_angle = s * 0.38, s * 0.52, -10
+    front_cx, front_cy, front_angle = s * 0.60, s * 0.48, 8
+
+    # Letter scale
+    ls = max(1, round(s / 40))  # scale for "2"
+    bn_s = max(1, round(s / 32))  # scale for "BN"
+
+    # Draw back card (slightly transparent feel)
+    for y in range(s):
+        for x in range(s):
+            if _in_rotated_rounded_rect(x, y, back_cx, back_cy, hw, hh, corner_r, back_angle):
                 pixels[y][x] = _CARD_BG
 
-    # Draw "BN" in red, centered on card
-    letter_scale = max(1, size // 24)
-    letter_w = 5 * letter_scale
-    letter_h = 7 * letter_scale
-    gap = max(1, letter_scale)
-    total_w = letter_w * 2 + gap
-    start_x = card_x + (card_w - total_w) // 2
-    start_y = card_y + (card_h - letter_h) // 2
+    # Draw "2" top-left and "BN" center on back card
+    _draw_glyph(pixels, _GLYPHS['2'],
+                round(back_cx - hw * 0.65), round(back_cy - hh * 0.70),
+                ls, _RED, s, back_angle, back_cx, back_cy)
+    # Upper BN
+    _draw_glyph(pixels, _GLYPHS['B'],
+                round(back_cx - bn_s * 5.5), round(back_cy - bn_s * 5),
+                bn_s, _RED, s, back_angle, back_cx, back_cy)
+    _draw_glyph(pixels, _GLYPHS['N'],
+                round(back_cx + bn_s * 0.5), round(back_cy - bn_s * 5),
+                bn_s, _RED, s, back_angle, back_cx, back_cy)
+    # Lower BN (inverted)
+    _draw_glyph(pixels, _GLYPHS['B'],
+                round(back_cx - bn_s * 5.5), round(back_cy + bn_s * 1),
+                bn_s, _RED, s, back_angle + 180, back_cx, back_cy)
+    _draw_glyph(pixels, _GLYPHS['N'],
+                round(back_cx + bn_s * 0.5), round(back_cy + bn_s * 1),
+                bn_s, _RED, s, back_angle + 180, back_cx, back_cy)
 
-    _draw_letter(pixels, _B, start_x, start_y, letter_scale, _RED, size)
-    _draw_letter(pixels, _N, start_x + letter_w + gap, start_y, letter_scale, _RED, size)
+    # Draw front card (on top)
+    for y in range(s):
+        for x in range(s):
+            if _in_rotated_rounded_rect(x, y, front_cx, front_cy, hw, hh, corner_r, front_angle):
+                pixels[y][x] = _CARD_BG2
 
-    # Build PNG rows
+    # Draw "2" top-left and "BN" center on front card
+    _draw_glyph(pixels, _GLYPHS['2'],
+                round(front_cx - hw * 0.65), round(front_cy - hh * 0.70),
+                ls, _RED, s, front_angle, front_cx, front_cy)
+    # Upper BN
+    _draw_glyph(pixels, _GLYPHS['B'],
+                round(front_cx - bn_s * 5.5), round(front_cy - bn_s * 5),
+                bn_s, _RED, s, front_angle, front_cx, front_cy)
+    _draw_glyph(pixels, _GLYPHS['N'],
+                round(front_cx + bn_s * 0.5), round(front_cy - bn_s * 5),
+                bn_s, _RED, s, front_angle, front_cx, front_cy)
+    # Lower BN (inverted)
+    _draw_glyph(pixels, _GLYPHS['B'],
+                round(front_cx - bn_s * 5.5), round(front_cy + bn_s * 1),
+                bn_s, _RED, s, front_angle + 180, front_cx, front_cy)
+    _draw_glyph(pixels, _GLYPHS['N'],
+                round(front_cx + bn_s * 0.5), round(front_cy + bn_s * 1),
+                bn_s, _RED, s, front_angle + 180, front_cx, front_cy)
+
+    # Build rows
     rows = []
-    for y in range(size):
+    for y in range(s):
         row = bytearray()
-        for x in range(size):
+        for x in range(s):
             r, g, b = pixels[y][x]
             row += bytes([r, g, b, 255])
         rows.append(bytes(row))
-
-    return _make_png(size, size, rows)
+    return _make_png(s, s, rows)
 
 
 def generate_ico(sizes=None):
     """Return ICO bytes containing PNG data for each requested size."""
     if sizes is None:
         sizes = [48, 32, 16]
-
     png_blobs = [generate_png(s) for s in sizes]
     num = len(sizes)
-
     header = struct.pack("<HHH", 0, 1, num)
     data_offset = 6 + 16 * num
     entries = b""
     for i, s in enumerate(sizes):
         w = 0 if s >= 256 else s
-        h = w
         blob = png_blobs[i]
-        entries += struct.pack(
-            "<BBBBHHII", w, h, 0, 0, 1, 32, len(blob), data_offset,
-        )
+        entries += struct.pack("<BBBBHHII", w, w, 0, 0, 1, 32, len(blob), data_offset)
         data_offset += len(blob)
-
     return header + entries + b"".join(png_blobs)
