@@ -17,7 +17,8 @@ if errorlevel 1 (
 
 :: Install the package
 echo Installing ProteomicsViewer...
-pip install -e "%~dp0" --quiet
+set "PROJDIR=%~dp0."
+pip install -e "%PROJDIR%" --quiet
 if errorlevel 1 (
     echo.
     echo ERROR: Installation failed. Try running as administrator.

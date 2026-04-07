@@ -19,8 +19,10 @@
     --success: #3fb950;
     --warning: #d29922;
     --purple: #bc8cff;
-    --sidebar-w: 330px;
+    --left-w: 380px;
     --radius: 6px;
+    --tabbar-h: 44px;
+    --status-h: 28px;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; }
@@ -29,361 +31,570 @@ body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: v
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-sec); }
+.hidden { display: none !important; }
 
-/* Upload Overlay */
-#upload-overlay {
-    position: fixed; inset: 0; z-index: 100;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    background: var(--bg);
+/* ── Tab Bar ──────────────────────────────────────────── */
+#tabbar {
+    height: var(--tabbar-h); background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 20px; gap: 0;
 }
-#upload-overlay.hidden { display: none; }
-.upload-title { font-size: 28px; font-weight: 700; margin-bottom: 6px; color: var(--text); letter-spacing: -0.5px; }
-.upload-subtitle { font-size: 14px; color: var(--text-sec); margin-bottom: 32px; }
-.drop-zone {
-    width: 500px; height: 240px; border: 2px dashed var(--border); border-radius: 12px;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    cursor: pointer; transition: all 0.2s;
+.app-name {
+    font-size: 15px; font-weight: 700; letter-spacing: -0.3px;
+    margin-right: 32px; white-space: nowrap;
 }
-.drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); background: rgba(88,166,255,0.06); }
-.drop-zone svg { width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.4; }
-.drop-zone p { color: var(--text-sec); font-size: 14px; }
-.drop-zone .hint { font-size: 12px; color: var(--text-sec); opacity: 0.6; margin-top: 6px; }
+.tab-buttons { display: flex; height: 100%; gap: 0; }
+.tab-btn {
+    height: 100%; padding: 0 18px; border: none; background: none;
+    color: var(--text-sec); font-family: inherit; font-size: 13px; font-weight: 500;
+    cursor: pointer; position: relative; transition: color 0.15s; white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); }
+.tab-btn.active::after {
+    content: ''; position: absolute; bottom: 0; left: 8px; right: 8px;
+    height: 2px; background: var(--accent); border-radius: 1px 1px 0 0;
+}
+.tab-btn:disabled { color: var(--border); cursor: default; }
+.tab-btn:disabled:hover { color: var(--border); }
+
+/* ── Workspace ────────────────────────────────────────── */
+#workspace {
+    display: flex; height: calc(100vh - var(--tabbar-h) - var(--status-h));
+}
+
+/* ── Resizable Divider ────────────────────────────────── */
+#divider {
+    width: 5px; cursor: col-resize; background: transparent;
+    position: relative; flex-shrink: 0; z-index: 10;
+}
+#divider::after {
+    content: ''; position: absolute; top: 0; bottom: 0; left: 2px;
+    width: 1px; background: var(--border); transition: background 0.15s, width 0.15s, left 0.15s;
+}
+#divider:hover::after, #divider.dragging::after {
+    width: 3px; left: 1px; background: var(--accent);
+}
+
+/* ── Left Panel ───────────────────────────────────────── */
+#left-panel {
+    width: var(--left-w); min-width: 260px; max-width: 700px;
+    background: var(--surface);
+    overflow-y: auto; overflow-x: hidden;
+}
+.panel-section {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+}
+.section-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--text-sec); margin-bottom: 12px;
+}
+
+/* Upload zone (inside left panel) */
+.upload-zone {
+    border: 2px dashed var(--border); border-radius: 10px;
+    padding: 32px 20px; text-align: center; cursor: pointer; transition: all 0.2s;
+}
+.upload-zone:hover, .upload-zone.dragover { border-color: var(--accent); background: rgba(88,166,255,0.06); }
+.upload-zone svg { width: 40px; height: 40px; margin-bottom: 8px; opacity: 0.4; }
+.upload-zone .uz-text { color: var(--text-sec); font-size: 13px; }
+.upload-zone .uz-hint { font-size: 11px; color: var(--text-sec); opacity: 0.5; margin-top: 4px; }
 #file-input { display: none; }
-.upload-error { color: var(--danger); margin-top: 16px; font-size: 13px; min-height: 20px; }
+.upload-error { color: var(--danger); font-size: 12px; margin-top: 10px; min-height: 16px; text-align: center; }
 
-/* App Layout */
-#app { display: flex; height: 100vh; }
-#app.hidden { display: none; }
+/* ── Sample Chips ─────────────────────────────────────── */
+.sample-area {
+    min-height: 40px; padding: 6px; border-radius: var(--radius);
+    display: flex; flex-wrap: wrap; gap: 6px; position: relative;
+    user-select: none;
+}
+.sample-chip {
+    display: inline-flex; align-items: center; height: 28px;
+    padding: 0 10px; border-radius: 14px;
+    font-size: 12px; font-weight: 500; cursor: grab;
+    border: 2px solid transparent; transition: all 0.12s;
+    background: var(--card);
+}
+.sample-chip:hover { filter: brightness(1.2); }
+.sample-chip.selected { border-color: var(--accent); background: rgba(88,166,255,0.15); }
+.sample-chip.dragging { opacity: 0.4; }
+.sample-chip .chip-dot {
+    width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; flex-shrink: 0;
+}
 
-/* Sidebar */
-#sidebar {
-    width: var(--sidebar-w); min-width: var(--sidebar-w); height: 100vh;
-    background: var(--surface); border-right: 1px solid var(--border);
-    display: flex; flex-direction: column; overflow: hidden;
+/* Rubber-band selection */
+.rubber-band {
+    position: fixed; border: 1px solid var(--accent);
+    background: rgba(88,166,255,0.12); z-index: 1000; pointer-events: none;
 }
-.sidebar-header {
-    padding: 16px 16px 12px; border-bottom: 1px solid var(--border);
-}
-.sidebar-header h1 { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
-.sidebar-header .file-info { font-size: 11px; color: var(--text-sec); margin-top: 4px; }
-.sidebar-scroll { flex: 1; overflow-y: auto; padding-bottom: 16px; }
 
-/* Sections */
-.section { border-bottom: 1px solid var(--border); }
-.section-hdr {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 16px; cursor: pointer; user-select: none;
-    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
-    color: var(--text-sec);
+/* ── Bins ──────────────────────────────────────────────── */
+.unassigned-pool {
+    background: var(--bg); border-radius: var(--radius);
+    border: 1px solid var(--border); padding: 8px; margin-bottom: 14px;
 }
-.section-hdr:hover { color: var(--text); }
-.section-hdr .chev { transition: transform 0.2s; font-size: 10px; }
-.section.open .chev { transform: rotate(90deg); }
-.section-body { display: none; padding: 8px 16px 14px; }
-.section.open .section-body { display: block; }
+.pool-header {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; color: var(--text-sec); font-weight: 500; margin-bottom: 6px; padding: 0 4px;
+}
+.pool-count {
+    background: var(--card); padding: 1px 8px; border-radius: 10px; font-size: 10px;
+}
 
-/* Form Controls */
-label.ctrl { display: block; margin-bottom: 10px; }
-label.ctrl .lbl { display: block; font-size: 11px; color: var(--text-sec); margin-bottom: 4px; font-weight: 500; }
-select, input[type="number"], input[type="text"] {
-    width: 100%; padding: 6px 8px; background: var(--card); border: 1px solid var(--border);
-    border-radius: var(--radius); color: var(--text); font-size: 12px; font-family: inherit;
-    outline: none; transition: border-color 0.15s;
+.bin-card {
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 10px; overflow: hidden; transition: border-color 0.15s;
 }
-select:focus, input:focus { border-color: var(--accent); }
-select { cursor: pointer; appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b949e' d='M3 5l3 3 3-3'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px;
+.bin-card.drag-over { border-color: var(--accent); background: rgba(88,166,255,0.04); }
+.bin-header {
+    display: flex; align-items: center; gap: 6px; padding: 8px 10px;
+    background: rgba(255,255,255,0.02);
 }
-.checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; cursor: pointer; font-size: 12px; }
-.checkbox-row input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
-
-/* Group Editor */
-.group-card {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 8px 10px; margin-bottom: 8px;
+.bin-color {
+    width: 16px; height: 16px; border-radius: 50%; border: none;
+    cursor: pointer; padding: 0; flex-shrink: 0;
 }
-.group-card-header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.group-name-input {
+.bin-label {
     flex: 1; padding: 3px 6px; background: transparent; border: 1px solid transparent;
-    border-radius: 3px; color: var(--accent); font-size: 12px; font-weight: 600; font-family: inherit;
+    border-radius: 3px; color: var(--text); font-size: 13px; font-weight: 600;
+    font-family: inherit; outline: none;
 }
-.group-name-input:hover { border-color: var(--border); }
-.group-name-input:focus { border-color: var(--accent); background: var(--bg); outline: none; }
-.group-color {
-    width: 14px; height: 14px; border-radius: 50%; border: none; cursor: pointer; padding: 0;
+.bin-label:hover { border-color: var(--border); }
+.bin-label:focus { border-color: var(--accent); background: var(--card); }
+.bin-sample-count {
+    font-size: 10px; color: var(--text-sec); background: var(--card);
+    padding: 1px 7px; border-radius: 10px; white-space: nowrap;
 }
-.group-samples { display: flex; flex-wrap: wrap; gap: 4px; }
-.sample-tag {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 2px 8px; background: var(--bg); border-radius: 3px;
+.bin-delete {
+    width: 22px; height: 22px; border: none; background: transparent;
+    color: var(--text-sec); cursor: pointer; border-radius: 3px; font-size: 14px;
+    display: flex; align-items: center; justify-content: center; font-family: inherit;
+}
+.bin-delete:hover { background: rgba(248,81,73,0.15); color: var(--danger); }
+.bin-body {
+    padding: 8px; min-height: 36px;
+}
+.bin-body.empty-hint::after {
+    content: 'Drag samples here'; display: block;
+    color: var(--border); font-size: 11px; text-align: center; padding: 4px;
+}
+
+.add-group-btn {
+    width: 100%; padding: 8px; border: 1px dashed var(--border); border-radius: var(--radius);
+    background: transparent; color: var(--text-sec); cursor: pointer;
+    font-size: 12px; font-family: inherit; transition: all 0.15s;
+}
+.add-group-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.continue-btn {
+    width: 100%; padding: 10px; margin-top: 16px;
+    background: var(--accent); color: #fff; border: none; border-radius: var(--radius);
+    font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+    transition: opacity 0.15s;
+}
+.continue-btn:hover { opacity: 0.85; }
+.continue-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* ── Right Panel ──────────────────────────────────────── */
+#right-panel {
+    flex: 1; display: flex; flex-direction: column; overflow: hidden;
+}
+.right-content { flex: 1; overflow-y: auto; padding: 24px; }
+
+/* Welcome card */
+.welcome-card {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; color: var(--text-sec);
+}
+.welcome-card svg { width: 64px; height: 64px; opacity: 0.2; margin-bottom: 16px; }
+.welcome-card .wc-text { font-size: 15px; }
+
+/* Summary card */
+.summary-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px;
+}
+.stat-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px;
+}
+.stat-card .stat-val { font-size: 22px; font-weight: 700; margin-bottom: 2px; }
+.stat-card .stat-lbl { font-size: 11px; color: var(--text-sec); }
+.stat-card.wide { grid-column: 1 / -1; }
+.quant-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.quant-tag {
+    padding: 3px 10px; background: var(--bg); border-radius: 12px;
+    font-size: 11px; color: var(--text-sec); border: 1px solid var(--border);
+}
+#sample-chart { width: 100%; height: 300px; }
+
+/* ── Status Bar ───────────────────────────────────────── */
+#statusbar {
+    height: var(--status-h); background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 0 20px; display: flex; align-items: center; gap: 16px;
     font-size: 11px; color: var(--text-sec);
 }
-.sample-tag .remove { cursor: pointer; opacity: 0.5; font-size: 10px; }
-.sample-tag .remove:hover { opacity: 1; color: var(--danger); }
-.add-sample-row { margin-top: 6px; display: flex; gap: 4px; }
-.add-sample-row select { flex: 1; padding: 3px 6px; font-size: 11px; }
-.btn-sm {
-    padding: 3px 10px; background: var(--accent); color: #fff; border: none; border-radius: 3px;
-    font-size: 11px; cursor: pointer; font-family: inherit;
+.status-dot {
+    width: 6px; height: 6px; border-radius: 50%; display: inline-block;
+    margin-right: 4px; background: var(--success);
 }
-.btn-sm:hover { opacity: 0.85; }
-.btn-sm.danger { background: var(--danger); }
-.btn-add-group {
-    width: 100%; padding: 6px; background: transparent; border: 1px dashed var(--border);
-    border-radius: var(--radius); color: var(--text-sec); cursor: pointer; font-size: 11px;
-    font-family: inherit; margin-top: 4px;
-}
-.btn-add-group:hover { border-color: var(--accent); color: var(--accent); }
 
-/* Plot Type Buttons */
-.plot-type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 10px; }
-.plot-type-btn {
-    padding: 8px 6px; background: var(--card); border: 1px solid var(--border);
-    border-radius: var(--radius); cursor: pointer; text-align: center;
-    font-size: 11px; color: var(--text-sec); font-family: inherit; transition: all 0.15s;
+/* ── Processing Tab Styles ────────────────────────────── */
+.proc-option {
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 10px; overflow: hidden;
 }
-.plot-type-btn:hover { border-color: var(--text-sec); color: var(--text); }
-.plot-type-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.08); }
-.plot-type-btn .icon { font-size: 18px; display: block; margin-bottom: 2px; }
+.proc-option-header {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer;
+    user-select: none;
+}
+.proc-option-header input[type="checkbox"] {
+    accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; flex-shrink: 0;
+}
+.proc-option-label { font-size: 13px; font-weight: 500; }
+.proc-option-desc { font-size: 11px; color: var(--text-sec); margin-top: 1px; }
+.proc-option-body {
+    padding: 0 12px 12px 37px;
+}
+.proc-sub { margin-top: 8px; }
+.proc-sub-label { font-size: 11px; color: var(--text-sec); margin-bottom: 4px; font-weight: 500; }
 
-/* Protein search / multiselect */
-.protein-search { position: relative; }
-.protein-search input { margin-bottom: 0; }
-.protein-list {
-    max-height: 180px; overflow-y: auto; background: var(--card); border: 1px solid var(--border);
-    border-top: none; border-radius: 0 0 var(--radius) var(--radius);
+/* Inline form elements for the prune sentence builder */
+.sentence-builder {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+    font-size: 12px; color: var(--text-sec); line-height: 2.2;
 }
-.protein-list-item {
-    padding: 4px 8px; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+.sentence-builder span { white-space: nowrap; }
+.sentence-builder select {
+    width: auto; min-width: 110px; padding: 3px 22px 3px 6px;
+    font-size: 11px; height: 26px;
 }
-.protein-list-item:hover { background: rgba(88,166,255,0.08); }
-.protein-list-item.selected { color: var(--accent); }
-.selected-proteins { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.sentence-builder input[type="number"] {
+    width: 70px; padding: 3px 6px; font-size: 11px; height: 26px;
+    text-align: center;
+}
+.sentence-builder .sb-group-select {
+    min-width: 100px;
+}
 
-/* Main Content */
-#main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-#plot-area { flex: 1; position: relative; }
-#plot { width: 100%; height: 100%; }
-#status-bar {
-    height: 28px; background: var(--surface); border-top: 1px solid var(--border);
-    padding: 0 16px; display: flex; align-items: center; gap: 16px;
-    font-size: 11px; color: var(--text-sec);
+/* Processing right panel */
+.proc-preview {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 20px;
 }
-.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); display: inline-block; margin-right: 4px; }
-
-/* Export bar */
-.export-bar {
-    display: flex; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border);
-    background: var(--surface); align-items: center;
+.proc-preview h3 {
+    font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--text-sec);
+    text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px;
 }
-.export-bar .btn-sm { background: var(--card); color: var(--text-sec); border: 1px solid var(--border); }
-.export-bar .btn-sm:hover { border-color: var(--accent); color: var(--accent); }
-.export-bar .spacer { flex: 1; }
-.new-file-btn { background: transparent !important; border-color: var(--danger) !important; color: var(--danger) !important; }
-.new-file-btn:hover { background: rgba(248,81,73,0.1) !important; }
-
-/* Range slider */
-input[type="range"] {
-    width: 100%; height: 4px; -webkit-appearance: none; appearance: none;
-    background: var(--border); border-radius: 2px; outline: none;
+.proc-step {
+    display: flex; align-items: flex-start; gap: 10px; padding: 8px 0;
+    border-bottom: 1px solid var(--border);
 }
-input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; width: 14px; height: 14px;
-    background: var(--accent); border-radius: 50%; cursor: pointer;
+.proc-step:last-child { border-bottom: none; }
+.proc-step-num {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.range-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.range-row .range-val { font-size: 11px; color: var(--accent); min-width: 30px; text-align: right; }
+.proc-step-num.inactive { background: var(--border); }
+.proc-step-text { font-size: 12px; color: var(--text); padding-top: 2px; }
+.proc-step-text.inactive { color: var(--text-sec); text-decoration: line-through; opacity: 0.5; }
 
-/* Loading */
-.loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    background: rgba(13,17,23,0.8); z-index: 10; }
-.spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent);
-    border-radius: 50%; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* Responsive */
-@media (max-width: 900px) {
-    :root { --sidebar-w: 260px; }
+select, input[type="number"], input[type="text"] {
+    transition: border-color 0.15s;
 }
 </style>
 </head>
 <body>
 
-<!-- Upload Overlay -->
-<div id="upload-overlay">
-    <div class="upload-title">ProteomicsViewer</div>
-    <div class="upload-subtitle">Interactive proteomics data visualization</div>
-    <div class="drop-zone" id="drop-zone">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>
-        </svg>
-        <p>Drop proteinGroups.txt here</p>
-        <div class="hint">or click to browse</div>
+<!-- Tab Bar -->
+<nav id="tabbar">
+    <span class="app-name">ProteomicsViewer</span>
+    <div class="tab-buttons">
+        <button class="tab-btn active" data-tab="upload" onclick="switchTab('upload')">Data Upload</button>
+        <button class="tab-btn" data-tab="processing" onclick="switchTab('processing')" disabled id="tab-processing">Processing</button>
     </div>
-    <input type="file" id="file-input" accept=".txt,.tsv,.csv">
-    <div class="upload-error" id="upload-error"></div>
-</div>
+</nav>
 
-<!-- App -->
-<div id="app" class="hidden">
-    <aside id="sidebar">
-        <div class="sidebar-header">
-            <h1>ProteomicsViewer</h1>
-            <div class="file-info" id="file-info-text"></div>
-        </div>
-        <div class="sidebar-scroll">
+<!-- Workspace -->
+<div id="workspace">
+    <!-- Left Panel -->
+    <aside id="left-panel">
 
-            <!-- Filters -->
-            <div class="section open" id="sec-filters">
-                <div class="section-hdr" onclick="toggleSection('sec-filters')">
-                    Filters <span class="chev">&#9656;</span>
+        <!-- === UPLOAD TAB LEFT === -->
+        <div class="tab-panel" data-for="upload">
+
+            <!-- Upload Section -->
+            <div id="upload-section" class="panel-section">
+                <div class="section-label">Load Data</div>
+                <div class="upload-zone" id="upload-zone">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>
+                    </svg>
+                    <div class="uz-text">Drop proteinGroups.txt here</div>
+                    <div class="uz-hint">or click to browse</div>
                 </div>
-                <div class="section-body">
-                    <label class="checkbox-row"><input type="checkbox" id="filt-contam" checked onchange="applyAll()"> Remove contaminants</label>
-                    <label class="checkbox-row"><input type="checkbox" id="filt-reverse" checked onchange="applyAll()"> Remove reverse hits</label>
-                    <label class="checkbox-row"><input type="checkbox" id="filt-site" checked onchange="applyAll()"> Remove only-by-site IDs</label>
-                    <label class="ctrl"><span class="lbl">Min peptides</span>
-                        <div class="range-row">
-                            <input type="range" id="filt-min-pep" min="0" max="20" value="1" oninput="document.getElementById('filt-min-pep-val').textContent=this.value;applyAll()">
-                            <span class="range-val" id="filt-min-pep-val">1</span>
+                <input type="file" id="file-input" accept=".txt,.tsv,.csv">
+                <div class="upload-error" id="upload-error"></div>
+            </div>
+
+            <!-- Grouping Section (hidden until data loads) -->
+            <div id="grouping-section" class="hidden">
+                <div class="panel-section">
+                    <div class="section-label">Assign Samples to Groups</div>
+
+                    <!-- Unassigned Pool -->
+                    <div class="unassigned-pool" id="unassigned-pool">
+                        <div class="pool-header">
+                            <span>Unassigned</span>
+                            <span class="pool-count" id="unassigned-count">0</span>
                         </div>
-                    </label>
-                    <label class="ctrl"><span class="lbl">Min unique peptides</span>
-                        <div class="range-row">
-                            <input type="range" id="filt-min-upep" min="0" max="20" value="0" oninput="document.getElementById('filt-min-upep-val').textContent=this.value;applyAll()">
-                            <span class="range-val" id="filt-min-upep-val">0</span>
-                        </div>
-                    </label>
-                </div>
-            </div>
-
-            <!-- Sample Groups -->
-            <div class="section open" id="sec-groups">
-                <div class="section-hdr" onclick="toggleSection('sec-groups')">
-                    Sample Groups <span class="chev">&#9656;</span>
-                </div>
-                <div class="section-body">
-                    <div id="groups-container"></div>
-                    <button class="btn-add-group" onclick="addGroup()">+ Add group</button>
-                </div>
-            </div>
-
-            <!-- Analysis -->
-            <div class="section open" id="sec-analysis">
-                <div class="section-hdr" onclick="toggleSection('sec-analysis')">
-                    Analysis Settings <span class="chev">&#9656;</span>
-                </div>
-                <div class="section-body">
-                    <label class="ctrl"><span class="lbl">Quantification type</span>
-                        <select id="quant-type" onchange="applyAll()"></select>
-                    </label>
-                    <label class="ctrl"><span class="lbl">Normalization</span>
-                        <select id="normalization" onchange="applyAll()">
-                            <option value="none">None (raw)</option>
-                            <option value="totalsum">Total sum</option>
-                            <option value="median">Median</option>
-                            <option value="upperquartile">Upper quartile</option>
-                            <option value="quantile">Quantile</option>
-                            <option value="medianofratio">Median of ratios (DESeq2-like)</option>
-                        </select>
-                    </label>
-                    <label class="ctrl"><span class="lbl">Value transform</span>
-                        <select id="transform" onchange="applyAll()">
-                            <option value="none">None</option>
-                            <option value="log2">Log2 (x + 1)</option>
-                            <option value="log10">Log10 (x + 1)</option>
-                            <option value="sqrt">Square root</option>
-                        </select>
-                    </label>
-                </div>
-            </div>
-
-            <!-- Visualization -->
-            <div class="section open" id="sec-viz">
-                <div class="section-hdr" onclick="toggleSection('sec-viz')">
-                    Visualization <span class="chev">&#9656;</span>
-                </div>
-                <div class="section-body">
-                    <div class="plot-type-grid">
-                        <button class="plot-type-btn active" data-plot="scatter" onclick="setPlotType('scatter')">
-                            <span class="icon">&#11044;&#11044;</span>Scatter
-                        </button>
-                        <button class="plot-type-btn" data-plot="volcano" onclick="setPlotType('volcano')">
-                            <span class="icon">&#9651;</span>Volcano
-                        </button>
-                        <button class="plot-type-btn" data-plot="unique" onclick="setPlotType('unique')">
-                            <span class="icon">&#9673;</span>Unique
-                        </button>
-                        <button class="plot-type-btn" data-plot="bar" onclick="setPlotType('bar')">
-                            <span class="icon">&#9612;&#9612;</span>Bar
-                        </button>
-                        <button class="plot-type-btn" data-plot="heatmap" onclick="setPlotType('heatmap')">
-                            <span class="icon">&#9638;</span>Heatmap
-                        </button>
-                        <button class="plot-type-btn" data-plot="enrichment" onclick="setPlotType('enrichment')">
-                            <span class="icon">&#8596;</span>Enrichment
-                        </button>
+                        <div class="sample-area" id="unassigned-area" data-target="unassigned"></div>
                     </div>
-                    <div id="plot-options"></div>
+
+                    <!-- Bins -->
+                    <div id="bins-container"></div>
+                    <button class="add-group-btn" onclick="addBin()">+ Add Group</button>
+                    <button class="continue-btn" id="continue-btn" disabled>Continue</button>
                 </div>
             </div>
 
         </div>
+
+        <!-- === PROCESSING TAB LEFT === -->
+        <div class="tab-panel hidden" data-for="processing">
+            <div class="panel-section">
+                <div class="section-label">Data Processing Options</div>
+
+                <!-- 1. LFQ Analysis -->
+                <div class="proc-option">
+                    <label class="proc-option-header">
+                        <input type="checkbox" id="proc-lfq" onchange="updateProcessingPreview()">
+                        <div>
+                            <div class="proc-option-label">LFQ Analysis</div>
+                            <div class="proc-option-desc">Use label-free quantification intensities</div>
+                        </div>
+                    </label>
+                </div>
+
+                <!-- 2. Normalization -->
+                <div class="proc-option">
+                    <label class="proc-option-header">
+                        <input type="checkbox" id="proc-norm" onchange="toggleNormOpts();updateProcessingPreview()">
+                        <div>
+                            <div class="proc-option-label">Normalization</div>
+                            <div class="proc-option-desc">Normalize values across samples</div>
+                        </div>
+                    </label>
+                    <div class="proc-option-body hidden" id="norm-opts">
+                        <div class="proc-sub">
+                            <div class="proc-sub-label">Normalization scope</div>
+                            <select id="norm-scope" onchange="updateProcessingPreview()">
+                                <option value="all">Across all detected peptides</option>
+                                <option value="species">Within a given species</option>
+                            </select>
+                        </div>
+                        <div class="proc-sub hidden" id="norm-species-input">
+                            <div class="proc-sub-label">Species name</div>
+                            <input type="text" id="norm-species" placeholder="e.g. Homo sapiens" onchange="updateProcessingPreview()">
+                        </div>
+                        <div class="proc-sub" style="margin-top:10px">
+                            <label class="proc-option-header" style="padding:6px 0;cursor:pointer">
+                                <input type="checkbox" id="norm-remove-contam" onchange="updateProcessingPreview()">
+                                <div>
+                                    <div class="proc-option-label" style="font-size:12px">Remove contaminants before normalizing</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Prune Peptides -->
+                <div class="proc-option">
+                    <label class="proc-option-header">
+                        <input type="checkbox" id="proc-prune" onchange="togglePruneOpts();updateProcessingPreview()">
+                        <div>
+                            <div class="proc-option-label">Prune Peptides Below Threshold</div>
+                            <div class="proc-option-desc">Filter out low-abundance proteins</div>
+                        </div>
+                    </label>
+                    <div class="proc-option-body hidden" id="prune-opts">
+                        <div class="sentence-builder">
+                            <span>Peptides will not be analyzed if their</span>
+                            <select id="prune-metric" onchange="updateProcessingPreview()">
+                                <option value="spectral">spectral counts</option>
+                                <option value="intensity">minimum intensity</option>
+                            </select>
+                            <span>is below</span>
+                            <input type="number" id="prune-value" value="2" min="0" step="1" onchange="updateProcessingPreview()">
+                            <select id="prune-agg" onchange="updateProcessingPreview()">
+                                <option value="total">in total</option>
+                                <option value="average">on average</option>
+                                <option value="any">in any sample</option>
+                            </select>
+                            <select id="prune-scope" onchange="togglePruneGroupSelect();updateProcessingPreview()">
+                                <option value="all">across all groups</option>
+                                <option value="any">across any group</option>
+                                <option value="specified">across a specified group</option>
+                            </select>
+                            <select id="prune-group" class="sb-group-select hidden" onchange="updateProcessingPreview()">
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
     </aside>
 
-    <div id="main">
-        <div class="export-bar">
-            <button class="btn-sm" onclick="exportSVG()">Export SVG</button>
-            <button class="btn-sm" onclick="exportPNG()">Export PNG</button>
-            <button class="btn-sm" onclick="exportCSV()">Export CSV</button>
-            <span class="spacer"></span>
-            <button class="btn-sm new-file-btn" onclick="loadNewFile()">Load new file</button>
+    <!-- Divider -->
+    <div id="divider"></div>
+
+    <!-- Right Panel -->
+    <main id="right-panel">
+        <!-- Welcome (before data) -->
+        <div class="right-content" id="right-welcome">
+            <div class="welcome-card">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                    <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                    <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+                </svg>
+                <div class="wc-text">Data visualization will appear here</div>
+            </div>
         </div>
-        <div id="plot-area">
-            <div id="plot"></div>
+
+        <!-- Data summary (after upload, for upload tab) -->
+        <div class="right-content hidden" id="right-summary">
+            <div class="summary-grid" id="summary-grid"></div>
+            <div id="sample-chart"></div>
         </div>
-        <div id="status-bar">
-            <span><span class="status-dot"></span><span id="status-proteins">No data</span></span>
-            <span id="status-filtered"></span>
-            <span id="status-groups"></span>
+
+        <!-- Processing preview (for processing tab) -->
+        <div class="right-content hidden" id="right-processing">
+            <div class="proc-preview">
+                <h3>Processing Pipeline Preview</h3>
+                <div id="proc-steps">
+                    <div style="color:var(--text-sec);font-size:13px;padding:12px 0">
+                        Select processing options on the left to build your pipeline.
+                    </div>
+                </div>
+            </div>
         </div>
-    </div>
+    </main>
+</div>
+
+<!-- Status Bar -->
+<div id="statusbar">
+    <span><span class="status-dot" id="status-dot"></span><span id="status-text">No data loaded</span></span>
+    <span id="status-groups"></span>
 </div>
 
 <script>
 // ====================================================================
 // STATE
 // ====================================================================
-let RAW = null;            // Raw data from server
-let FILTERED_IDX = [];     // Indices of proteins passing filters
-let NORM_DATA = {};        // {sample: [values...]} after normalization
-let GROUPS = {};           // {groupName: {samples:[], color:''}}
-let PLOT_TYPE = 'scatter';
-const COLORS = ['#58a6ff','#f85149','#3fb950','#d29922','#bc8cff','#ff7b72','#7ee787','#79c0ff','#d2a8ff','#ffa657',
-                '#f0883e','#a5d6ff','#ffd8b5','#56d364','#db61a2','#8957e5','#2ea043','#6cb6ff','#e3b341','#ea6045'];
+let RAW = null;
+const COLORS = ['#58a6ff','#f85149','#3fb950','#d29922','#bc8cff','#ff7b72','#7ee787',
+    '#79c0ff','#d2a8ff','#ffa657','#f0883e','#a5d6ff','#ffd8b5','#56d364','#db61a2'];
 
-const LAYOUT_BASE = {
+// Sample grouping state
+let UNASSIGNED = [];          // sample names not in any bin
+let BINS = [];                // [{id, label, color, samples:[]}]
+let SELECTED = new Set();     // currently selected sample names
+let nextBinId = 1;
+
+// Per-sample colors (based on auto-detected group prefix)
+let SAMPLE_COLORS = {};       // {sampleName: color}
+
+// Active tab
+let ACTIVE_TAB = 'upload';
+
+// Layout constants
+const PLOTLY_LAYOUT_BASE = {
     paper_bgcolor: '#0d1117', plot_bgcolor: '#161b22',
     font: { family: 'Inter, system-ui, sans-serif', color: '#e6edf3', size: 12 },
-    margin: { l: 70, r: 30, t: 50, b: 70 },
+    margin: { l: 50, r: 20, t: 30, b: 70 },
     xaxis: { gridcolor: '#21262d', zerolinecolor: '#30363d', linecolor: '#30363d' },
     yaxis: { gridcolor: '#21262d', zerolinecolor: '#30363d', linecolor: '#30363d' },
-    legend: { bgcolor: 'rgba(0,0,0,0)', font: { color: '#e6edf3', size: 11 } },
-    hoverlabel: { bgcolor: '#21262d', bordercolor: '#30363d', font: { color: '#e6edf3', family: 'Inter, system-ui', size: 12 } },
+    hoverlabel: { bgcolor: '#21262d', bordercolor: '#30363d',
+        font: { color: '#e6edf3', family: 'Inter, system-ui', size: 12 } },
 };
 
 // ====================================================================
-// UPLOAD
+// RESIZABLE DIVIDER
 // ====================================================================
-const dropZone = document.getElementById('drop-zone');
+(function() {
+    const divider = document.getElementById('divider');
+    const left = document.getElementById('left-panel');
+    let dragging = false, startX = 0, startW = 0;
+
+    divider.addEventListener('mousedown', e => {
+        dragging = true; startX = e.clientX; startW = left.offsetWidth;
+        divider.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        const w = Math.max(260, Math.min(700, startW + (e.clientX - startX)));
+        left.style.width = w + 'px';
+        left.style.minWidth = w + 'px';
+        // Resize any active plotly charts
+        const charts = document.querySelectorAll('#sample-chart, #plot');
+        charts.forEach(c => { if (c && c.data) Plotly.Plots.resize(c); });
+    });
+    document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        divider.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        const charts = document.querySelectorAll('#sample-chart, #plot');
+        charts.forEach(c => { if (c && c.data) Plotly.Plots.resize(c); });
+    });
+})();
+
+// ====================================================================
+// TAB MANAGEMENT
+// ====================================================================
+function switchTab(tab) {
+    ACTIVE_TAB = tab;
+    document.querySelectorAll('.tab-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.tab-panel').forEach(p =>
+        p.classList.toggle('hidden', p.dataset.for !== tab));
+
+    // Right panel switching
+    document.getElementById('right-welcome').classList.add('hidden');
+    document.getElementById('right-summary').classList.add('hidden');
+    document.getElementById('right-processing').classList.add('hidden');
+
+    if (tab === 'upload') {
+        if (RAW) document.getElementById('right-summary').classList.remove('hidden');
+        else document.getElementById('right-welcome').classList.remove('hidden');
+    } else if (tab === 'processing') {
+        document.getElementById('right-processing').classList.remove('hidden');
+        updateProcessingPreview();
+    }
+}
+
+// ====================================================================
+// FILE UPLOAD
+// ====================================================================
+const uploadZone = document.getElementById('upload-zone');
 const fileInput = document.getElementById('file-input');
 
-dropZone.addEventListener('click', () => fileInput.click());
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('dragover'); if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
-fileInput.addEventListener('change', () => { if(fileInput.files.length) handleFile(fileInput.files[0]); });
+uploadZone.addEventListener('click', () => fileInput.click());
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', e => {
+    e.preventDefault(); uploadZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
 
 async function handleFile(file) {
     document.getElementById('upload-error').textContent = '';
@@ -393,873 +604,564 @@ async function handleFile(file) {
         const resp = await fetch('/api/upload', { method: 'POST', body: form });
         if (!resp.ok) { const err = await resp.json(); throw new Error(err.detail || 'Upload failed'); }
         RAW = await resp.json();
-        initApp();
-    } catch(e) {
+        initGrouping();
+    } catch (e) {
         document.getElementById('upload-error').textContent = e.message;
     }
 }
 
 // Try auto-load
-(async function() {
+(async function () {
     try {
         const resp = await fetch('/api/data');
-        if (resp.ok) { RAW = await resp.json(); if(RAW.proteins) initApp(); }
-    } catch(e) {}
+        if (resp.ok) { RAW = await resp.json(); if (RAW.proteins) initGrouping(); }
+    } catch (e) { }
 })();
 
 // ====================================================================
-// INIT
+// GROUPING INIT
 // ====================================================================
-function initApp() {
-    document.getElementById('upload-overlay').classList.add('hidden');
-    document.getElementById('app').classList.remove('hidden');
-    document.getElementById('file-info-text').textContent =
-        `${RAW.filename} \u2014 ${RAW.total_proteins} proteins, ${RAW.samples.length} samples`;
-
-    // Populate quant type dropdown
-    const qSel = document.getElementById('quant-type');
-    qSel.innerHTML = '';
-    RAW.quant_types.forEach(qt => {
-        const o = document.createElement('option'); o.value = qt; o.textContent = qt;
-        if (qt === 'LFQ intensity' || qt === 'Intensity') o.selected = true;
-        qSel.appendChild(o);
-    });
-    // Prefer LFQ if available
-    if (RAW.quant_types.includes('LFQ intensity')) qSel.value = 'LFQ intensity';
-    else if (RAW.quant_types.includes('Intensity')) qSel.value = 'Intensity';
-
-    // Init groups from suggestion
-    GROUPS = {};
+function initGrouping() {
+    // Assign colors to samples based on group prefix
+    SAMPLE_COLORS = {};
     let ci = 0;
+    const prefixColors = {};
+    RAW.samples.forEach(s => {
+        const prefix = s.match(/^[A-Za-z]+/)?.[0] || 'X';
+        if (!prefixColors[prefix]) { prefixColors[prefix] = COLORS[ci++ % COLORS.length]; }
+        SAMPLE_COLORS[s] = prefixColors[prefix];
+    });
+
+    // Auto-create bins from suggested groups, samples pre-assigned
+    BINS = [];
+    UNASSIGNED = [];
+    nextBinId = 1;
+    const assigned = new Set();
+
     for (const [name, samples] of Object.entries(RAW.suggested_groups)) {
-        GROUPS[name] = { samples: [...samples], color: COLORS[ci % COLORS.length] };
-        ci++;
+        const color = SAMPLE_COLORS[samples[0]] || COLORS[(nextBinId - 1) % COLORS.length];
+        BINS.push({ id: nextBinId++, label: name, color, samples: [...samples] });
+        samples.forEach(s => assigned.add(s));
     }
-    renderGroups();
-    applyAll();
+    UNASSIGNED = RAW.samples.filter(s => !assigned.has(s));
+
+    // Show grouping UI, hide upload section
+    document.getElementById('upload-section').classList.add('hidden');
+    document.getElementById('grouping-section').classList.remove('hidden');
+
+    // Show right panel summary
+    document.getElementById('right-welcome').classList.add('hidden');
+    document.getElementById('right-summary').classList.remove('hidden');
+
+    renderAll();
     startHeartbeat();
+}
+
+// ====================================================================
+// RENDER
+// ====================================================================
+function renderAll() {
+    renderUnassigned();
+    renderBins();
+    renderSummary();
+    renderSampleChart();
+    updateStatus();
+    updateContinueBtn();
+}
+
+function createChip(sample) {
+    const chip = document.createElement('div');
+    chip.className = 'sample-chip' + (SELECTED.has(sample) ? ' selected' : '');
+    chip.dataset.sample = sample;
+    chip.draggable = true;
+    chip.innerHTML = `<span class="chip-dot" style="background:${SAMPLE_COLORS[sample] || '#8b949e'}"></span>${sample}`;
+
+    // Click to toggle selection
+    chip.addEventListener('mousedown', e => {
+        // Record for distinguishing click from drag
+        chip._clickX = e.clientX; chip._clickY = e.clientY; chip._wasClick = true;
+    });
+    chip.addEventListener('click', e => {
+        if (!chip._wasClick) return;
+        if (e.ctrlKey || e.metaKey) {
+            toggleSelect(sample);
+        } else {
+            // Select only this one (or deselect if already only selection)
+            if (SELECTED.size === 1 && SELECTED.has(sample)) {
+                SELECTED.clear();
+            } else {
+                SELECTED.clear();
+                SELECTED.add(sample);
+            }
+            updateChipSelections();
+        }
+    });
+
+    // Drag
+    chip.addEventListener('dragstart', e => {
+        chip._wasClick = false;
+        if (!SELECTED.has(sample)) {
+            SELECTED.clear();
+            SELECTED.add(sample);
+            updateChipSelections();
+        }
+        const payload = JSON.stringify({
+            samples: [...SELECTED],
+            source: findSampleSource(sample)
+        });
+        e.dataTransfer.setData('application/json', payload);
+        e.dataTransfer.effectAllowed = 'move';
+
+        // Ghost label showing count
+        const ghost = document.createElement('div');
+        ghost.style.cssText = 'position:fixed;top:-100px;padding:4px 12px;background:#58a6ff;color:#fff;border-radius:12px;font-size:12px;font-weight:600;';
+        ghost.textContent = SELECTED.size > 1 ? `${SELECTED.size} samples` : sample;
+        document.body.appendChild(ghost);
+        e.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, 14);
+        requestAnimationFrame(() => ghost.remove());
+
+        // Mark dragging
+        SELECTED.forEach(s => {
+            const c = document.querySelector(`.sample-chip[data-sample="${s}"]`);
+            if (c) c.classList.add('dragging');
+        });
+    });
+    chip.addEventListener('dragend', () => {
+        document.querySelectorAll('.sample-chip.dragging').forEach(c => c.classList.remove('dragging'));
+        document.querySelectorAll('.drag-over').forEach(c => c.classList.remove('drag-over'));
+    });
+
+    return chip;
+}
+
+function renderUnassigned() {
+    const area = document.getElementById('unassigned-area');
+    area.innerHTML = '';
+    UNASSIGNED.forEach(s => area.appendChild(createChip(s)));
+    document.getElementById('unassigned-count').textContent = UNASSIGNED.length;
+}
+
+function renderBins() {
+    const container = document.getElementById('bins-container');
+    container.innerHTML = '';
+    BINS.forEach(bin => {
+        const card = document.createElement('div');
+        card.className = 'bin-card';
+        card.dataset.binId = bin.id;
+
+        const header = document.createElement('div');
+        header.className = 'bin-header';
+        header.innerHTML = `
+            <input type="color" class="bin-color" value="${bin.color}">
+            <input class="bin-label" value="${bin.label}" spellcheck="false">
+            <span class="bin-sample-count">${bin.samples.length}</span>
+            <button class="bin-delete" title="Remove group">&times;</button>
+        `;
+        card.appendChild(header);
+
+        // Color change
+        header.querySelector('.bin-color').addEventListener('input', e => {
+            bin.color = e.target.value;
+            renderSampleChart();
+        });
+        // Label change
+        header.querySelector('.bin-label').addEventListener('change', e => {
+            bin.label = e.target.value.trim() || bin.label;
+            renderSampleChart();
+        });
+        // Delete
+        header.querySelector('.bin-delete').addEventListener('click', () => {
+            UNASSIGNED.push(...bin.samples);
+            BINS = BINS.filter(b => b.id !== bin.id);
+            SELECTED.clear();
+            renderAll();
+        });
+
+        // Sample area (drop target)
+        const body = document.createElement('div');
+        body.className = 'sample-area bin-body' + (bin.samples.length === 0 ? ' empty-hint' : '');
+        body.dataset.target = String(bin.id);
+        bin.samples.forEach(s => body.appendChild(createChip(s)));
+        card.appendChild(body);
+
+        // Drop target events
+        setupDropTarget(body, bin.id);
+        container.appendChild(card);
+    });
+}
+
+function updateChipSelections() {
+    document.querySelectorAll('.sample-chip').forEach(c => {
+        c.classList.toggle('selected', SELECTED.has(c.dataset.sample));
+    });
+}
+
+function toggleSelect(sample) {
+    if (SELECTED.has(sample)) SELECTED.delete(sample);
+    else SELECTED.add(sample);
+    updateChipSelections();
+}
+
+function findSampleSource(sample) {
+    if (UNASSIGNED.includes(sample)) return 'unassigned';
+    for (const bin of BINS) {
+        if (bin.samples.includes(sample)) return bin.id;
+    }
+    return 'unassigned';
+}
+
+// ====================================================================
+// DROP TARGETS
+// ====================================================================
+function setupDropTarget(el, targetId) {
+    el.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        el.closest('.bin-card')?.classList.add('drag-over');
+    });
+    el.addEventListener('dragleave', e => {
+        if (!el.contains(e.relatedTarget)) {
+            el.closest('.bin-card')?.classList.remove('drag-over');
+        }
+    });
+    el.addEventListener('drop', e => {
+        e.preventDefault();
+        el.closest('.bin-card')?.classList.remove('drag-over');
+        try {
+            const data = JSON.parse(e.dataTransfer.getData('application/json'));
+            moveSamples(data.samples, targetId);
+        } catch (err) { }
+    });
+}
+
+// Unassigned pool is also a drop target
+(function () {
+    const pool = document.getElementById('unassigned-area');
+    pool.addEventListener('dragover', e => {
+        e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+        pool.closest('.unassigned-pool')?.classList.add('drag-over');
+    });
+    pool.addEventListener('dragleave', e => {
+        if (!pool.contains(e.relatedTarget))
+            pool.closest('.unassigned-pool')?.classList.remove('drag-over');
+    });
+    pool.addEventListener('drop', e => {
+        e.preventDefault();
+        pool.closest('.unassigned-pool')?.classList.remove('drag-over');
+        try {
+            const data = JSON.parse(e.dataTransfer.getData('application/json'));
+            moveSamples(data.samples, 'unassigned');
+        } catch (err) { }
+    });
+})();
+
+function moveSamples(sampleNames, targetId) {
+    sampleNames.forEach(s => {
+        // Remove from current location
+        UNASSIGNED = UNASSIGNED.filter(u => u !== s);
+        BINS.forEach(b => { b.samples = b.samples.filter(x => x !== s); });
+        // Add to target
+        if (targetId === 'unassigned') {
+            UNASSIGNED.push(s);
+        } else {
+            const bin = BINS.find(b => b.id === targetId);
+            if (bin) bin.samples.push(s);
+        }
+    });
+    SELECTED.clear();
+    renderAll();
+}
+
+// ====================================================================
+// RUBBER-BAND SELECTION
+// ====================================================================
+let rbActive = false, rbStartX = 0, rbStartY = 0, rbEl = null, rbArea = null;
+
+document.addEventListener('mousedown', e => {
+    // Only start rubber-band on sample-area backgrounds
+    const area = e.target.closest('.sample-area');
+    if (!area || e.target.closest('.sample-chip')) return;
+
+    rbActive = true;
+    rbStartX = e.clientX;
+    rbStartY = e.clientY;
+    rbArea = area;
+
+    rbEl = document.createElement('div');
+    rbEl.className = 'rubber-band';
+    document.body.appendChild(rbEl);
+
+    if (!e.ctrlKey && !e.metaKey) SELECTED.clear();
+    updateChipSelections();
+    e.preventDefault();
+});
+
+document.addEventListener('mousemove', e => {
+    if (!rbActive) return;
+    const x = Math.min(e.clientX, rbStartX);
+    const y = Math.min(e.clientY, rbStartY);
+    const w = Math.abs(e.clientX - rbStartX);
+    const h = Math.abs(e.clientY - rbStartY);
+    rbEl.style.left = x + 'px';
+    rbEl.style.top = y + 'px';
+    rbEl.style.width = w + 'px';
+    rbEl.style.height = h + 'px';
+
+    // Highlight intersecting chips
+    const rect = { left: x, top: y, right: x + w, bottom: y + h };
+    rbArea.querySelectorAll('.sample-chip').forEach(chip => {
+        const cr = chip.getBoundingClientRect();
+        const intersects = !(cr.right < rect.left || cr.left > rect.right ||
+            cr.bottom < rect.top || cr.top > rect.bottom);
+        if (intersects) SELECTED.add(chip.dataset.sample);
+    });
+    updateChipSelections();
+});
+
+document.addEventListener('mouseup', () => {
+    if (!rbActive) return;
+    rbActive = false;
+    if (rbEl) { rbEl.remove(); rbEl = null; }
+    rbArea = null;
+});
+
+// ====================================================================
+// BIN MANAGEMENT
+// ====================================================================
+function addBin() {
+    const id = nextBinId++;
+    let idx = BINS.length + 1;
+    let label = `Group ${idx}`;
+    while (BINS.some(b => b.label === label)) { idx++; label = `Group ${idx}`; }
+    BINS.push({ id, label, color: COLORS[(id - 1) % COLORS.length], samples: [] });
+    renderAll();
+}
+
+function updateContinueBtn() {
+    const btn = document.getElementById('continue-btn');
+    const ready = BINS.filter(b => b.samples.length > 0).length >= 2;
+    btn.disabled = !ready;
+    // Enable/disable processing tab
+    document.getElementById('tab-processing').disabled = !ready;
+}
+
+// Continue button navigates to Processing tab
+document.getElementById('continue-btn').addEventListener('click', () => {
+    populatePruneGroupSelect();
+    switchTab('processing');
+});
+
+// ====================================================================
+// RIGHT PANEL: SUMMARY
+// ====================================================================
+function renderSummary() {
+    if (!RAW) return;
+    const grid = document.getElementById('summary-grid');
+    grid.innerHTML = `
+        <div class="stat-card">
+            <div class="stat-val">${RAW.total_proteins.toLocaleString()}</div>
+            <div class="stat-lbl">Total Proteins</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-val">${RAW.samples.length}</div>
+            <div class="stat-lbl">Samples Detected</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-val" style="color:var(--warning)">${RAW.contaminants}</div>
+            <div class="stat-lbl">Contaminants</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-val" style="color:var(--danger)">${RAW.reverse_hits}</div>
+            <div class="stat-lbl">Reverse Hits</div>
+        </div>
+        <div class="stat-card wide">
+            <div class="stat-lbl" style="margin-bottom:6px">Quantification Types</div>
+            <div class="quant-tags">
+                ${RAW.quant_types.map(q => `<span class="quant-tag">${q}</span>`).join('')}
+            </div>
+        </div>
+        <div class="stat-card wide">
+            <div class="stat-lbl">File</div>
+            <div style="font-size:13px;margin-top:4px;word-break:break-all">${RAW.filename}</div>
+        </div>
+    `;
+}
+
+function renderSampleChart() {
+    if (!RAW) return;
+    const chartDiv = document.getElementById('sample-chart');
+
+    // Build per-sample total intensity, colored by bin assignment
+    const sampleOrder = [];
+    const intensities = [];
+    const colors = [];
+    const hoverTexts = [];
+
+    // Use Intensity column for the chart
+    const qt = RAW.quant_types.includes('Intensity') ? 'Intensity' :
+        RAW.quant_types.includes('LFQ intensity') ? 'LFQ intensity' : RAW.quant_types[0];
+    const qd = RAW.quant_data[qt];
+
+    // Ordered: bins first, then unassigned
+    BINS.forEach(bin => {
+        bin.samples.forEach(s => {
+            sampleOrder.push(s);
+            intensities.push(qd[s]?.reduce((a, b) => a + b, 0) || 0);
+            colors.push(bin.color);
+            hoverTexts.push(`${s}<br>${bin.label}`);
+        });
+    });
+    UNASSIGNED.forEach(s => {
+        sampleOrder.push(s);
+        intensities.push(qd[s]?.reduce((a, b) => a + b, 0) || 0);
+        colors.push('#30363d');
+        hoverTexts.push(`${s}<br>Unassigned`);
+    });
+
+    const traces = [{
+        x: sampleOrder, y: intensities, type: 'bar',
+        marker: { color: colors },
+        text: hoverTexts, hovertemplate: '%{text}<br>Total: %{y:.2e}<extra></extra>',
+    }];
+
+    const layout = {
+        ...PLOTLY_LAYOUT_BASE, showlegend: false,
+        title: { text: `Total ${qt} per Sample`, font: { size: 13, color: '#8b949e' } },
+        xaxis: { ...PLOTLY_LAYOUT_BASE.xaxis, tickangle: -45 },
+        yaxis: { ...PLOTLY_LAYOUT_BASE.yaxis, title: { text: qt, font: { size: 11 } } },
+    };
+
+    Plotly.react(chartDiv, traces, layout, { responsive: true, displaylogo: false, displayModeBar: false });
+}
+
+// ====================================================================
+// STATUS
+// ====================================================================
+function updateStatus() {
+    if (!RAW) return;
+    document.getElementById('status-text').textContent = `${RAW.total_proteins} proteins loaded`;
+    const assigned = BINS.reduce((n, b) => n + b.samples.length, 0);
+    const total = RAW.samples.length;
+    document.getElementById('status-groups').textContent =
+        `${BINS.length} groups | ${assigned}/${total} samples assigned`;
 }
 
 // ====================================================================
 // HEARTBEAT
 // ====================================================================
 function startHeartbeat() {
-    setInterval(() => fetch('/api/heartbeat').catch(()=>{}), 10000);
+    setInterval(() => fetch('/api/heartbeat').catch(() => { }), 10000);
 }
 
 // ====================================================================
-// SECTIONS
+// PROCESSING TAB — TOGGLES
 // ====================================================================
-function toggleSection(id) {
-    document.getElementById(id).classList.toggle('open');
+function toggleNormOpts() {
+    const checked = document.getElementById('proc-norm').checked;
+    document.getElementById('norm-opts').classList.toggle('hidden', !checked);
+    toggleNormSpecies();
 }
 
-// ====================================================================
-// GROUPS
-// ====================================================================
-function renderGroups() {
-    const c = document.getElementById('groups-container');
-    c.innerHTML = '';
-    const assigned = new Set();
-    Object.values(GROUPS).forEach(g => g.samples.forEach(s => assigned.add(s)));
-    const unassigned = RAW.samples.filter(s => !assigned.has(s));
-
-    for (const [name, g] of Object.entries(GROUPS)) {
-        const card = document.createElement('div'); card.className = 'group-card';
-        card.innerHTML = `
-            <div class="group-card-header">
-                <input type="color" class="group-color" value="${g.color}"
-                    onchange="GROUPS['${name}'].color=this.value;applyAll()">
-                <input class="group-name-input" value="${name}"
-                    onchange="renameGroup('${name}',this.value)">
-                <button class="btn-sm danger" onclick="deleteGroup('${name}')" style="padding:2px 6px;font-size:10px;">&#10005;</button>
-            </div>
-            <div class="group-samples">
-                ${g.samples.map(s => `<span class="sample-tag">${s}<span class="remove" onclick="removeSample('${name}','${s}')">&times;</span></span>`).join('')}
-            </div>
-            <div class="add-sample-row">
-                <select id="add-sel-${name}">
-                    <option value="">+ sample</option>
-                    ${unassigned.map(s => `<option value="${s}">${s}</option>`).join('')}
-                </select>
-                <button class="btn-sm" onclick="addSampleToGroup('${name}')">Add</button>
-            </div>
-        `;
-        c.appendChild(card);
-    }
-    updateStatus();
+document.getElementById('norm-scope').addEventListener('change', toggleNormSpecies);
+function toggleNormSpecies() {
+    const show = document.getElementById('proc-norm').checked &&
+        document.getElementById('norm-scope').value === 'species';
+    document.getElementById('norm-species-input').classList.toggle('hidden', !show);
 }
 
-function renameGroup(old, nw) {
-    nw = nw.trim();
-    if (!nw || nw === old) { renderGroups(); return; }
-    if (GROUPS[nw]) { alert('Group name already exists'); renderGroups(); return; }
-    GROUPS[nw] = GROUPS[old]; delete GROUPS[old];
-    renderGroups(); applyAll();
+function togglePruneOpts() {
+    const checked = document.getElementById('proc-prune').checked;
+    document.getElementById('prune-opts').classList.toggle('hidden', !checked);
 }
 
-function deleteGroup(name) { delete GROUPS[name]; renderGroups(); applyAll(); }
-
-function removeSample(group, sample) {
-    GROUPS[group].samples = GROUPS[group].samples.filter(s => s !== sample);
-    if (GROUPS[group].samples.length === 0) delete GROUPS[group];
-    renderGroups(); applyAll();
+function togglePruneGroupSelect() {
+    const show = document.getElementById('prune-scope').value === 'specified';
+    document.getElementById('prune-group').classList.toggle('hidden', !show);
 }
 
-function addSampleToGroup(group) {
-    const sel = document.getElementById(`add-sel-${group}`);
-    if (!sel.value) return;
-    GROUPS[group].samples.push(sel.value);
-    renderGroups(); applyAll();
-}
-
-function addGroup() {
-    let i = 1; while (GROUPS[`Group ${i}`]) i++;
-    const name = `Group ${i}`;
-    const ci = Object.keys(GROUPS).length;
-    GROUPS[name] = { samples: [], color: COLORS[ci % COLORS.length] };
-    renderGroups();
+function populatePruneGroupSelect() {
+    const sel = document.getElementById('prune-group');
+    sel.innerHTML = '';
+    BINS.filter(b => b.samples.length > 0).forEach(b => {
+        const o = document.createElement('option');
+        o.value = b.label; o.textContent = b.label;
+        sel.appendChild(o);
+    });
 }
 
 // ====================================================================
-// FILTERING
+// PROCESSING TAB — PIPELINE PREVIEW
 // ====================================================================
-function getFilteredIndices() {
-    const fc = document.getElementById('filt-contam').checked;
-    const fr = document.getElementById('filt-reverse').checked;
-    const fs = document.getElementById('filt-site').checked;
-    const mp = +document.getElementById('filt-min-pep').value;
-    const mu = +document.getElementById('filt-min-upep').value;
-    const idx = [];
-    for (let i = 0; i < RAW.proteins.length; i++) {
-        const p = RAW.proteins[i];
-        if (fc && p.potential_contaminant) continue;
-        if (fr && p.reverse) continue;
-        if (fs && p.only_identified_by_site) continue;
-        if (p.peptides < mp) continue;
-        if (p.unique_peptides < mu) continue;
-        idx.push(i);
-    }
-    return idx;
-}
+function updateProcessingPreview() {
+    const container = document.getElementById('proc-steps');
+    const steps = [];
+    let stepNum = 1;
 
-// ====================================================================
-// NORMALIZATION
-// ====================================================================
-function getQuantMatrix(qt, indices) {
-    // Returns {sample: [values for filtered proteins]}
-    const d = RAW.quant_data[qt];
-    if (!d) return {};
-    const m = {};
-    for (const s of RAW.samples) {
-        m[s] = indices.map(i => d[s][i]);
-    }
-    return m;
-}
-
-function normalize(matrix, method) {
-    const samples = Object.keys(matrix);
-    if (!samples.length) return matrix;
-    const n = matrix[samples[0]].length;
-    if (n === 0) return matrix;
-    const out = {};
-    samples.forEach(s => out[s] = [...matrix[s]]);
-
-    if (method === 'none') return out;
-
-    if (method === 'totalsum') {
-        const totals = {};
-        samples.forEach(s => { totals[s] = out[s].reduce((a,b) => a+b, 0) || 1; });
-        const medTotal = median(Object.values(totals));
-        samples.forEach(s => {
-            const scale = medTotal / totals[s];
-            for (let i=0;i<n;i++) out[s][i] *= scale;
-        });
-    }
-    else if (method === 'median') {
-        const meds = {};
-        samples.forEach(s => { meds[s] = median(out[s].filter(v=>v>0)) || 1; });
-        const grandMed = median(Object.values(meds));
-        samples.forEach(s => {
-            const scale = grandMed / meds[s];
-            for (let i=0;i<n;i++) out[s][i] *= scale;
-        });
-    }
-    else if (method === 'upperquartile') {
-        samples.forEach(s => {
-            const nonz = out[s].filter(v=>v>0).sort((a,b)=>a-b);
-            const uq = nonz.length ? nonz[Math.floor(nonz.length * 0.75)] : 1;
-            for (let i=0;i<n;i++) out[s][i] /= uq;
-        });
-        // Scale to first sample's UQ
-        const firstUQ = (() => { const nz=matrix[samples[0]].filter(v=>v>0).sort((a,b)=>a-b); return nz.length?nz[Math.floor(nz.length*0.75)]:1; })();
-        samples.forEach(s => { for(let i=0;i<n;i++) out[s][i] *= firstUQ; });
-    }
-    else if (method === 'quantile') {
-        // Rank-based quantile normalization
-        const ranks = {};
-        const sortedAvg = new Array(n).fill(0);
-        samples.forEach(s => {
-            const indexed = out[s].map((v,i) => ({v,i})).sort((a,b) => a.v-b.v);
-            ranks[s] = new Array(n);
-            indexed.forEach((item, rank) => { ranks[s][item.i] = rank; sortedAvg[rank] += item.v; });
-        });
-        for (let i=0;i<n;i++) sortedAvg[i] /= samples.length;
-        samples.forEach(s => {
-            for(let i=0;i<n;i++) out[s][i] = sortedAvg[ranks[s][i]];
-        });
-    }
-    else if (method === 'medianofratio') {
-        // DESeq2-like: geometric mean per protein, then ratio, then median ratio per sample
-        const geoMeans = new Array(n);
-        for (let i=0;i<n;i++) {
-            let logSum = 0, count = 0;
-            samples.forEach(s => { if(out[s][i]>0) { logSum += Math.log(out[s][i]); count++; } });
-            geoMeans[i] = count === samples.length ? Math.exp(logSum/count) : 0;
-        }
-        samples.forEach(s => {
-            const ratios = [];
-            for(let i=0;i<n;i++) { if(geoMeans[i]>0 && out[s][i]>0) ratios.push(out[s][i]/geoMeans[i]); }
-            const sf = ratios.length ? median(ratios) : 1;
-            for(let i=0;i<n;i++) out[s][i] /= sf;
-        });
-    }
-    return out;
-}
-
-function applyTransform(matrix, method) {
-    if (method === 'none') return matrix;
-    const out = {};
-    for (const [s, vals] of Object.entries(matrix)) {
-        if (method === 'log2') out[s] = vals.map(v => Math.log2(v + 1));
-        else if (method === 'log10') out[s] = vals.map(v => Math.log10(v + 1));
-        else if (method === 'sqrt') out[s] = vals.map(v => Math.sqrt(v));
-        else out[s] = [...vals];
-    }
-    return out;
-}
-
-// ====================================================================
-// STATS HELPERS
-// ====================================================================
-function mean(arr) { if(!arr.length) return 0; return arr.reduce((a,b)=>a+b,0)/arr.length; }
-function median(arr) { if(!arr.length) return 0; const s=[...arr].sort((a,b)=>a-b); const m=Math.floor(s.length/2); return s.length%2?s[m]:(s[m-1]+s[m])/2; }
-function variance(arr) { if(arr.length<2) return 0; const m=mean(arr); return arr.reduce((s,v)=>s+(v-m)**2,0)/(arr.length-1); }
-function sem(arr) { return arr.length<2?0:Math.sqrt(variance(arr)/arr.length); }
-function sd(arr) { return Math.sqrt(variance(arr)); }
-
-function lnGamma(z) {
-    const c=[0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
-    if(z<0.5) return Math.log(Math.PI/Math.sin(Math.PI*z))-lnGamma(1-z);
-    z-=1; let x=c[0]; for(let i=1;i<9;i++) x+=c[i]/(z+i);
-    const t=z+7.5; return 0.5*Math.log(2*Math.PI)+(z+0.5)*Math.log(t)-t+Math.log(x);
-}
-function betacf(x,a,b) {
-    let qab=a+b,qap=a+1,qam=a-1,c=1,d=1-qab*x/qap;
-    if(Math.abs(d)<1e-30)d=1e-30; d=1/d; let h=d;
-    for(let m=1;m<=200;m++){
-        let m2=2*m,aa=m*(b-m)*x/((qam+m2)*(a+m2));
-        d=1+aa*d;if(Math.abs(d)<1e-30)d=1e-30;c=1+aa/c;if(Math.abs(c)<1e-30)c=1e-30;d=1/d;h*=d*c;
-        aa=-(a+m)*(qab+m)*x/((a+m2)*(qap+m2));
-        d=1+aa*d;if(Math.abs(d)<1e-30)d=1e-30;c=1+aa/c;if(Math.abs(c)<1e-30)c=1e-30;d=1/d;
-        let del=d*c;h*=del;if(Math.abs(del-1)<3e-7)break;
-    } return h;
-}
-function betainc(x,a,b) {
-    if(x<=0)return 0; if(x>=1)return 1;
-    const f=Math.exp(lnGamma(a+b)-lnGamma(a)-lnGamma(b)+a*Math.log(x)+b*Math.log(1-x));
-    if(x<(a+1)/(a+b+2)) return f*betacf(x,a,b)/a;
-    return 1-f*betacf(1-x,b,a)/b;
-}
-function tTestPValue(arr1,arr2) {
-    if(arr1.length<2||arr2.length<2) return 1;
-    const m1=mean(arr1),m2=mean(arr2),v1=variance(arr1),v2=variance(arr2),n1=arr1.length,n2=arr2.length;
-    const se=Math.sqrt(v1/n1+v2/n2);
-    if(se===0) return 1;
-    const t=Math.abs(m1-m2)/se;
-    const df=(v1/n1+v2/n2)**2/((v1/n1)**2/(n1-1)+(v2/n2)**2/(n2-1));
-    if(isNaN(df)||df<1) return 1;
-    return betainc(df/(df+t*t),df/2,0.5);
-}
-
-// ====================================================================
-// GROUP HELPERS
-// ====================================================================
-function getGroupMean(protIdx, group) {
-    const g = GROUPS[group];
-    if (!g) return 0;
-    const vals = g.samples.map(s => NORM_DATA[s] ? NORM_DATA[s][protIdx] : 0).filter(v => !isNaN(v));
-    return mean(vals);
-}
-
-function getGroupValues(protIdx, group) {
-    const g = GROUPS[group];
-    if (!g) return [];
-    return g.samples.map(s => NORM_DATA[s] ? NORM_DATA[s][protIdx] : 0).filter(v => !isNaN(v));
-}
-
-function getGroupNames() { return Object.keys(GROUPS); }
-
-function proteinLabel(idx) {
-    const p = RAW.proteins[FILTERED_IDX[idx]];
-    const gn = p.gene_name || p.majority_id || p.id;
-    return gn.length > 40 ? gn.slice(0, 37) + '...' : gn;
-}
-
-function proteinFullLabel(idx) {
-    const p = RAW.proteins[FILTERED_IDX[idx]];
-    return `${p.majority_id}\n${p.gene_name || ''}`;
-}
-
-// ====================================================================
-// APPLY ALL (filter + normalize + plot)
-// ====================================================================
-function applyAll() {
-    if (!RAW) return;
-    const qt = document.getElementById('quant-type').value;
-    const nm = document.getElementById('normalization').value;
-    const tr = document.getElementById('transform').value;
-
-    FILTERED_IDX = getFilteredIndices();
-    let matrix = getQuantMatrix(qt, FILTERED_IDX);
-    matrix = normalize(matrix, nm);
-    matrix = applyTransform(matrix, tr);
-    NORM_DATA = matrix;
-
-    updateStatus();
-    updatePlotOptions();
-    updatePlot();
-}
-
-function updateStatus() {
-    if (!RAW) return;
-    const total = RAW.total_proteins;
-    const filt = FILTERED_IDX.length;
-    const removed = total - filt;
-    document.getElementById('status-proteins').textContent = `${filt} proteins`;
-    document.getElementById('status-filtered').textContent = removed > 0 ? `(${removed} filtered out)` : '';
-    document.getElementById('status-groups').textContent = `${getGroupNames().length} groups`;
-}
-
-// ====================================================================
-// PLOT TYPE SELECTION
-// ====================================================================
-function setPlotType(type) {
-    PLOT_TYPE = type;
-    document.querySelectorAll('.plot-type-btn').forEach(b => b.classList.toggle('active', b.dataset.plot === type));
-    updatePlotOptions();
-    updatePlot();
-}
-
-function updatePlotOptions() {
-    const c = document.getElementById('plot-options');
-    const groups = getGroupNames();
-    const gOpts = groups.map(g => `<option value="${g}">${g}</option>`).join('');
-
-    if (PLOT_TYPE === 'scatter') {
-        c.innerHTML = `
-            <label class="ctrl"><span class="lbl">Group X</span><select id="opt-gx" onchange="updatePlot()">${gOpts}</select></label>
-            <label class="ctrl"><span class="lbl">Group Y</span><select id="opt-gy" onchange="updatePlot()">${gOpts}</select></label>
-            <label class="checkbox-row"><input type="checkbox" id="opt-logscale" checked onchange="updatePlot()"> Log scale axes</label>
-            <label class="checkbox-row"><input type="checkbox" id="opt-diagonal" checked onchange="updatePlot()"> Show y=x line</label>
-            <label class="checkbox-row"><input type="checkbox" id="opt-show-r2" checked onchange="updatePlot()"> Show R&sup2;</label>
-        `;
-        if (groups.length >= 2) document.getElementById('opt-gy').value = groups[1];
-    }
-    else if (PLOT_TYPE === 'volcano') {
-        c.innerHTML = `
-            <label class="ctrl"><span class="lbl">Group A (numerator)</span><select id="opt-ga" onchange="updatePlot()">${gOpts}</select></label>
-            <label class="ctrl"><span class="lbl">Group B (denominator)</span><select id="opt-gb" onchange="updatePlot()">${gOpts}</select></label>
-            <label class="ctrl"><span class="lbl">|Log2 FC| threshold</span>
-                <div class="range-row"><input type="range" id="opt-fc" min="0" max="5" step="0.25" value="1" oninput="document.getElementById('opt-fc-val').textContent=this.value;updatePlot()"><span class="range-val" id="opt-fc-val">1</span></div>
-            </label>
-            <label class="ctrl"><span class="lbl">P-value threshold</span>
-                <select id="opt-pval" onchange="updatePlot()">
-                    <option value="0.05">0.05</option><option value="0.01">0.01</option><option value="0.001">0.001</option><option value="0.1">0.1</option>
-                </select>
-            </label>
-            <label class="ctrl"><span class="lbl">Label top N significant</span>
-                <div class="range-row"><input type="range" id="opt-topn" min="0" max="30" value="10" oninput="document.getElementById('opt-topn-val').textContent=this.value;updatePlot()"><span class="range-val" id="opt-topn-val">10</span></div>
-            </label>
-        `;
-        if (groups.length >= 2) document.getElementById('opt-gb').value = groups[1];
-    }
-    else if (PLOT_TYPE === 'unique') {
-        c.innerHTML = `
-            <label class="ctrl"><span class="lbl">Group A</span><select id="opt-ua" onchange="updatePlot()">${gOpts}</select></label>
-            <label class="ctrl"><span class="lbl">Group B</span><select id="opt-ub" onchange="updatePlot()">${gOpts}</select></label>
-            <label class="ctrl"><span class="lbl">Detection threshold (min replicates with value &gt; 0)</span>
-                <div class="range-row"><input type="range" id="opt-det" min="1" max="10" value="1" oninput="document.getElementById('opt-det-val').textContent=this.value;updatePlot()"><span class="range-val" id="opt-det-val">1</span></div>
-            </label>
-            <label class="checkbox-row"><input type="checkbox" id="opt-show-shared" checked onchange="updatePlot()"> Show shared proteins</label>
-        `;
-        if (groups.length >= 2) document.getElementById('opt-ub').value = groups[1];
-    }
-    else if (PLOT_TYPE === 'bar') {
-        c.innerHTML = `
-            <label class="ctrl"><span class="lbl">Search proteins</span>
-                <input type="text" id="opt-bar-search" placeholder="Type to search..." oninput="filterProteinList()">
-            </label>
-            <div class="protein-list" id="opt-bar-list"></div>
-            <div class="selected-proteins" id="opt-bar-selected"></div>
-            <label class="checkbox-row" style="margin-top:8px"><input type="checkbox" id="opt-bar-reps" onchange="updatePlot()"> Show individual replicates</label>
-            <label class="ctrl"><span class="lbl">Error bars</span>
-                <select id="opt-bar-err" onchange="updatePlot()">
-                    <option value="sem">SEM</option><option value="sd">SD</option><option value="none">None</option>
-                </select>
-            </label>
-        `;
-        barSelectedProteins = [];
-        filterProteinList();
-    }
-    else if (PLOT_TYPE === 'heatmap') {
-        c.innerHTML = `
-            <label class="ctrl"><span class="lbl">Top N proteins (by variance)</span>
-                <div class="range-row"><input type="range" id="opt-hm-n" min="5" max="100" value="30" oninput="document.getElementById('opt-hm-n-val').textContent=this.value;updatePlot()"><span class="range-val" id="opt-hm-n-val">30</span></div>
-            </label>
-            <label class="ctrl"><span class="lbl">Color scale</span>
-                <select id="opt-hm-color" onchange="updatePlot()">
-                    <option value="Viridis">Viridis</option><option value="RdBu" selected>RdBu (diverging)</option>
-                    <option value="YlOrRd">YlOrRd</option><option value="Blues">Blues</option><option value="Hot">Hot</option>
-                </select>
-            </label>
-            <label class="checkbox-row"><input type="checkbox" id="opt-hm-zscore" checked onchange="updatePlot()"> Z-score rows</label>
-        `;
-    }
-    else if (PLOT_TYPE === 'enrichment') {
-        c.innerHTML = `
-            <label class="ctrl"><span class="lbl">Group A (enriched)</span><select id="opt-ea" onchange="updatePlot()">${gOpts}</select></label>
-            <label class="ctrl"><span class="lbl">Group B (reference)</span><select id="opt-eb" onchange="updatePlot()">${gOpts}</select></label>
-            <label class="ctrl"><span class="lbl">Min |Log2 FC|</span>
-                <div class="range-row"><input type="range" id="opt-efc" min="0" max="5" step="0.25" value="0.5" oninput="document.getElementById('opt-efc-val').textContent=this.value;updatePlot()"><span class="range-val" id="opt-efc-val">0.5</span></div>
-            </label>
-            <label class="ctrl"><span class="lbl">Max proteins shown</span>
-                <div class="range-row"><input type="range" id="opt-emax" min="10" max="100" value="40" oninput="document.getElementById('opt-emax-val').textContent=this.value;updatePlot()"><span class="range-val" id="opt-emax-val">40</span></div>
-            </label>
-        `;
-        if (groups.length >= 2) document.getElementById('opt-eb').value = groups[1];
-    }
-}
-
-// ====================================================================
-// BAR CHART PROTEIN SELECTOR
-// ====================================================================
-let barSelectedProteins = [];
-
-function filterProteinList() {
-    const query = (document.getElementById('opt-bar-search')?.value || '').toLowerCase();
-    const list = document.getElementById('opt-bar-list');
-    if (!list) return;
-    list.innerHTML = '';
-    const max = 100;
-    let count = 0;
-    for (let fi = 0; fi < FILTERED_IDX.length && count < max; fi++) {
-        const label = proteinLabel(fi);
-        if (query && !label.toLowerCase().includes(query)) continue;
-        const sel = barSelectedProteins.includes(fi);
-        const item = document.createElement('div');
-        item.className = 'protein-list-item' + (sel ? ' selected' : '');
-        item.innerHTML = `<input type="checkbox" ${sel?'checked':''}> ${label}`;
-        item.onclick = () => toggleBarProtein(fi);
-        list.appendChild(item);
-        count++;
-    }
-}
-
-function toggleBarProtein(fi) {
-    const idx = barSelectedProteins.indexOf(fi);
-    if (idx >= 0) barSelectedProteins.splice(idx, 1);
-    else if (barSelectedProteins.length < 20) barSelectedProteins.push(fi);
-    filterProteinList();
-    renderBarSelected();
-    updatePlot();
-}
-
-function renderBarSelected() {
-    const c = document.getElementById('opt-bar-selected');
-    if (!c) return;
-    c.innerHTML = barSelectedProteins.map(fi =>
-        `<span class="sample-tag">${proteinLabel(fi)}<span class="remove" onclick="toggleBarProtein(${fi})">&times;</span></span>`
-    ).join('');
-}
-
-// ====================================================================
-// PLOT RENDERING
-// ====================================================================
-function updatePlot() {
-    if (!RAW || !FILTERED_IDX.length) return;
-    const plotDiv = document.getElementById('plot');
-
-    try {
-        if (PLOT_TYPE === 'scatter') plotScatter(plotDiv);
-        else if (PLOT_TYPE === 'volcano') plotVolcano(plotDiv);
-        else if (PLOT_TYPE === 'unique') plotUnique(plotDiv);
-        else if (PLOT_TYPE === 'bar') plotBar(plotDiv);
-        else if (PLOT_TYPE === 'heatmap') plotHeatmap(plotDiv);
-        else if (PLOT_TYPE === 'enrichment') plotEnrichment(plotDiv);
-    } catch(e) {
-        console.error('Plot error:', e);
-    }
-}
-
-// ── Scatter ──────────────────────────────────────────────────────
-function plotScatter(div) {
-    const gx = document.getElementById('opt-gx')?.value;
-    const gy = document.getElementById('opt-gy')?.value;
-    if (!gx || !gy || !GROUPS[gx] || !GROUPS[gy]) return;
-    const logScale = document.getElementById('opt-logscale')?.checked;
-    const showDiag = document.getElementById('opt-diagonal')?.checked;
-    const showR2 = document.getElementById('opt-show-r2')?.checked;
-
-    const x = [], y = [], labels = [], colors = [];
-    for (let fi = 0; fi < FILTERED_IDX.length; fi++) {
-        const mx = getGroupMean(fi, gx);
-        const my = getGroupMean(fi, gy);
-        if (mx === 0 && my === 0) continue;
-        x.push(logScale ? Math.log10(mx + 1) : mx);
-        y.push(logScale ? Math.log10(my + 1) : my);
-        labels.push(proteinLabel(fi));
-        const fc = (mx > 0 && my > 0) ? Math.log2(my / mx) : 0;
-        colors.push(fc);
-    }
-
-    const traces = [{
-        x, y, mode: 'markers', type: 'scattergl',
-        marker: { size: 5, color: colors, colorscale: [[0,'#58a6ff'],[0.5,'#8b949e'],[1,'#f85149']], cmin: -3, cmax: 3, opacity: 0.7 },
-        text: labels, hovertemplate: '%{text}<br>X: %{x:.2f}<br>Y: %{y:.2f}<extra></extra>',
-    }];
-
-    const axLabel = (g) => logScale ? `Log10(${g} + 1)` : g;
-    const layout = {
-        ...LAYOUT_BASE,
-        title: { text: `${gx} vs ${gy}`, font: { size: 14 } },
-        xaxis: { ...LAYOUT_BASE.xaxis, title: axLabel(gx) },
-        yaxis: { ...LAYOUT_BASE.yaxis, title: axLabel(gy) },
-        showlegend: false,
-    };
-
-    if (showDiag && x.length) {
-        const mn = Math.min(Math.min(...x), Math.min(...y));
-        const mx2 = Math.max(Math.max(...x), Math.max(...y));
-        traces.push({ x: [mn, mx2], y: [mn, mx2], mode: 'lines', line: { color: '#30363d', width: 1, dash: 'dash' }, hoverinfo: 'skip', showlegend: false });
-    }
-
-    if (showR2 && x.length > 2) {
-        const r = pearsonR(x, y);
-        layout.annotations = [{ x: 0.02, y: 0.98, xref: 'paper', yref: 'paper', text: `R\u00B2 = ${(r*r).toFixed(4)}`, showarrow: false, font: { color: '#8b949e', size: 12 }, bgcolor: 'rgba(13,17,23,0.8)', borderpad: 4 }];
-    }
-
-    Plotly.react(div, traces, layout, { responsive: true, displaylogo: false });
-}
-
-function pearsonR(x, y) {
-    const n=x.length, mx=mean(x), my=mean(y);
-    let num=0,dx2=0,dy2=0;
-    for(let i=0;i<n;i++){const dx=x[i]-mx,dy=y[i]-my;num+=dx*dy;dx2+=dx*dx;dy2+=dy*dy;}
-    return dx2&&dy2?num/Math.sqrt(dx2*dy2):0;
-}
-
-// ── Volcano ──────────────────────────────────────────────────────
-function plotVolcano(div) {
-    const ga = document.getElementById('opt-ga')?.value;
-    const gb = document.getElementById('opt-gb')?.value;
-    if (!ga || !gb || !GROUPS[ga] || !GROUPS[gb]) return;
-    const fcThresh = +(document.getElementById('opt-fc')?.value || 1);
-    const pThresh = +(document.getElementById('opt-pval')?.value || 0.05);
-    const topN = +(document.getElementById('opt-topn')?.value || 10);
-
-    const fc = [], pv = [], labels = [], cats = [];
-    for (let fi = 0; fi < FILTERED_IDX.length; fi++) {
-        const vA = getGroupValues(fi, ga);
-        const vB = getGroupValues(fi, gb);
-        const mA = mean(vA), mB = mean(vB);
-        if (mA === 0 && mB === 0) continue;
-        const log2fc = Math.log2((mA + 0.1) / (mB + 0.1));
-        const p = tTestPValue(vA, vB);
-        fc.push(log2fc);
-        pv.push(-Math.log10(Math.max(p, 1e-300)));
-        labels.push(proteinLabel(fi));
-        const sig = p < pThresh && Math.abs(log2fc) >= fcThresh;
-        cats.push(sig ? (log2fc > 0 ? 'up' : 'down') : 'ns');
-    }
-
-    const colMap = { up: GROUPS[ga]?.color || '#f85149', down: GROUPS[gb]?.color || '#58a6ff', ns: '#30363d' };
-    const traces = ['ns', 'up', 'down'].map(cat => {
-        const idx = cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);
-        return {
-            x: idx.map(i=>fc[i]), y: idx.map(i=>pv[i]),
-            text: idx.map(i=>labels[i]),
-            mode: 'markers', type: 'scattergl', name: cat === 'ns' ? 'Not significant' : cat === 'up' ? `Up in ${ga}` : `Up in ${gb}`,
-            marker: { size: cat==='ns'?3:5, color: colMap[cat], opacity: cat==='ns'?0.3:0.8 },
-            hovertemplate: '%{text}<br>Log2FC: %{x:.2f}<br>-Log10(p): %{y:.2f}<extra></extra>',
-        };
+    // LFQ
+    const lfq = document.getElementById('proc-lfq').checked;
+    steps.push({
+        active: lfq, num: lfq ? stepNum++ : null,
+        text: lfq ? 'Use <strong>LFQ intensities</strong> for quantification'
+            : '<s>LFQ analysis</s> — disabled',
     });
 
-    // Threshold lines
-    const shapes = [
-        { type:'line', x0:fcThresh, x1:fcThresh, y0:0, y1:1, yref:'paper', line:{color:'#30363d',width:1,dash:'dash'} },
-        { type:'line', x0:-fcThresh, x1:-fcThresh, y0:0, y1:1, yref:'paper', line:{color:'#30363d',width:1,dash:'dash'} },
-        { type:'line', x0:0, x1:1, xref:'paper', y0:-Math.log10(pThresh), y1:-Math.log10(pThresh), line:{color:'#30363d',width:1,dash:'dash'} },
-    ];
-
-    // Labels for top significant
-    const sigIdx = cats.map((c,i)=>c!=='ns'?i:-1).filter(i=>i>=0).sort((a,b)=>pv[b]-pv[a]).slice(0,topN);
-    const annotations = sigIdx.map(i => ({
-        x:fc[i], y:pv[i], text:labels[i], showarrow:true, arrowhead:0, arrowcolor:'#8b949e',
-        font:{size:10,color:'#e6edf3'}, bgcolor:'rgba(13,17,23,0.7)', borderpad:2, ax:0, ay:-20,
-    }));
-
-    const layout = {
-        ...LAYOUT_BASE, shapes, annotations,
-        title: { text: `Volcano: ${ga} vs ${gb}`, font: { size: 14 } },
-        xaxis: { ...LAYOUT_BASE.xaxis, title: 'Log2 Fold Change' },
-        yaxis: { ...LAYOUT_BASE.yaxis, title: '-Log10(P-value)' },
-    };
-    Plotly.react(div, traces, layout, { responsive: true, displaylogo: false });
-}
-
-// ── Unique Proteins ──────────────────────────────────────────────
-function plotUnique(div) {
-    const ga = document.getElementById('opt-ua')?.value;
-    const gb = document.getElementById('opt-ub')?.value;
-    if (!ga || !gb || !GROUPS[ga] || !GROUPS[gb]) return;
-    const detThresh = +(document.getElementById('opt-det')?.value || 1);
-    const showShared = document.getElementById('opt-show-shared')?.checked;
-
-    let onlyA = [], onlyB = [], shared = [], namesA = [], namesB = [], namesS = [];
-    for (let fi = 0; fi < FILTERED_IDX.length; fi++) {
-        const vA = getGroupValues(fi, ga);
-        const vB = getGroupValues(fi, gb);
-        const detA = vA.filter(v => v > 0).length >= detThresh;
-        const detB = vB.filter(v => v > 0).length >= detThresh;
-        const label = proteinLabel(fi);
-        if (detA && !detB) { onlyA.push(mean(vA)); namesA.push(label); }
-        else if (!detA && detB) { onlyB.push(mean(vB)); namesB.push(label); }
-        else if (detA && detB) { shared.push(mean(vA.concat(vB))); namesS.push(label); }
+    // Normalization
+    const norm = document.getElementById('proc-norm').checked;
+    if (norm) {
+        const scope = document.getElementById('norm-scope').value;
+        const species = document.getElementById('norm-species').value.trim();
+        const removeContam = document.getElementById('norm-remove-contam').checked;
+        let desc = 'Normalize ';
+        if (scope === 'species' && species) desc += `within <strong>${species}</strong> peptides`;
+        else if (scope === 'species') desc += 'within a specified species (enter name)';
+        else desc += 'across <strong>all detected peptides</strong>';
+        if (removeContam) desc += ', <strong>removing contaminants first</strong>';
+        steps.push({ active: true, num: stepNum++, text: desc });
+    } else {
+        steps.push({ active: false, num: null, text: '<s>Normalization</s> — disabled' });
     }
 
-    // Sort by abundance
-    const sortIdx = (arr) => arr.map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v).map(x=>x.i);
-    const sA = sortIdx(onlyA), sB = sortIdx(onlyB);
+    // Prune
+    const prune = document.getElementById('proc-prune').checked;
+    if (prune) {
+        const metric = document.getElementById('prune-metric');
+        const metricText = metric.options[metric.selectedIndex].text;
+        const value = document.getElementById('prune-value').value || '0';
+        const agg = document.getElementById('prune-agg');
+        const aggText = agg.options[agg.selectedIndex].text;
+        const scope = document.getElementById('prune-scope');
+        const scopeText = scope.options[scope.selectedIndex].text;
+        let desc = `Remove proteins whose <strong>${metricText}</strong> is below <strong>${value}</strong> ${aggText} ${scopeText}`;
+        if (scope.value === 'specified') {
+            const grp = document.getElementById('prune-group').value;
+            if (grp) desc += ` (<strong>${grp}</strong>)`;
+        }
+        steps.push({ active: true, num: stepNum++, text: desc });
+    } else {
+        steps.push({ active: false, num: null, text: '<s>Peptide pruning</s> — disabled' });
+    }
 
-    const traces = [
-        { y: sA.map(i=>namesA[i]), x: sA.map(i=>onlyA[i]), type:'bar', orientation:'h', name:`Only in ${ga} (${onlyA.length})`, marker:{color: GROUPS[ga]?.color || COLORS[0]} },
-        { y: sB.map(i=>namesB[i]), x: sB.map(i=>onlyB[i]), type:'bar', orientation:'h', name:`Only in ${gb} (${onlyB.length})`, marker:{color: GROUPS[gb]?.color || COLORS[1]} },
-    ];
-
-    const layout = {
-        ...LAYOUT_BASE, barmode: 'group',
-        title: { text: `Unique Proteins: ${ga} vs ${gb}`, font: { size: 14 } },
-        xaxis: { ...LAYOUT_BASE.xaxis, title: 'Mean Abundance' },
-        yaxis: { ...LAYOUT_BASE.yaxis, automargin: true, dtick: 1, tickfont: { size: 10 } },
-        height: Math.max(400, (onlyA.length + onlyB.length) * 18 + 120),
-        margin: { ...LAYOUT_BASE.margin, l: 200 },
-        annotations: [{
-            x: 0.5, y: 1.06, xref: 'paper', yref: 'paper', showarrow: false,
-            text: `${ga} only: ${onlyA.length} | ${gb} only: ${onlyB.length} | Shared: ${shared.length}`,
-            font: { size: 12, color: '#8b949e' },
-        }],
-    };
-    Plotly.react(div, traces, layout, { responsive: true, displaylogo: false });
-}
-
-// ── Bar Chart ────────────────────────────────────────────────────
-function plotBar(div) {
-    if (!barSelectedProteins.length) {
-        Plotly.react(div, [], { ...LAYOUT_BASE,
-            annotations: [{ text: 'Select proteins from the search panel', showarrow: false, font: { size: 14, color: '#8b949e' }, xref: 'paper', yref: 'paper', x: 0.5, y: 0.5 }],
-        }, { responsive: true, displaylogo: false });
+    // Render
+    if (steps.every(s => !s.active)) {
+        container.innerHTML = '<div style="color:var(--text-sec);font-size:13px;padding:12px 0">Select processing options on the left to build your pipeline.</div>';
         return;
     }
-    const showReps = document.getElementById('opt-bar-reps')?.checked;
-    const errType = document.getElementById('opt-bar-err')?.value;
-    const groups = getGroupNames();
 
-    const traces = [];
-    groups.forEach((g, gi) => {
-        const vals = [], errs = [], labels = [], repsX = [], repsY = [], repsLabels = [];
-        barSelectedProteins.forEach((fi, pi) => {
-            const gv = getGroupValues(fi, g);
-            vals.push(mean(gv));
-            errs.push(errType === 'sem' ? sem(gv) : errType === 'sd' ? sd(gv) : 0);
-            labels.push(proteinLabel(fi));
-            if (showReps) {
-                gv.forEach(v => { repsX.push(pi); repsY.push(v); repsLabels.push(proteinLabel(fi)); });
-            }
-        });
-        traces.push({
-            x: labels, y: vals, type: 'bar', name: g,
-            marker: { color: GROUPS[g]?.color || COLORS[gi % COLORS.length] },
-            error_y: errType !== 'none' ? { type: 'data', array: errs, visible: true, color: '#8b949e', thickness: 1 } : undefined,
-        });
-        if (showReps) {
-            traces.push({
-                x: repsLabels, y: repsY, mode: 'markers', type: 'scatter', name: `${g} (reps)`,
-                marker: { color: GROUPS[g]?.color || COLORS[gi % COLORS.length], size: 6, opacity: 0.6, symbol: 'circle-open' },
-                showlegend: false,
-            });
-        }
-    });
-
-    const layout = {
-        ...LAYOUT_BASE, barmode: 'group',
-        title: { text: 'Protein Abundance Comparison', font: { size: 14 } },
-        xaxis: { ...LAYOUT_BASE.xaxis, tickangle: -45 },
-        yaxis: { ...LAYOUT_BASE.yaxis, title: 'Abundance' },
-    };
-    Plotly.react(div, traces, layout, { responsive: true, displaylogo: false });
-}
-
-// ── Heatmap ──────────────────────────────────────────────────────
-function plotHeatmap(div) {
-    const topN = +(document.getElementById('opt-hm-n')?.value || 30);
-    const colorScale = document.getElementById('opt-hm-color')?.value || 'RdBu';
-    const zScore = document.getElementById('opt-hm-zscore')?.checked;
-
-    // Get all samples in group order
-    const groups = getGroupNames();
-    const sampleOrder = [];
-    const sampleGroupLabels = [];
-    groups.forEach(g => {
-        GROUPS[g].samples.forEach(s => { sampleOrder.push(s); sampleGroupLabels.push(g); });
-    });
-    if (!sampleOrder.length) return;
-
-    // Calculate variance for each protein across all samples and pick top N
-    const variances = [];
-    for (let fi = 0; fi < FILTERED_IDX.length; fi++) {
-        const vals = sampleOrder.map(s => NORM_DATA[s] ? NORM_DATA[s][fi] : 0);
-        variances.push({ fi, v: variance(vals) });
-    }
-    variances.sort((a, b) => b.v - a.v);
-    const topFi = variances.slice(0, topN).map(x => x.fi);
-
-    // Build matrix
-    const z = [], yLabels = [];
-    topFi.forEach(fi => {
-        let row = sampleOrder.map(s => NORM_DATA[s] ? NORM_DATA[s][fi] : 0);
-        if (zScore) {
-            const m = mean(row), s = sd(row) || 1;
-            row = row.map(v => (v - m) / s);
-        }
-        z.push(row);
-        yLabels.push(proteinLabel(fi));
-    });
-
-    const traces = [{
-        z, x: sampleOrder, y: yLabels, type: 'heatmap',
-        colorscale: colorScale, reversescale: colorScale === 'RdBu',
-        colorbar: { title: zScore ? 'Z-score' : 'Value', titleside: 'right', titlefont: { color: '#e6edf3' }, tickfont: { color: '#8b949e' } },
-        hoverongaps: false,
-    }];
-
-    const layout = {
-        ...LAYOUT_BASE,
-        title: { text: `Heatmap — Top ${topN} by variance`, font: { size: 14 } },
-        xaxis: { ...LAYOUT_BASE.xaxis, tickangle: -45, dtick: 1 },
-        yaxis: { ...LAYOUT_BASE.yaxis, automargin: true, dtick: 1, tickfont: { size: 10 } },
-        height: Math.max(400, topN * 16 + 150),
-        margin: { ...LAYOUT_BASE.margin, l: 200 },
-    };
-    Plotly.react(div, traces, layout, { responsive: true, displaylogo: false });
-}
-
-// ── Enrichment Bar ───────────────────────────────────────────────
-function plotEnrichment(div) {
-    const ga = document.getElementById('opt-ea')?.value;
-    const gb = document.getElementById('opt-eb')?.value;
-    if (!ga || !gb || !GROUPS[ga] || !GROUPS[gb]) return;
-    const minFC = +(document.getElementById('opt-efc')?.value || 0.5);
-    const maxShow = +(document.getElementById('opt-emax')?.value || 40);
-
-    const data = [];
-    for (let fi = 0; fi < FILTERED_IDX.length; fi++) {
-        const mA = getGroupMean(fi, ga);
-        const mB = getGroupMean(fi, gb);
-        if (mA === 0 && mB === 0) continue;
-        const log2fc = Math.log2((mA + 0.1) / (mB + 0.1));
-        if (Math.abs(log2fc) < minFC) continue;
-        data.push({ fi, log2fc, label: proteinLabel(fi) });
-    }
-    data.sort((a, b) => b.log2fc - a.log2fc);
-    const shown = data.slice(0, Math.floor(maxShow / 2)).concat(data.slice(-Math.floor(maxShow / 2)));
-    shown.sort((a, b) => a.log2fc - b.log2fc);
-
-    const traces = [{
-        y: shown.map(d => d.label),
-        x: shown.map(d => d.log2fc),
-        type: 'bar', orientation: 'h',
-        marker: {
-            color: shown.map(d => d.log2fc > 0 ? (GROUPS[ga]?.color || '#f85149') : (GROUPS[gb]?.color || '#58a6ff')),
-        },
-        hovertemplate: '%{y}<br>Log2FC: %{x:.2f}<extra></extra>',
-    }];
-
-    const layout = {
-        ...LAYOUT_BASE, showlegend: false,
-        title: { text: `Enrichment: ${ga} vs ${gb}`, font: { size: 14 } },
-        xaxis: { ...LAYOUT_BASE.xaxis, title: 'Log2 Fold Change', zeroline: true, zerolinecolor: '#e6edf3', zerolinewidth: 1 },
-        yaxis: { ...LAYOUT_BASE.yaxis, automargin: true, dtick: 1, tickfont: { size: 10 } },
-        height: Math.max(400, shown.length * 18 + 120),
-        margin: { ...LAYOUT_BASE.margin, l: 200 },
-        shapes: [{ type: 'line', x0: 0, x1: 0, y0: -0.5, y1: shown.length - 0.5, line: { color: '#e6edf3', width: 1 } }],
-    };
-    Plotly.react(div, traces, layout, { responsive: true, displaylogo: false });
+    container.innerHTML = steps.map(s => `
+        <div class="proc-step">
+            <div class="proc-step-num ${s.active ? '' : 'inactive'}">${s.active ? s.num : '-'}</div>
+            <div class="proc-step-text ${s.active ? '' : 'inactive'}">${s.text}</div>
+        </div>
+    `).join('');
 }
 
 // ====================================================================
-// EXPORT
-// ====================================================================
-function exportSVG() {
-    Plotly.downloadImage(document.getElementById('plot'), { format: 'svg', filename: 'proteomics_plot' });
-}
-function exportPNG() {
-    Plotly.downloadImage(document.getElementById('plot'), { format: 'png', filename: 'proteomics_plot', width: 1600, height: 1000, scale: 2 });
-}
-function exportCSV() {
-    if (!RAW) return;
-    const qt = document.getElementById('quant-type').value;
-    const groups = getGroupNames();
-    const allSamples = [];
-    groups.forEach(g => GROUPS[g].samples.forEach(s => allSamples.push(s)));
-
-    let csv = 'Protein ID,Gene Name,Peptides,Unique Peptides,' + allSamples.join(',') + '\n';
-    FILTERED_IDX.forEach((pi, fi) => {
-        const p = RAW.proteins[pi];
-        const vals = allSamples.map(s => NORM_DATA[s] ? NORM_DATA[s][fi] : 0);
-        csv += `"${p.majority_id}","${p.gene_name}",${p.peptides},${p.unique_peptides},${vals.join(',')}\n`;
-    });
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'proteomics_filtered.csv';
-    a.click();
-}
-
-// ====================================================================
-// LOAD NEW FILE
-// ====================================================================
-function loadNewFile() {
-    RAW = null; FILTERED_IDX = []; NORM_DATA = {}; GROUPS = {};
-    document.getElementById('app').classList.add('hidden');
-    document.getElementById('upload-overlay').classList.remove('hidden');
-    fileInput.value = '';
-}
-
-// ====================================================================
-// RESIZE HANDLER
+// RESIZE
 // ====================================================================
 window.addEventListener('resize', () => {
-    const plotDiv = document.getElementById('plot');
-    if (plotDiv && plotDiv.data) Plotly.Plots.resize(plotDiv);
+    const c = document.getElementById('sample-chart');
+    if (c && c.data) Plotly.Plots.resize(c);
 });
-
-// Initial resize observer for the plot area
-new ResizeObserver(() => {
-    const plotDiv = document.getElementById('plot');
-    if (plotDiv && plotDiv.data) Plotly.Plots.resize(plotDiv);
-}).observe(document.getElementById('plot-area') || document.body);
 </script>
 </body>
 </html>
