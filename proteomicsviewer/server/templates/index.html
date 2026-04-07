@@ -138,6 +138,20 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .rc-context-menu .rc-item{padding:7px 16px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--text);font-family:inherit}
 .rc-context-menu .rc-item:hover{background:rgba(88,166,255,.1)}
 .rc-context-menu .rc-sep{height:1px;background:var(--border);margin:4px 0}
+.rc-context-menu .rc-color-row{display:flex;align-items:center}
+/* Graph settings swatches */
+.gs-swatch{width:20px;height:20px;border-radius:3px;border:1px solid rgba(128,128,128,.4);cursor:pointer;display:inline-block;transition:transform .1s}
+.gs-swatch:hover{transform:scale(1.15)}
+/* Disable Plotly's drag capture layer so clicks reach axis labels */
+.nsewdrag,.nwdrag,.nedrag,.swdrag,.sedrag,.ewdrag,.nsdrag,.dragcover{pointer-events:none!important}
+.draglayer{pointer-events:none!important}
+/* But re-enable pointer events on the actual content we want clickable */
+.g-xtitle text,.g-ytitle text{pointer-events:all!important;cursor:pointer!important}
+.g-xtitle text:hover,.g-ytitle text:hover{fill:var(--accent)!important}
+.xtick text,.ytick text{pointer-events:all!important;cursor:pointer!important}
+.xtick text:hover,.ytick text:hover{fill:var(--accent)!important}
+/* Keep annotation labels interactive */
+.annotation text,.annotation-text-g{pointer-events:all!important;cursor:grab!important}
 .canvas-plot .plot-title-input{display:block;background:transparent;border:1px solid transparent;border-radius:3px;color:var(--text);font-size:12px;font-weight:600;font-family:inherit;padding:2px 6px;outline:none;width:calc(100% - 30px)}
 .canvas-plot .plot-title-input:focus{border-color:var(--accent);background:var(--card)}
 .canvas-drop-hint{border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:200px;color:var(--border);font-size:13px;transition:all .15s}
@@ -299,33 +313,48 @@ async function uploadFile(file,append){
 <!-- Session Panel (BiNgo-style modal) -->
 <!-- Export Panel (BiNgo-style) -->
 <!-- Graph Settings Panel -->
-<div id="graph-settings-panel" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:480px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.6);max-height:80vh;overflow-y:auto">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
-            <div style="font-size:18px;font-weight:700" id="gs-title">Graph Settings</div>
-            <button onclick="document.getElementById('graph-settings-panel').classList.add('hidden')" style="width:28px;height:28px;border:none;background:transparent;color:var(--text-sec);cursor:pointer;font-size:20px;display:flex;align-items:center;justify-content:center;border-radius:4px">&times;</button>
+<div id="graph-settings-panel" class="floating-panel hidden" style="width:300px;right:60px">
+    <div class="fp-header"><span id="gs-title">Graph Settings</span><button onclick="document.getElementById('graph-settings-panel').classList.add('hidden')">&times;</button></div>
+    <div class="fp-body">
+        <div id="gs-batch-selector" class="hidden" style="margin-bottom:10px">
+            <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Apply to</div>
+            <div id="gs-plot-checks" style="max-height:80px;overflow-y:auto"></div>
         </div>
-        <!-- Apply to selector (batch mode) -->
-        <div id="gs-batch-selector" class="hidden" style="margin-bottom:14px">
-            <div style="font-size:11px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Apply to</div>
-            <div id="gs-plot-checks" style="max-height:120px;overflow-y:auto"></div>
+        <!-- Markers -->
+        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Markers</div>
+        <div style="display:grid;grid-template-columns:auto 1fr auto 1fr;gap:4px 8px;align-items:center;margin-bottom:12px">
+            <span class="gs-swatch" id="gs-dot-color-sw" onclick="gsOpenPicker('gs-dot-color')" ondblclick="gsNative('gs-dot-color')" title="Click: swatches, Double-click: picker"></span>
+            <span style="font-size:11px;color:var(--text-sec)">Color</span>
+            <select id="gs-dot-shape" style="width:auto;font-size:11px;padding:2px 20px 2px 4px"><option value="circle">&#9679;</option><option value="square">&#9632;</option><option value="diamond">&#9670;</option><option value="cross">+</option><option value="triangle-up">&#9650;</option><option value="star">&#9733;</option></select>
+            <span style="font-size:11px;color:var(--text-sec)">Shape</span>
+            <span style="font-size:11px;color:var(--text-sec);grid-column:1/3">Size <span id="gs-dot-size-val" style="color:var(--accent)">5</span></span>
+            <input type="range" id="gs-dot-size" min="2" max="16" value="5" style="grid-column:3/5">
+            <span style="font-size:11px;color:var(--text-sec);grid-column:1/3">Opacity <span id="gs-dot-opacity-val" style="color:var(--accent)">0.7</span></span>
+            <input type="range" id="gs-dot-opacity" min="10" max="100" value="70" style="grid-column:3/5">
         </div>
-        <!-- Settings -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px">
-            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Dot size</div><input type="range" id="gs-dot-size" min="2" max="16" value="5" style="width:100%"><span id="gs-dot-size-val" style="font-size:11px;color:var(--accent)">5</span></div>
-            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Dot shape</div><select id="gs-dot-shape" style="width:100%"><option value="circle">Circle</option><option value="square">Square</option><option value="diamond">Diamond</option><option value="cross">Cross</option><option value="triangle-up">Triangle</option><option value="star">Star</option></select></div>
-            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Dot color</div><input type="color" id="gs-dot-color" value="#e6edf3" style="width:100%;height:30px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);cursor:pointer"></div>
-            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Dot opacity</div><input type="range" id="gs-dot-opacity" min="10" max="100" value="70" style="width:100%"><span id="gs-dot-opacity-val" style="font-size:11px;color:var(--accent)">0.7</span></div>
-            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Plot background</div><input type="color" id="gs-plot-bg" value="#161b22" style="width:100%;height:30px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);cursor:pointer"></div>
-            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Paper background</div><input type="color" id="gs-paper-bg" value="#0d1117" style="width:100%;height:30px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);cursor:pointer"></div>
-            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Grid color</div><input type="color" id="gs-grid-color" value="#21262d" style="width:100%;height:30px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);cursor:pointer"></div>
-            <div><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Font size</div><input type="range" id="gs-font-size" min="8" max="20" value="12" style="width:100%"><span id="gs-font-size-val" style="font-size:11px;color:var(--accent)">12</span></div>
+        <!-- Colors -->
+        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Colors</div>
+        <div style="display:grid;grid-template-columns:auto 1fr auto 1fr;gap:4px 8px;align-items:center;margin-bottom:12px">
+            <span class="gs-swatch" id="gs-plot-bg-sw" onclick="gsOpenPicker('gs-plot-bg')" ondblclick="gsNative('gs-plot-bg')"></span>
+            <span style="font-size:11px;color:var(--text-sec)">Plot bg</span>
+            <span class="gs-swatch" id="gs-paper-bg-sw" onclick="gsOpenPicker('gs-paper-bg')" ondblclick="gsNative('gs-paper-bg')"></span>
+            <span style="font-size:11px;color:var(--text-sec)">Paper bg</span>
+            <span class="gs-swatch" id="gs-grid-color-sw" onclick="gsOpenPicker('gs-grid-color')" ondblclick="gsNative('gs-grid-color')"></span>
+            <span style="font-size:11px;color:var(--text-sec)">Grid</span>
         </div>
-        <div style="display:flex;gap:8px;margin-top:16px">
-            <button class="btn-primary" onclick="document.getElementById('graph-settings-panel').classList.add('hidden')" style="flex:1">Done</button>
-            <button class="hdr-btn" onclick="document.getElementById('graph-settings-panel').classList.add('hidden')" style="padding:8px 20px">Cancel</button>
+        <!-- Font -->
+        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Text</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <span style="font-size:11px;color:var(--text-sec)">Font size <span id="gs-font-size-val" style="color:var(--accent)">12</span></span>
+            <input type="range" id="gs-font-size" min="8" max="20" value="12" style="flex:1">
         </div>
+        <button class="btn-primary" onclick="document.getElementById('graph-settings-panel').classList.add('hidden')" style="width:100%">Done</button>
     </div>
+    <!-- Hidden native color inputs -->
+    <input type="color" id="gs-dot-color" value="#e6edf3" style="display:none">
+    <input type="color" id="gs-plot-bg" value="#161b22" style="display:none">
+    <input type="color" id="gs-paper-bg" value="#0d1117" style="display:none">
+    <input type="color" id="gs-grid-color" value="#21262d" style="display:none">
 </div>
 
 <div id="export-panel" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
@@ -588,7 +617,8 @@ var ANALYSES=[];    // [{id,name,groupX,groupY}]
 var DERIVED=[];     // [{name,op,left,right}]
 var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
-const PL={paper_bgcolor:'#0d1117',plot_bgcolor:'#161b22',font:{family:'Inter,system-ui',color:'#e6edf3',size:12},margin:{l:55,r:20,t:35,b:65},dragmode:false,xaxis:{gridcolor:'#21262d',zerolinecolor:'#30363d',linecolor:'#30363d'},yaxis:{gridcolor:'#21262d',zerolinecolor:'#30363d',linecolor:'#30363d'},hoverlabel:{bgcolor:'#21262d',bordercolor:'#30363d',font:{color:'#e6edf3',family:'Inter,system-ui',size:12}}};
+const PL={paper_bgcolor:'#0d1117',plot_bgcolor:'#161b22',font:{family:'Inter,system-ui',color:'#e6edf3',size:12},margin:{l:60,r:20,t:10,b:65},dragmode:false,xaxis:{gridcolor:'#21262d',zerolinecolor:'#30363d',linecolor:'#30363d'},yaxis:{gridcolor:'#21262d',zerolinecolor:'#30363d',linecolor:'#30363d'},hoverlabel:{bgcolor:'#21262d',bordercolor:'#30363d',font:{color:'#e6edf3',family:'Inter,system-ui',size:12}}};
+const PCFG={responsive:true,displayModeBar:false,scrollZoom:true,edits:{annotationPosition:true,annotationTail:true}};
 
 // ================================================================
 // DIVIDER
@@ -1198,6 +1228,7 @@ function setupPlotResize(wrap,plotId){
         else if(corner==='nw'){w=startW-dx;h=startH-dy}
         wrap.style.width=Math.max(300,w)+'px';
         wrap.style.height=Math.max(200,h)+'px';
+        wrap.dataset.userResized='1';
         const el=plotEl();if(el&&el.data)Plotly.Plots.resize(el);
     });
 
@@ -1343,7 +1374,112 @@ function renderPlot(p,qd,fidx){
     const wrap=div.closest('.canvas-plot');
     setupPlotDblClick(wrap,p.plotId);
     setupRightClickSelect(wrap,p.plotId);
+    // Custom axis title and tick editing (since Plotly editable:true has too many side effects)
+    setTimeout(()=>setupAxisEditing(div),200);
 }
+
+function setupAxisEditing(plotDiv){
+    if(!plotDiv||!plotDiv.querySelector)return;
+
+    // Plotly places a transparent .nsewdrag rect over the entire plot that captures
+    // all mouse events. We must persistently disable it because Plotly resets
+    // inline styles on relayout/restyle. Use MutationObserver to enforce.
+    function killDragCapture(){
+        plotDiv.querySelectorAll('.nsewdrag,.dragcover').forEach(el=>{el.style.setProperty('pointer-events','none','important')});
+        const dl=plotDiv.querySelector('.draglayer');
+        if(dl) dl.style.setProperty('pointer-events','none','important');
+    }
+    killDragCapture();
+    // Re-enforce after any Plotly mutation
+    if(!plotDiv._axisObserver){
+        plotDiv._axisObserver=new MutationObserver(killDragCapture);
+        plotDiv._axisObserver.observe(plotDiv,{subtree:true,attributes:true,attributeFilter:['style']});
+    }
+
+    // Axis titles — click to edit inline
+    plotDiv.querySelectorAll('.g-xtitle text, .g-ytitle text').forEach(el=>{
+        el.style.cursor='pointer';
+        el.style.pointerEvents='all';
+        el.addEventListener('click',function(e){
+            e.stopPropagation();
+            const current=el.textContent;
+            const isY=!!el.closest('.g-ytitle');
+            const rect=el.getBoundingClientRect();
+            showAxisInput(rect,current,isY?'y':'x',plotDiv);
+        });
+    });
+
+    // Tick labels — click to edit axis range
+    ['xtick','ytick'].forEach(cls=>{
+        const ticks=[...plotDiv.querySelectorAll('.'+cls+' text')];
+        if(!ticks.length)return;
+        ticks.forEach(tick=>{
+            tick.style.cursor='pointer';
+            tick.style.pointerEvents='all';
+            tick.addEventListener('click',function(e){
+                e.stopPropagation();
+                const isY=cls==='ytick';
+                const axis=isY?'yaxis':'xaxis';
+                const range=plotDiv.layout?.[axis]?.range;
+                if(!range)return;
+                const rect=tick.getBoundingClientRect();
+                showRangeInput(rect,range,axis,plotDiv);
+            });
+        });
+    });
+}
+
+function showAxisInput(rect,current,axis,plotDiv){
+    // Remove any existing edit input
+    document.querySelectorAll('.axis-edit-input').forEach(e=>e.remove());
+    const inp=document.createElement('input');
+    inp.type='text';inp.value=current;inp.className='axis-edit-input';
+    inp.style.cssText='position:fixed;z-index:300;font-size:12px;font-family:Inter,system-ui,sans-serif;padding:4px 8px;background:var(--card);color:var(--text);border:2px solid var(--accent);border-radius:4px;outline:none;width:'+Math.max(140,rect.width+20)+'px;';
+    inp.style.left=(rect.left-10)+'px';inp.style.top=(rect.top-6)+'px';
+    document.body.appendChild(inp);
+    inp.focus();inp.select();
+    let done=false;
+    function commit(){
+        if(done)return;done=true;
+        const v=inp.value.trim();inp.remove();
+        if(!v||v===current)return;
+        const key=axis==='y'?'yaxis.title.text':'xaxis.title.text';
+        Plotly.relayout(plotDiv,{[key]:v});
+        setTimeout(()=>setupAxisEditing(plotDiv),300);
+    }
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();commit()}if(e.key==='Escape'){done=true;inp.remove()}});
+    inp.addEventListener('blur',commit);
+}
+
+function showRangeInput(rect,range,axis,plotDiv){
+    document.querySelectorAll('.axis-edit-input').forEach(e=>e.remove());
+    const div=document.createElement('div');div.className='axis-edit-input';
+    div.style.cssText='position:fixed;z-index:300;background:var(--card);border:2px solid var(--accent);border-radius:4px;padding:6px 8px;display:flex;gap:6px;align-items:center;';
+    div.style.left=(rect.left-20)+'px';div.style.top=(rect.top-8)+'px';
+    div.innerHTML='<span style="font-size:10px;color:var(--text-sec)">Min</span><input type="number" step="any" value="'+parseFloat(range[0]).toPrecision(4)+'" style="width:70px;font-size:11px;font-family:monospace;padding:2px 4px"><span style="font-size:10px;color:var(--text-sec)">Max</span><input type="number" step="any" value="'+parseFloat(range[1]).toPrecision(4)+'" style="width:70px;font-size:11px;font-family:monospace;padding:2px 4px"><button class="btn-sm" style="font-size:10px;padding:2px 8px">Set</button>';
+    document.body.appendChild(div);
+    const inputs=div.querySelectorAll('input');
+    inputs[0].focus();inputs[0].select();
+    let done=false;
+    function commit(){
+        if(done)return;done=true;
+        const mn=parseFloat(inputs[0].value),mx=parseFloat(inputs[1].value);
+        div.remove();
+        if(isNaN(mn)||isNaN(mx))return;
+        Plotly.relayout(plotDiv,{[axis+'.range']:[mn,mx],[axis+'.autorange']:false});
+        setTimeout(()=>setupAxisEditing(plotDiv),300);
+    }
+    div.querySelector('button').onclick=commit;
+    inputs.forEach(inp=>{inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();commit()}if(e.key==='Escape'){done=true;div.remove()}})});
+    div.addEventListener('click',e=>e.stopPropagation());
+}
+
+// Dismiss edit inputs on click elsewhere
+document.addEventListener('mousedown',e=>{
+    if(!e.target.closest('.axis-edit-input')){
+        document.querySelectorAll('.axis-edit-input').forEach(el=>el.remove());
+    }
+});
 
 function plotEnrichment(div,p,qd,fidx){
     const gx=p.config.gx,gy=p.config.gy;
@@ -1379,10 +1515,9 @@ function plotEnrichment(div,p,qd,fidx){
     }
 
     const yTitle=isLog2?'log2('+gx+'/'+gy+')':'Enrichment ('+gx+'/'+gy+')';
-    Plotly.react(div,traces,{...PL,title:{text:p.title||'',font:{size:14}},
-        xaxis:{...PL.xaxis,title:'Rank',linecolor:'#e6edf3',linewidth:1},
+    Plotly.react(div,traces,{...PL,        xaxis:{...PL.xaxis,title:'Rank',linecolor:'#e6edf3',linewidth:1},
         yaxis:{...PL.yaxis,title:yTitle,linecolor:'#e6edf3',linewidth:1},
-        showlegend:false},{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,annotationTail:true,axisTitleText:true,titleText:true}});
+        showlegend:false},PCFG);
 }
 
 function plotUnique(div,p,qd,fidx){
@@ -1417,39 +1552,61 @@ function plotUnique(div,p,qd,fidx){
         items.push({label:pLabel(fidx,fi),abund:featuredMean});
     }
 
-    // Sort descending by abundance (highest at top, like reference image)
     items.sort((a,b)=>b.abund-a.abund);
-    const shown=items.slice(0,40);
+    const shown=items.slice(0,60);
     const color=grpColor(featured);
 
+    // Jitter overlapping points: group by similar abundance and spread horizontally
+    // Sort by abundance, then assign small x-offsets to nearby points
+    const jittered=[];
+    const bandSize=shown.length>1?(shown[0].abund-shown[shown.length-1].abund)/50:1;
+    for(let i=0;i<shown.length;i++){
+        let jx=0;
+        // Check how many previous points are at similar y
+        let crowdCount=0;
+        for(let j=i-1;j>=0&&j>=i-8;j--){
+            if(Math.abs(shown[i].abund-shown[j].abund)<(bandSize||1)){crowdCount++}
+        }
+        if(crowdCount>0){
+            jx=(crowdCount%2===1?1:-1)*Math.ceil(crowdCount/2)*0.06;
+        }
+        jittered.push({x:jx,y:shown[i].abund,label:shown[i].label});
+    }
+
     const traces=[{
-        x:new Array(shown.length).fill(1),
-        y:shown.map(d=>d.abund),
+        x:jittered.map(d=>d.x),
+        y:jittered.map(d=>d.y),
         mode:'markers', type:'scatter',
-        marker:{size:8,color,symbol:'circle'},
-        text:shown.map(d=>d.label),
-        customdata:shown.map(d=>d.label),
-        hovertemplate:'%{text}<br>Abundance: %{y:.2e}<extra></extra>',
+        marker:{size:7,color,symbol:'circle',line:{width:0.5,color:'rgba(255,255,255,0.3)'}},
+        text:jittered.map(d=>d.label),
+        customdata:jittered.map(d=>d.label),
+        hovertemplate:'%{text}<br>Abundance: '+('%{y:,.0f}')+'<extra></extra>',
         cliponaxis:false
     }];
 
-    // Build subtitle describing the criteria
     let subtitle='';
     if(mode==='not_control') subtitle=`in ${featured}, not in ${p.config.controlGroup||'?'}`;
     else if(mode==='not_selected') subtitle=`in ${featured}, not in ${(p.config.excludeGroups||[]).join(', ')||'?'}`;
     else if(mode==='exclusive') subtitle=`exclusively in ${featured}`;
 
+    // Set the plot wrapper to a narrow width (user can resize via corner handles)
+    const wrap=div.closest('.canvas-plot');
+    if(wrap&&!wrap.dataset.userResized){
+        wrap.style.width='320px';
+        wrap.dataset.userResized='';
+    }
+
     Plotly.react(div,traces,{...PL,
-        title:{text:p.title||'',font:{size:14}},
-        xaxis:{...PL.xaxis,showticklabels:false,showgrid:false,zeroline:false,range:[0.5,2.5],title:''},
+        xaxis:{...PL.xaxis,showticklabels:false,showgrid:false,zeroline:false,
+            range:[-0.5,0.5],title:'',visible:false},
         yaxis:{...PL.yaxis,title:'Abundance',linecolor:'#e6edf3',linewidth:1},
-        margin:{...PL.margin,r:140},
+        margin:{...PL.margin,l:70,r:30},
         showlegend:false,
-    },{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,annotationTail:true,axisTitleText:true,titleText:true}});
+    },PCFG);
 }
 
 function plotVolcano(div,p,qd,fidx){
-    if(isAggSum()){Plotly.react(div,[],{...PL,annotations:[{text:'Volcano plots require Averages mode (change in Processing tab)',showarrow:false,font:{size:13,color:'var(--warning)'},xref:'paper',yref:'paper',x:.5,y:.5}]},{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,annotationTail:true,axisTitleText:true,titleText:true}});return}
+    if(isAggSum()){Plotly.react(div,[],{...PL,annotations:[{text:'Volcano plots require Averages mode (change in Processing tab)',showarrow:false,font:{size:13,color:'var(--warning)'},xref:'paper',yref:'paper',x:.5,y:.5}]},PCFG);return}
     const gx=p.config.gx,gy=p.config.gy,fcT=p.config.fc,fdrT=p.config.fdr,doImpute=p.config.impute;
     const fc=[],rawP=[],labels=[];
     for(let fi=0;fi<fidx.length;fi++){
@@ -1469,7 +1626,7 @@ function plotVolcano(div,p,qd,fidx){
     const shapes=[{type:'line',x0:fcT,x1:fcT,y0:0,y1:1,yref:'paper',line:{color:'#30363d',width:1,dash:'dash'}},{type:'line',x0:-fcT,x1:-fcT,y0:0,y1:1,yref:'paper',line:{color:'#30363d',width:1,dash:'dash'}},{type:'line',x0:0,x1:1,xref:'paper',y0:-Math.log10(fdrT),y1:-Math.log10(fdrT),line:{color:'#30363d',width:1,dash:'dash'}}];
     const sigIdx=cats.map((c,i)=>c!=='ns'?i:-1).filter(i=>i>=0).sort((a,b)=>negLog[b]-negLog[a]).slice(0,10);
     const annotations=sigIdx.map(i=>({x:fc[i],y:negLog[i],text:labels[i],showarrow:true,arrowhead:0,arrowcolor:'#8b949e',font:{size:10,color:'#e6edf3'},bgcolor:'rgba(13,17,23,.7)',borderpad:2,ax:0,ay:-20}));
-    Plotly.react(div,traces,{...PL,shapes,annotations,title:{text:p.title||'',font:{size:14}},xaxis:{...PL.xaxis,title:'Log2 Fold Change'},yaxis:{...PL.yaxis,title:'-Log10(FDR adj. P-value)'}},{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,annotationTail:true,axisTitleText:true,titleText:true}});
+    Plotly.react(div,traces,{...PL,shapes,annotations,xaxis:{...PL.xaxis,title:'Log2 Fold Change'},yaxis:{...PL.yaxis,title:'-Log10(FDR adj. P-value)'}},PCFG);
 }
 
 function plotDotplot(div,p,qd,fidx){
@@ -1543,21 +1700,20 @@ function plotDotplot(div,p,qd,fidx){
         annotations.push({x:.02,y:.98,xref:'paper',yref:'paper',text:'R\u00B2 = '+(r*r).toFixed(4),showarrow:false,font:{color:'#8b949e',size:12},bgcolor:'rgba(13,17,23,.8)',borderpad:4})}
 
     const xTitle=gx+axSuffix, yTitle=gy+axSuffix;
-    const layout={...PL,shapes,annotations,title:{text:p.title||'',font:{size:14}},
-        xaxis:{...PL.xaxis,title:xTitle,linecolor:'#e6edf3',linewidth:1},
+    const layout={...PL,shapes,annotations,        xaxis:{...PL.xaxis,title:xTitle,linecolor:'#e6edf3',linewidth:1},
         yaxis:{...PL.yaxis,title:yTitle,linecolor:'#e6edf3',linewidth:1},
         legend:{bgcolor:'rgba(0,0,0,0)',font:{color:'#8b949e',size:10}}};
-    Plotly.react(div,traces,layout,{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,annotationTail:true,axisTitleText:true,titleText:true}});
+    Plotly.react(div,traces,layout,PCFG);
 }
 
 function plotPCA(div,p,qd,fidx){
     const groups=p.config.gx.split(',');
     const sampleNames=[];const sampleGroups=[];
     groups.forEach(g=>{const bin=BINS.find(b=>b.label===g);if(bin)bin.samples.forEach(s=>{sampleNames.push(s);sampleGroups.push(g)})});
-    if(sampleNames.length<3){Plotly.react(div,[],{...PL,annotations:[{text:'Need at least 3 samples',showarrow:false,font:{size:14,color:'#8b949e'},xref:'paper',yref:'paper',x:.5,y:.5}]},{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,annotationTail:true,axisTitleText:true,titleText:true}});return}
+    if(sampleNames.length<3){Plotly.react(div,[],{...PL,annotations:[{text:'Need at least 3 samples',showarrow:false,font:{size:14,color:'#8b949e'},xref:'paper',yref:'paper',x:.5,y:.5}]},PCFG);return}
     const pca=computePCA(sampleNames,qd,fidx);
     const traces=groups.map(g=>{const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),text:idx.map(i=>pca.scores[i].name),mode:'markers+text',type:'scatter',name:g,marker:{size:10,color:grpColor(g)},textposition:'top center',textfont:{size:10,color:'#8b949e'},hovertemplate:'%{text}<br>PC1: %{x:.2f}<br>PC2: %{y:.2f}<extra></extra>'}});
-    Plotly.react(div,traces,{...PL,title:{text:p.title||'',font:{size:14}},xaxis:{...PL.xaxis,title:`PC1 (${pca.varExpl[0].toFixed(1)}%)`},yaxis:{...PL.yaxis,title:`PC2 (${pca.varExpl[1].toFixed(1)}%)`}},{responsive:true,displayModeBar:false,scrollZoom:false,edits:{annotationPosition:true,annotationTail:true,axisTitleText:true,titleText:true}});
+    Plotly.react(div,traces,{...PL,xaxis:{...PL.xaxis,title:`PC1 (${pca.varExpl[0].toFixed(1)}%)`},yaxis:{...PL.yaxis,title:`PC2 (${pca.varExpl[1].toFixed(1)}%)`}},PCFG);
 }
 
 // ================================================================
@@ -1654,7 +1810,14 @@ function openColorPicker(key,el){
         s.onclick=()=>{setCustomColor(key,c);closeColorPicker()};
         popup.appendChild(s);
     });
-    popup.addEventListener('mouseleave',()=>setTimeout(closeColorPicker,200));
+    const hexRow=document.createElement('div');
+    hexRow.style.cssText='grid-column:1/-1;display:flex;gap:4px;margin-top:4px;align-items:center';
+    hexRow.innerHTML=`<span style="font-size:10px;color:var(--text-sec)">#</span><input type="text" id="cp-hex" value="${(customTheme[key]||'#000000').replace('#','')}" maxlength="6" style="width:100%;font-size:11px;padding:3px 4px;font-family:monospace" placeholder="hex code">`;
+    hexRow.querySelector('input').addEventListener('keydown',e=>{
+        if(e.key==='Enter'){let v=e.target.value.trim().replace('#','');if(/^[0-9a-fA-F]{3,6}$/.test(v)){if(v.length===3)v=v[0]+v[0]+v[1]+v[1]+v[2]+v[2];setCustomColor(key,'#'+v);closeColorPicker()}}
+    });
+    popup.appendChild(hexRow);
+    popup.addEventListener('mouseleave',e=>{if(document.activeElement?.id==='cp-hex')return;setTimeout(closeColorPicker,200)});
     document.body.appendChild(popup);pickerTarget=key;
 }
 function closeColorPicker(){const p=document.getElementById('cp-popup');if(p)p.remove();pickerTarget=null}
@@ -1966,10 +2129,53 @@ document.getElementById('gs-dot-size').addEventListener('input',function(){docum
 document.getElementById('gs-dot-opacity').addEventListener('input',function(){document.getElementById('gs-dot-opacity-val').textContent=(this.value/100).toFixed(1);applyGraphSettings()});
 document.getElementById('gs-font-size').addEventListener('input',function(){document.getElementById('gs-font-size-val').textContent=this.value;applyGraphSettings()});
 document.getElementById('gs-dot-shape').addEventListener('change',applyGraphSettings);
-document.getElementById('gs-dot-color').addEventListener('input',applyGraphSettings);
-document.getElementById('gs-plot-bg').addEventListener('input',applyGraphSettings);
-document.getElementById('gs-paper-bg').addEventListener('input',applyGraphSettings);
-document.getElementById('gs-grid-color').addEventListener('input',applyGraphSettings);
+// Hidden color inputs — triggered by swatch picker or native
+['gs-dot-color','gs-plot-bg','gs-paper-bg','gs-grid-color'].forEach(id=>{
+    document.getElementById(id).addEventListener('input',function(){gsUpdateSwatches();applyGraphSettings()});
+});
+
+function gsUpdateSwatches(){
+    const ids=['gs-dot-color','gs-plot-bg','gs-paper-bg','gs-grid-color'];
+    ids.forEach(id=>{const sw=document.getElementById(id+'-sw');const inp=document.getElementById(id);if(sw&&inp)sw.style.background=inp.value});
+}
+function gsOpenPicker(inputId){
+    const sw=document.getElementById(inputId+'-sw');
+    if(!sw)return;
+    closeColorPicker();
+    const rect=sw.getBoundingClientRect();
+    const popup=document.createElement('div');popup.className='color-picker-popup';popup.id='cp-popup';
+    popup.style.left=rect.right+6+'px';popup.style.top=rect.top+'px';
+    PICKER_COLORS.forEach(c=>{
+        const s=document.createElement('span');s.style.background=c;
+        s.onclick=()=>{document.getElementById(inputId).value=c;gsUpdateSwatches();applyGraphSettings();closeColorPicker()};
+        popup.appendChild(s);
+    });
+    // Hex input row
+    const hexRow=document.createElement('div');
+    hexRow.style.cssText='grid-column:1/-1;display:flex;gap:4px;margin-top:4px;align-items:center';
+    hexRow.innerHTML=`<span style="font-size:10px;color:var(--text-sec)">#</span><input type="text" id="cp-hex" value="${(document.getElementById(inputId)?.value||'#000000').replace('#','')}" maxlength="6" style="width:100%;font-size:11px;padding:3px 4px;font-family:monospace" placeholder="hex code">`;
+    hexRow.querySelector('input').addEventListener('keydown',e=>{
+        if(e.key==='Enter'){
+            let v=e.target.value.trim().replace('#','');
+            if(/^[0-9a-fA-F]{3,6}$/.test(v)){
+                if(v.length===3)v=v[0]+v[0]+v[1]+v[1]+v[2]+v[2];
+                document.getElementById(inputId).value='#'+v;
+                gsUpdateSwatches();applyGraphSettings();closeColorPicker();
+            }
+        }
+    });
+    popup.appendChild(hexRow);
+    document.body.appendChild(popup);
+    // Don't auto-close on mouseleave when hex input is focused
+    popup.addEventListener('mouseleave',e=>{
+        if(document.activeElement?.id==='cp-hex')return;
+        setTimeout(closeColorPicker,300);
+    });
+}
+function gsNative(inputId){
+    closeColorPicker();
+    document.getElementById(inputId)?.click();
+}
 
 function openGraphSettingsForPlot(plotId){
     gsTargetPlots=[plotId];
@@ -1996,6 +2202,7 @@ function openGraphSettingsForPlot(plotId){
     }
     closePanels();
     document.getElementById('graph-settings-panel').classList.remove('hidden');
+    gsUpdateSwatches();
 }
 
 function toggleGraphSettingsPanel(){
@@ -2012,6 +2219,7 @@ function toggleGraphSettingsPanel(){
         `<label class="checkbox-row"><input type="checkbox" value="${p.plotId}" checked onchange="gsBatchChanged()">${p.title||p.type}</label>`
     ).join('');
     document.getElementById('graph-settings-panel').classList.remove('hidden');
+    gsUpdateSwatches();
 }
 
 function gsBatchChanged(){
@@ -2086,12 +2294,12 @@ function setupRightClickSelect(wrap,plotId){
 
     wrap.addEventListener('contextmenu',e=>{
         e.preventDefault();
-        // If we just finished a drag selection, the mouseup handler shows the menu
-        // If no drag happened (plain right-click), show zoom-out menu if zoomed
-        if(!rcState.hasSelection&&rcZoomed[plotId]){
-            showContextMenu(e.clientX,e.clientY,plotId,true);
-        } else if(rcState.hasSelection&&rcState.plotId===plotId){
-            showContextMenu(e.clientX,e.clientY,plotId,false);
+        if(rcState.hasSelection&&rcState.plotId===plotId){
+            // Show selection-based menu
+            showContextMenu(e.clientX,e.clientY,plotId,'selection');
+        } else {
+            // Plain right-click — show general menu
+            showContextMenu(e.clientX,e.clientY,plotId,'general');
         }
     });
 
@@ -2179,31 +2387,32 @@ function rcClearSelection(){
 }
 function rcCloseMenu(){document.getElementById('rc-menu')?.remove()}
 
-function showContextMenu(mx,my,plotId,zoomOutOnly){
+function showContextMenu(mx,my,plotId,mode){
     rcCloseMenu();
     const menu=document.createElement('div');
     menu.className='rc-context-menu';menu.id='rc-menu';
     menu.style.left=mx+'px';menu.style.top=my+'px';
+    const hasLabels=PINNED_LABELS[plotId]&&PINNED_LABELS[plotId].length>0;
+    const isZoomed=rcZoomed[plotId];
 
-    if(zoomOutOnly){
-        // Plain right-click on a zoomed plot
-        menu.innerHTML=`
-            <div class="rc-item" onclick="rcResetZoom('${plotId}')">&#8634; Zoom out (reset view)</div>
-            <div class="rc-sep"></div>
-            <div class="rc-item" onclick="rcEditSelected('${plotId}')">&#9881; Graph settings</div>
-        `;
-    } else {
-        // Selection-based menu
-        menu.innerHTML=`
-            <div class="rc-item" onclick="rcZoom('${plotId}')">&#128269; Zoom into selection</div>
-            <div class="rc-item" onclick="rcLabelSelected('${plotId}')">&#127991; Label selected points</div>
-            <div class="rc-sep"></div>
-            <div class="rc-item" onclick="rcEditSelected('${plotId}')">&#9881; Graph settings</div>
-            ${rcZoomed[plotId]?'<div class="rc-sep"></div><div class="rc-item" onclick="rcResetZoom(\''+plotId+'\')">&#8634; Zoom out (reset view)</div>':''}
-            <div class="rc-sep"></div>
-            <div class="rc-item" onclick="rcResetLabels('${plotId}')">&#10005; Clear all labels</div>
-        `;
+    let items='';
+    if(mode==='selection'){
+        items+=`<div class="rc-item" onclick="rcZoom('${plotId}')">&#128269; Zoom into selection</div>`;
+        items+=`<div class="rc-item" onclick="rcLabelSelected('${plotId}')">&#127991; Label selected points</div>`;
+        items+=`<div class="rc-item rc-color-row">&#127912; Color selected <input type="color" id="rc-color-pick" value="#ff4444" onclick="event.stopPropagation()" onchange="rcColorSelected('${plotId}',this.value)" style="width:28px;height:20px;border:1px solid var(--border);border-radius:3px;cursor:pointer;margin-left:auto;background:var(--card);padding:0"></div>`;
+        items+=`<div class="rc-sep"></div>`;
     }
+    items+=`<div class="rc-item" onclick="rcEditSelected('${plotId}')">&#9881; Graph settings</div>`;
+    if(isZoomed){
+        items+=`<div class="rc-sep"></div>`;
+        items+=`<div class="rc-item" onclick="rcResetZoom('${plotId}')">&#8634; Reset zoom</div>`;
+    }
+    if(hasLabels){
+        items+=`<div class="rc-sep"></div>`;
+        items+=`<div class="rc-item" onclick="rcResetLabels('${plotId}')">&#10005; Clear all labels</div>`;
+    }
+    items+=`<div class="rc-item" onclick="rcResetColors('${plotId}')">&#8634; Reset colors</div>`;
+    menu.innerHTML=items;
 
     document.body.appendChild(menu);
     const r=menu.getBoundingClientRect();
@@ -2218,7 +2427,7 @@ function rcZoom(plotId){
     Plotly.relayout(el,{
         'xaxis.range':[rcState.x0,rcState.x1],
         'yaxis.range':[rcState.y0,rcState.y1],
-        'xaxis.fixedrange':true,'yaxis.fixedrange':true
+        'xaxis.autorange':false,'yaxis.autorange':false
     });
 }
 
@@ -2228,7 +2437,7 @@ function rcResetZoom(plotId){
     const el=document.getElementById(plotId);if(!el)return;
     Plotly.relayout(el,{
         'xaxis.autorange':true,'yaxis.autorange':true,
-        'xaxis.fixedrange':true,'yaxis.fixedrange':true
+        'xaxis.autorange':false,'yaxis.autorange':false
     });
 }
 
@@ -2264,6 +2473,44 @@ function rcResetLabels(plotId){
     PINNED_LABELS[plotId]=[];
     const el=document.getElementById(plotId);
     if(el)applyPinnedLabels(el,plotId);
+}
+
+function rcColorSelected(plotId,color){
+    rcCloseMenu();
+    const el=document.getElementById(plotId);
+    if(!el||!el.data)return;
+    const x0=rcState.x0,x1=rcState.x1,y0=rcState.y0,y1=rcState.y1;
+    rcClearSelection();
+
+    // For each trace, recolor points inside the selection
+    el.data.forEach((trace,ti)=>{
+        if(!trace.x||!trace.y||!trace.marker)return;
+        // Build per-point color array
+        const n=trace.x.length;
+        let colors;
+        if(Array.isArray(trace.marker.color)){
+            colors=[...trace.marker.color];
+        } else {
+            colors=new Array(n).fill(trace.marker.color||'#e6edf3');
+        }
+        let changed=false;
+        for(let i=0;i<n;i++){
+            const x=trace.x[i],y=trace.y[i];
+            if(x>=x0&&x<=x1&&y>=y0&&y<=y1){
+                colors[i]=color;
+                changed=true;
+            }
+        }
+        if(changed) Plotly.restyle(el,{'marker.color':[colors]},[ti]);
+    });
+}
+
+function rcResetColors(plotId){
+    rcCloseMenu();rcClearSelection();
+    // Re-render the plot to restore original colors
+    const{data:qd}=getQData();const fidx=getFilteredIdx();
+    const cp=CANVAS_PLOTS.find(p=>p.plotId===plotId);
+    if(cp) renderPlot(cp,qd,fidx);
 }
 </script>
 </body>
