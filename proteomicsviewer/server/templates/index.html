@@ -512,12 +512,12 @@ async function uploadFile(file,append){
 
 </aside>
 <div id="divider"></div>
-<main id="right-panel">
+<main id="right-panel" data-tour="canvas">
     <div id="right-welcome" class="welcome-card">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         <div class="wc-text">Data visualization will appear here</div>
     </div>
-    <div id="canvas-wrap" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden" data-tour="canvas">
+    <div id="canvas-wrap" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
         <div class="export-bar">
             <button class="btn-sm" onclick="exportAllSVG()">Export SVG</button>
             <button class="btn-sm" onclick="exportAllPNG()">Export PNG</button>
@@ -919,6 +919,7 @@ function grpVals(fi,grp,qd,fidx){
 }
 function grpColor(grp){const b=BINS.find(b=>b.label===grp);return b?b.color:DERIVED.find(d=>d.name===grp)?'#bc8cff':'#8b949e'}
 function pLabel(fidx,fi){const p=RAW.proteins[fidx[fi]];const g=p.gene_name||p.majority_id||p.id;return g.length>40?g.slice(0,37)+'...':g}
+function pFullLabel(fidx,fi){const p=RAW.proteins[fidx[fi]];return (p.majority_id||p.id)+'\n'+(p.gene_name||'')}
 
 // ================================================================
 // STATS
@@ -1144,6 +1145,101 @@ function setupPlotResize(wrap,plotId){
 // ================================================================
 // PLOT RENDERING
 // ================================================================
+// ================================================================
+// CLICK-TO-LABEL SYSTEM
+// ================================================================
+// Store pinned labels per plot: { plotId: [{x, y, text, key}] }
+var PINNED_LABELS={};
+
+function setupClickLabel(div,plotId){
+    div.on('plotly_click',function(eventData){
+        if(!eventData||!eventData.points||!eventData.points.length)return;
+        const pt=eventData.points[0];
+        const x=pt.x, y=pt.y;
+
+        // Use customdata (locus tag + gene name) if available, otherwise parse from text
+        let displayLabel='';
+        if(pt.customdata){
+            displayLabel=String(pt.customdata);
+        } else {
+            let label=pt.text||pt.data.text?.[pt.pointIndex]||'';
+            label=label.replace(/<[^>]*>/g,'\n').split('\n').filter(s=>s.trim())[0]||'';
+            displayLabel=label;
+        }
+        if(!displayLabel)return;
+
+        const key=x+'_'+y;
+        if(!PINNED_LABELS[plotId])PINNED_LABELS[plotId]=[];
+        const existing=PINNED_LABELS[plotId].findIndex(p=>p.key===key);
+
+        if(existing>=0){
+            // Remove existing pin
+            PINNED_LABELS[plotId].splice(existing,1);
+        } else {
+            // Add new pin
+            PINNED_LABELS[plotId].push({x,y,text:displayLabel,key});
+        }
+        applyPinnedLabels(div,plotId);
+    });
+}
+
+function applyPinnedLabels(div,plotId){
+    const pins=PINNED_LABELS[plotId]||[];
+    if(!pins.length){
+        // Remove all pinned annotations (keep any existing non-pinned ones)
+        const existing=(div.layout||{}).annotations||[];
+        const kept=existing.filter(a=>!a._pinned);
+        Plotly.relayout(div,{annotations:kept});
+        return;
+    }
+
+    // Smart positioning: spread labels to avoid overlap
+    // Sort by y descending so we can stack labels
+    const sorted=[...pins].sort((a,b)=>b.y-a.y);
+
+    // Check for crowding: if points are close, use longer arrows
+    const annotations=[];
+    const usedSlots=[]; // track label positions to avoid overlap
+
+    sorted.forEach((pin,i)=>{
+        // Base offset direction: alternate left/right, stagger vertically
+        const side=(i%2===0)?1:-1;
+        let ax=30*side + (Math.floor(i/2))*15*side;
+        let ay=-20 - (i%3)*14;
+
+        // Check if this label would overlap with existing ones
+        // If so, push it further out
+        const targetX=pin.x;const targetY=pin.y;
+        for(const slot of usedSlots){
+            const dx=Math.abs(targetX+ax/100 - slot.lx);
+            const dy=Math.abs(targetY+ay/100 - slot.ly);
+            if(dx<0.5&&dy<0.3){
+                ay-=18;
+                ax+=10*side;
+            }
+        }
+        usedSlots.push({lx:targetX+ax/100,ly:targetY+ay/100});
+
+        // Use arrow if label is far from point (crowded area)
+        const needsArrow=pins.length>1||Math.abs(ax)>20||Math.abs(ay)>20;
+
+        annotations.push({
+            x:pin.x, y:pin.y, text:pin.text,
+            showarrow:needsArrow, arrowhead:0, arrowwidth:1, arrowcolor:'var(--text-sec)',
+            ax:ax, ay:ay,
+            font:{size:10,color:'var(--text)'},
+            bgcolor:'var(--surface)', bordercolor:'var(--border)', borderwidth:1,
+            borderpad:3, opacity:0.95,
+            _pinned:true, // marker to distinguish from other annotations
+        });
+    });
+
+    // Merge with any non-pinned annotations
+    const existing=(div.layout||{}).annotations||[];
+    const kept=existing.filter(a=>!a._pinned);
+    Plotly.relayout(div,{annotations:kept.concat(annotations)});
+}
+
 function renderPlot(p,qd,fidx){
     const div=document.getElementById(p.plotId);if(!div)return;
     if(p.type==='enrichment')plotEnrichment(div,p,qd,fidx);
@@ -1151,6 +1247,12 @@ function renderPlot(p,qd,fidx){
     else if(p.type==='volcano')plotVolcano(div,p,qd,fidx);
     else if(p.type==='dotplot')plotDotplot(div,p,qd,fidx);
     else if(p.type==='pca')plotPCA(div,p,qd,fidx);
+    // Attach click handler (remove old first to prevent duplicates) and reapply pins
+    div.removeAllListeners?.('plotly_click');
+    setupClickLabel(div,p.plotId);
+    if(PINNED_LABELS[p.plotId]&&PINNED_LABELS[p.plotId].length){
+        setTimeout(()=>applyPinnedLabels(div,p.plotId),50);
+    }
 }
 
 function plotEnrichment(div,p,qd,fidx){
@@ -1165,7 +1267,7 @@ function plotEnrichment(div,p,qd,fidx){
         // For ratio mode, skip if denominator is 0 (unique to X — not a ratio)
         if(!isLog2&&mB===0)continue;
         const val=isLog2?Math.log2((mA+1)/(mB+1)):(mA/mB);
-        data.push({fi,val,label:pLabel(fidx,fi),rawX:mA,rawY:mB});
+        data.push({fi,val,label:pLabel(fidx,fi),fullLabel:pFullLabel(fidx,fi),rawX:mA,rawY:mB});
     }
     data.sort((a,b)=>a.val-b.val);
     const xVals=data.map((_,i)=>i+1);
@@ -1175,10 +1277,11 @@ function plotEnrichment(div,p,qd,fidx){
     const customHover=data.map(d=>d.label+'<br>'+hoverLabel+': '+(d.val<100?d.val.toFixed(3):d.val.toFixed(1))+'<br>'+gx+': '+d.rawX.toExponential(2)+'<br>'+gy+': '+d.rawY.toExponential(2)+'<br>Rank: ');
 
     const traces=[];
+    const fullLabels=data.map(d=>d.fullLabel);
     if(style==='bar'){
-        traces.push({x:xVals,y:yVals,type:'bar',marker:{color:'#e6edf3',line:{width:0}},text:customHover,hovertemplate:'%{text}%{x}<extra></extra>'});
+        traces.push({x:xVals,y:yVals,type:'bar',marker:{color:'#e6edf3',line:{width:0}},text:customHover,customdata:fullLabels,hovertemplate:'%{text}%{x}<extra></extra>'});
     } else {
-        traces.push({x:xVals,y:yVals,mode:'markers',type:'scatter',marker:{size:5,color:'#e6edf3',symbol:'circle'},text:customHover,hovertemplate:'%{text}%{x}<extra></extra>'});
+        traces.push({x:xVals,y:yVals,mode:'markers',type:'scatter',marker:{size:5,color:'#e6edf3',symbol:'circle'},text:customHover,customdata:fullLabels,hovertemplate:'%{text}%{x}<extra></extra>'});
     }
 
     const yTitle=isLog2?'log2('+gx+'/'+gy+')':'Enrichment ('+gx+'/'+gy+')';
@@ -1290,9 +1393,10 @@ function plotDotplot(div,p,qd,fidx){
         const mx=grpMean(fi,gx,qd,fidx),my=grpMean(fi,gy,qd,fidx);
         if(mx===0&&my===0)continue;
         const label=pLabel(fidx,fi);
-        if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,fc:Math.log2(my/mx),rawX:mx,rawY:my});
-        else if(mx>0) xOnly.push({x:txFn(mx),y:0,label,rawX:mx});
-        else yOnly.push({x:0,y:txFn(my),label,rawY:my});
+        const full=pFullLabel(fidx,fi);
+        if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,full,fc:Math.log2(my/mx),rawX:mx,rawY:my});
+        else if(mx>0) xOnly.push({x:txFn(mx),y:0,label,full,rawX:mx});
+        else yOnly.push({x:0,y:txFn(my),label,full,rawY:my});
     }
 
     // Smart axis compression for single-group proteins
@@ -1309,13 +1413,16 @@ function plotDotplot(div,p,qd,fidx){
     const traces=[];
     if(both.length) traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',type:'scattergl',
         marker:{size:5,color:both.map(d=>d.fc),colorscale:[[0,'#58a6ff'],[.5,'#8b949e'],[1,'#f85149']],cmin:-3,cmax:3,opacity:.7},
-        text:both.map(d=>d.label+'<br>'+gx+' raw: '+d.rawX.toExponential(2)+'<br>'+gy+' raw: '+d.rawY.toExponential(2)),hovertemplate:'%{text}<extra></extra>',name:'Both',showlegend:false});
+        text:both.map(d=>d.label+'<br>'+gx+' raw: '+d.rawX.toExponential(2)+'<br>'+gy+' raw: '+d.rawY.toExponential(2)),
+        customdata:both.map(d=>d.full),hovertemplate:'%{text}<extra></extra>',name:'Both',showlegend:false});
     if(xOnlyPlot.length) traces.push({x:xOnlyPlot.map(d=>d.x),y:xOnlyPlot.map(d=>d.y),mode:'markers',type:'scatter',
         marker:{size:5,color:grpColor(gx),opacity:.7,symbol:'triangle-right'},
-        text:xOnlyPlot.map(d=>d.label+'<br>'+gx+' raw: '+d.rawX.toExponential(2)),hovertemplate:'%{text}<br>Only in '+gx+'<extra></extra>',name:'Only '+gx,showlegend:true});
+        text:xOnlyPlot.map(d=>d.label+'<br>'+gx+' raw: '+d.rawX.toExponential(2)),
+        customdata:xOnlyPlot.map(d=>d.full),hovertemplate:'%{text}<br>Only in '+gx+'<extra></extra>',name:'Only '+gx,showlegend:true});
     if(yOnlyPlot.length) traces.push({x:yOnlyPlot.map(d=>d.x),y:yOnlyPlot.map(d=>d.y),mode:'markers',type:'scatter',
         marker:{size:5,color:grpColor(gy),opacity:.7,symbol:'triangle-up'},
-        text:yOnlyPlot.map(d=>d.label+'<br>'+gy+' raw: '+d.rawY.toExponential(2)),hovertemplate:'%{text}<br>Only in '+gy+'<extra></extra>',name:'Only '+gy,showlegend:true});
+        text:yOnlyPlot.map(d=>d.label+'<br>'+gy+' raw: '+d.rawY.toExponential(2)),
+        customdata:yOnlyPlot.map(d=>d.full),hovertemplate:'%{text}<br>Only in '+gy+'<extra></extra>',name:'Only '+gy,showlegend:true});
 
     if(both.length){const mn=Math.min(minNzX,minNzY),mx2=Math.max(maxX,maxY);traces.push({x:[mn,mx2],y:[mn,mx2],mode:'lines',line:{color:'#30363d',width:1,dash:'dash'},hoverinfo:'skip',showlegend:false})}
 
@@ -1654,12 +1761,6 @@ const TOUR_STEPS=[
         '<div class="tl">\u2022 <b>Theme</b> \u2014 4 presets (Dark, Light, Soft, Hi-Con) plus custom color editing</div>'+
         '<div class="tl">\u2022 <b>Export Image</b> \u2014 download all plots as PNG</div>'+
         '<div class="td">Sessions auto-save to the browser. Theme preferences persist across sessions.</div>'},
-    {target:'upload-zone',title:'Tips',position:'bottom',desc:
-        '<div class="tl">\u2022 <b>Drag a .json file</b> onto the page to restore a saved session</div>'+
-        '<div class="tl">\u2022 <b>proker --update</b> checks PyPI for new versions</div>'+
-        '<div class="tl">\u2022 <b>proker --install</b> creates a desktop shortcut</div>'+
-        '<div class="tl">\u2022 <b>Organism filter</b> \u2014 in Processing \u2192 Normalization, select locus tag prefixes to analyze specific organisms in mixed samples</div>'+
-        '<div class="tl">\u2022 <b>Imputation</b> \u2014 volcano plots can impute missing values for better statistical power</div>'},
 ];
 
 var tourStep=-1;
