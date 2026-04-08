@@ -248,6 +248,18 @@ class ProkerChart {
         });
         svg += `</g>`;
 
+        // Diagonal y=x reference line (for dot plots)
+        if (this._diagonalLine) {
+            const domain = xScale.domain();
+            const mn = Math.max(domain[0], yScale.domain()[0]);
+            const mx = Math.min(domain[1], yScale.domain()[1]);
+            if (mn < mx) {
+                const x1 = m.left + xScale(mn), y1 = m.top + yScale(mn);
+                const x2 = m.left + xScale(mx), y2 = m.top + yScale(mx);
+                svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${T.text}" stroke-width="0.8" opacity="0.4" stroke-dasharray="none"/>`;
+            }
+        }
+
         // Annotation layer (rendered after data so on top)
         svg += `<g class="annotation-layer">`;
         this.annotations.forEach((ann, ai) => {

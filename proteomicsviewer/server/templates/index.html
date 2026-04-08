@@ -1683,47 +1683,38 @@ function buildDotplotConfig(chart,p,qd,fidx){
         let hover=label+'<br>'+gx+': '+fmtVal(mx)+'<br>'+gy+': '+fmtVal(my);
         if(isAggSum()) hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);
         if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,full,hover});
-        else if(mx>0) xOnly.push({x:txFn(mx),y:0,label,full,hover:label+'<br>Only in '+gx+'<br>'+gx+': '+fmtVal(mx)});
-        else yOnly.push({x:0,y:txFn(my),label,full,hover:label+'<br>Only in '+gy+'<br>'+gy+': '+fmtVal(my)});
+        else if(mx>0) xOnly.push({rawX:mx,x:txFn(mx),label,full,hover:label+'<br>Only in '+gx+'<br>'+gx+': '+fmtVal(mx)});
+        else yOnly.push({rawY:my,y:txFn(my),label,full,hover:label+'<br>Only in '+gy+'<br>'+gy+': '+fmtVal(my)});
     }
 
-    // Compute break zone: place single-group proteins in a compressed band
-    // near the axis, separated from the main cloud by a gap
-    const allNzX=both.map(d=>d.x).filter(v=>v>0);
-    const allNzY=both.map(d=>d.y).filter(v=>v>0);
-    const minNzX=allNzX.length?Math.min(...allNzX):1;
-    const minNzY=allNzY.length?Math.min(...allNzY):1;
-    const maxNzX=allNzX.length?Math.max(...allNzX):1;
-    const maxNzY=allNzY.length?Math.max(...allNzY):1;
-
-    // Break position: 40% of the way from 0 to the minimum nonzero value
-    const breakX=minNzX*0.4;
-    const breakY=minNzY*0.4;
-    // Unique proteins placed in a band from 0 to breakX/breakY
-    const bandX=breakX*0.6; // center of the unique-protein band
-    const bandY=breakY*0.6;
+    // Place unique proteins at the axis floor — below the main cloud
+    // with a small gap so they're visually distinct but not zigzagged
+    const allX=both.map(d=>d.x).concat(xOnly.map(d=>d.x));
+    const allY=both.map(d=>d.y).concat(yOnly.map(d=>d.y));
+    const minX=allX.length?Math.min(...allX.filter(v=>v>0)):0;
+    const minY=allY.length?Math.min(...allY.filter(v=>v>0)):0;
+    // Floor position: one step below the minimum real value
+    const floorX=minX>0?minX*0.3:0;
+    const floorY=minY>0?minY*0.3:0;
 
     const traces=[];
-    // Main cloud
+    // Main cloud (gray)
     if(both.length) traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',
-        marker:{size:5,color:'#8b949e',opacity:0.7,symbol:'circle'},
+        marker:{size:5,color:'#8b949e',opacity:0.6,symbol:'circle'},
         text:both.map(d=>d.hover),customdata:both.map(d=>d.full)});
-    // X-only (along bottom, in break zone)
-    if(xOnly.length) traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(()=>bandY),mode:'markers',
-        marker:{size:5,color:grpColor(gx),opacity:0.7,symbol:'triangle-right'},
+    // X-only proteins along the bottom axis floor
+    if(xOnly.length) traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(()=>floorY),mode:'markers',
+        marker:{size:4,color:'#8b949e',opacity:0.4,symbol:'circle'},
         text:xOnly.map(d=>d.hover),customdata:xOnly.map(d=>d.full)});
-    // Y-only (along left, in break zone)
-    if(yOnly.length) traces.push({x:yOnly.map(()=>bandX),y:yOnly.map(d=>d.y),mode:'markers',
-        marker:{size:5,color:grpColor(gy),opacity:0.7,symbol:'triangle-up'},
+    // Y-only proteins along the left axis floor
+    if(yOnly.length) traces.push({x:yOnly.map(()=>floorX),y:yOnly.map(d=>d.y),mode:'markers',
+        marker:{size:4,color:'#8b949e',opacity:0.4,symbol:'circle'},
         text:yOnly.map(d=>d.hover),customdata:yOnly.map(d=>d.full)});
 
-    // Set axis breaks as custom lines on the chart
-    const breaks=[];
-    if(xOnly.length||yOnly.length){
-        if(xOnly.length) breaks.push({axis:'y',pos:breakY}); // horizontal break line
-        if(yOnly.length) breaks.push({axis:'x',pos:breakX}); // vertical break line
-    }
-    chart._axisBreaks=breaks;
+    // Diagonal y=x line through the main cloud
+    chart._diagonalLine=both.length>0;
+    // No zigzag breaks — clean axis floor separation
+    chart._axisBreaks=[];
 
     chart.setChartTitle(p.title||'').setData(traces).setXTitle(gx+axSuffix).setYTitle(gy+axSuffix).render();
 }
