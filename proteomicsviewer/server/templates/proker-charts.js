@@ -30,6 +30,7 @@ class ProkerChart {
         this.tooltip = null;
         this._selBox = null;
         this._selState = { active: false, startX: 0, startY: 0, x0: 0, y0: 0, x1: 0, y1: 0, hasSelection: false };
+        this._selPx = null;
         this._zoomed = false;
         this._origXRange = null;
         this._origYRange = null;
@@ -471,19 +472,26 @@ class ProkerChart {
         // Right-click context menu (prevent default)
         svg.addEventListener('contextmenu', e => e.preventDefault());
 
-        // Right-click drag selection
+        // Right-click drag selection — only within the plot area
         svg.addEventListener('mousedown', e => {
             if (e.button !== 2) return;
             e.preventDefault();
             this._clearSelection();
             this._closeContextMenu();
             const rect = svg.getBoundingClientRect();
-            // Account for CSS transform scale on canvas
             const scaleX = this._w / rect.width;
             const scaleY = this._h / rect.height;
+            const svgX = (e.clientX - rect.left) * scaleX;
+            const svgY = (e.clientY - rect.top) * scaleY;
+            // Only start selection if cursor is inside the plot area (within margins)
+            const m = this._m;
+            if (svgX < m.left || svgX > m.left + this._pw || svgY < m.top || svgY > m.top + this._ph) {
+                // Outside plot area — show context menu immediately on right-click release
+                return;
+            }
             this._selState.active = true;
-            this._selState.startX = (e.clientX - rect.left) * scaleX;
-            this._selState.startY = (e.clientY - rect.top) * scaleY;
+            this._selState.startX = svgX;
+            this._selState.startY = svgY;
             this._selScale = { x: scaleX, y: scaleY };
         });
 
@@ -806,6 +814,7 @@ class ProkerChart {
 
     _clearSelection() {
         this._selState.hasSelection = false;
+        this._selPx = null;
         const box = this.svg?.querySelector('.sel-box');
         if (box) box.setAttribute('display', 'none');
     }
@@ -828,8 +837,8 @@ class ProkerChart {
     }
 
     _labelSelected() {
+        if (!this._selPx) return;
         const s = this._selState;
-        // Use pixel-based collision for accuracy
         const m = this._m;
         this.traces.forEach(trace => {
             if (!trace.x || !trace.y) return;
@@ -855,6 +864,7 @@ class ProkerChart {
     }
 
     _colorSelected(color) {
+        if (!this._selPx) return;
         if (!this._colorOverrides) this._colorOverrides = [];
         const m = this._m;
         this.traces.forEach((trace, ti) => {
