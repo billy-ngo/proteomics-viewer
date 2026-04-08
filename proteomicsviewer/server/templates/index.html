@@ -124,14 +124,18 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .canvas-zoom-btn:hover{color:var(--text);border-color:var(--text-sec)}
 .canvas-zoom-level{font-size:10px;color:var(--text-sec);display:flex;align-items:center;padding:0 4px}
 /* Context toolbar above canvas */
-#canvas-toolbar{height:28px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 10px;gap:6px;font-size:11px;color:var(--text-sec);flex-shrink:0}
-#canvas-toolbar:empty::after{content:'Select an element to see options';opacity:0.4}
+#canvas-toolbar{min-height:28px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 10px;gap:6px;font-size:11px;color:var(--text-sec);flex-shrink:0;flex-wrap:wrap}
 #canvas-toolbar .tb-sep{width:1px;height:16px;background:var(--border)}
 #canvas-toolbar button{padding:2px 6px;background:transparent;border:1px solid var(--border);border-radius:3px;color:var(--text-sec);cursor:pointer;font-family:inherit;font-size:11px}
 #canvas-toolbar button:hover{border-color:var(--text-sec);color:var(--text)}
 #canvas-toolbar button.tb-active{background:var(--accent);color:#fff;border-color:var(--accent)}
 #canvas-toolbar select{padding:1px 4px;background:var(--card);border:1px solid var(--border);border-radius:3px;color:var(--text);font-size:11px;font-family:inherit}
 #canvas-toolbar input[type="color"]{width:20px;height:18px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--card);padding:0}
+.tb-color-swatch{width:20px;height:20px;border-radius:3px;border:1px solid rgba(128,128,128,.4);cursor:pointer;display:inline-block}
+.tb-color-swatch:hover{transform:scale(1.15)}
+.tb-swatch-popup{position:absolute;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;box-shadow:0 6px 20px rgba(0,0,0,.6);display:grid;grid-template-columns:repeat(10,22px);gap:2px}
+.tb-swatch-popup span{width:22px;height:22px;border-radius:3px;cursor:pointer;border:1px solid transparent}
+.tb-swatch-popup span:hover{border-color:#fff;transform:scale(1.1)}
 .canvas-plot{position:relative;margin-bottom:4px}
 .canvas-plot .cp-close{position:absolute;top:2px;right:6px;width:18px;height:18px;border:none;background:transparent;color:transparent;cursor:pointer;font-size:13px;z-index:6;display:flex;align-items:center;justify-content:center;border-radius:3px;transition:all .15s}
 .canvas-plot:hover .cp-close{color:var(--text-sec)}
@@ -618,11 +622,6 @@ async function uploadFile(file,append){
             <div class="viz-card" draggable="true" data-vtype="dotplot" onclick="showVizConfig('dotplot')"><div class="vc-icon">&#8226;&#8226;</div><div><div class="vc-name">Dot Plot</div><div class="vc-desc">Abundance in group X vs group Y</div></div></div>
             <div class="viz-card" draggable="true" data-vtype="pca" onclick="showVizConfig('pca')"><div class="vc-icon">&#10038;</div><div><div class="vc-name">PCA</div><div class="vc-desc">Principal component analysis of samples</div></div></div>
         </div>
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-sec);margin:14px 0 8px">Annotations</div>
-        <div style="display:flex;gap:6px">
-            <button class="btn-sm" onclick="addCanvasTextBox()" style="flex:1">+ Text Box</button>
-            <button class="btn-sm" onclick="addCanvasLine()" style="flex:1">+ Line</button>
-        </div>
         <div id="viz-config-area"></div>
     </div>
 </div>
@@ -690,53 +689,92 @@ function resizeAllPlots(){Object.values(CHARTS).forEach(c=>c.resize())}
 var canvasScale=1.0;
 // ── Context toolbar ──
 var tbSelectedEl=null;
-function updateToolbar(el){
+var tbSelectedPoint=null; // {plotId, ti, i, x, y}
+const TB_SWATCH_COLORS=['#e6edf3','#000000','#ffffff','#f85149','#ff7b72','#ffa657','#d29922','#3fb950','#56d364','#58a6ff','#79c0ff','#bc8cff','#d2a8ff','#db61a2','#f0883e','#8b949e','#0969da','#1a7f37','#cf222e','#8250df','#0550ae','#116329','#82071e','#6639ba','#033d8b','#044f1e','#67060c','#512a97'];
+
+function tbBase(){
+    // Always-visible annotation buttons
+    return `<button onclick="addCanvasTextBox()" title="Add text box" style="font-size:10px">+ Text</button><button onclick="addCanvasLine()" title="Add line" style="font-size:10px">+ Line</button>`;
+}
+
+function updateToolbar(el,pointData){
     const tb=document.getElementById('canvas-toolbar');if(!tb)return;
     tbSelectedEl=el;
-    if(!el){tb.innerHTML='';return}
-    // Detect element type
-    if(el.classList?.contains('canvas-textbox')||el.contentEditable==='true'){
-        // Text element — show formatting options
+    tbSelectedPoint=pointData||null;
+    let html=tbBase();
+
+    if(pointData){
+        // Point selected — show color swatch
+        html+=`<div class="tb-sep"></div><span style="opacity:0.5">Point:</span>`;
+        html+=`<span class="tb-color-swatch" id="tb-pt-color" style="background:${pointData.color||'#e6edf3'}" onclick="tbOpenPointSwatch(this)" ondblclick="tbNativePointColor()" title="Click: swatches, Double-click: picker"></span>`;
+    }
+
+    if(el&&(el.classList?.contains('canvas-textbox')||el.contentEditable==='true'||el.classList?.contains('axis-title')||el.classList?.contains('chart-title'))){
         const cs=getComputedStyle(el);
         const isBold=cs.fontWeight>=600||cs.fontWeight==='bold';
         const isItalic=cs.fontStyle==='italic';
         const size=parseInt(cs.fontSize)||13;
-        const color=el.style.color||'var(--text)';
-        tb.innerHTML=`
-            <span style="opacity:0.5">Text:</span>
+        html+=`<div class="tb-sep"></div>
             <button class="${isBold?'tb-active':''}" onclick="tbToggleBold()" title="Bold"><b>B</b></button>
             <button class="${isItalic?'tb-active':''}" onclick="tbToggleItalic()" title="Italic"><i>I</i></button>
-            <div class="tb-sep"></div>
             <select onchange="tbFontSize(this.value)" title="Font size">
                 ${[9,10,11,12,13,14,16,18,20,24,28,32].map(s=>`<option value="${s}" ${s===size?'selected':''}>${s}px</option>`).join('')}
             </select>
-            <div class="tb-sep"></div>
-            <input type="color" value="${tbColorToHex(color)}" oninput="tbFontColor(this.value)" title="Text color">
-            <div class="tb-sep"></div>
-            <select onchange="tbFontFamily(this.value)" title="Font">
-                ${['Arial','Georgia','Courier New','Times New Roman','Verdana','Helvetica'].map(f=>`<option value="${f}" ${cs.fontFamily.includes(f)?'selected':''}>${f}</option>`).join('')}
+            <span class="tb-color-swatch" id="tb-text-color" style="background:${tbColorToHex(el.style?.color||cs.color)}" onclick="tbOpenTextSwatch(this)" ondblclick="tbNativeTextColor()" title="Text color"></span>
+            <select onchange="tbFontFamily(this.value)" title="Font" style="max-width:100px">
+                ${['Arial','Georgia','Courier New','Times New Roman','Verdana'].map(f=>`<option value="${f}" ${cs.fontFamily.includes(f)?'selected':''}>${f}</option>`).join('')}
             </select>`;
-    } else if(el.closest?.('.canvas-line-svg')||el.closest?.('.canvas-anno-wrap')&&el.querySelector?.('line')){
-        // Line element
+    } else if(el&&(el.closest?.('.canvas-anno-wrap')&&el.querySelector?.('line'))){
         const line=el.querySelector('line')||el.closest('svg')?.querySelector('line');
         if(line){
             const sw=line.getAttribute('stroke-width')||'2';
-            const sc=line.getAttribute('stroke')||'var(--text)';
-            tb.innerHTML=`
-                <span style="opacity:0.5">Line:</span>
-                <select onchange="tbLineWidth(this.value)" title="Line width">
+            html+=`<div class="tb-sep"></div><span style="opacity:0.5">Line:</span>
+                <select onchange="tbLineWidth(this.value)">
                     ${[1,1.5,2,3,4,5].map(w=>`<option value="${w}" ${parseFloat(sw)===w?'selected':''}>${w}px</option>`).join('')}
                 </select>
-                <input type="color" value="${tbColorToHex(sc)}" oninput="tbLineColor(this.value)" title="Line color">
-                <div class="tb-sep"></div>
-                <select onchange="tbLineDash(this.value)" title="Line style">
-                    <option value="">Solid</option><option value="6,3">Dashed</option><option value="2,2">Dotted</option>
-                </select>`;
+                <span class="tb-color-swatch" id="tb-line-color" style="background:${tbColorToHex(line.getAttribute('stroke'))}" onclick="tbOpenLineSwatch(this)" ondblclick="tbNativeLineColor()"></span>
+                <select onchange="tbLineDash(this.value)"><option value="">Solid</option><option value="6,3">Dashed</option><option value="2,2">Dotted</option></select>`;
         }
-    } else {
-        tb.innerHTML='';
     }
+    tb.innerHTML=html;
 }
+
+// Swatch popups
+function tbShowSwatch(anchorEl,onPick){
+    document.querySelectorAll('.tb-swatch-popup').forEach(e=>e.remove());
+    const rect=anchorEl.getBoundingClientRect();
+    const popup=document.createElement('div');popup.className='tb-swatch-popup';
+    popup.style.left=rect.left+'px';popup.style.top=(rect.bottom+4)+'px';popup.style.position='fixed';
+    TB_SWATCH_COLORS.forEach(c=>{const s=document.createElement('span');s.style.background=c;s.onclick=()=>{onPick(c);popup.remove()};popup.appendChild(s)});
+    // Hex input
+    const row=document.createElement('div');row.style.cssText='grid-column:1/-1;display:flex;gap:4px;margin-top:4px;align-items:center';
+    row.innerHTML='<span style="font-size:10px;color:var(--text-sec)">#</span><input type="text" maxlength="6" placeholder="hex" style="width:100%;font-size:11px;padding:2px 4px;font-family:monospace">';
+    row.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter'){let v=e.target.value.trim().replace('#','');if(/^[0-9a-fA-F]{3,6}$/.test(v)){if(v.length===3)v=v[0]+v[0]+v[1]+v[1]+v[2]+v[2];onPick('#'+v);popup.remove()}}});
+    popup.appendChild(row);
+    document.body.appendChild(popup);
+    setTimeout(()=>document.addEventListener('click',e=>{if(!popup.contains(e.target))popup.remove()},{once:true}),10);
+}
+
+function tbOpenPointSwatch(el){tbShowSwatch(el,c=>{
+    if(!tbSelectedPoint)return;
+    const chart=CHARTS[tbSelectedPoint.plotId];if(!chart)return;
+    if(!chart._colorOverrides)chart._colorOverrides=[];
+    chart._colorOverrides.push({ti:tbSelectedPoint.ti,i:tbSelectedPoint.i,color:c});
+    chart.render();
+    el.style.background=c;
+})}
+function tbNativePointColor(){const inp=document.createElement('input');inp.type='color';inp.value='#ff4444';inp.addEventListener('input',()=>{
+    if(!tbSelectedPoint)return;const chart=CHARTS[tbSelectedPoint.plotId];if(!chart)return;
+    if(!chart._colorOverrides)chart._colorOverrides=[];
+    chart._colorOverrides.push({ti:tbSelectedPoint.ti,i:tbSelectedPoint.i,color:inp.value});
+    chart.render();document.getElementById('tb-pt-color').style.background=inp.value;
+});inp.click()}
+
+function tbOpenTextSwatch(el){tbShowSwatch(el,c=>{if(tbSelectedEl){tbSelectedEl.style.color=c;el.style.background=c}})}
+function tbNativeTextColor(){const inp=document.createElement('input');inp.type='color';inp.value=tbColorToHex(tbSelectedEl?.style?.color||'#e6edf3');inp.addEventListener('input',()=>{if(tbSelectedEl)tbSelectedEl.style.color=inp.value;document.getElementById('tb-text-color').style.background=inp.value});inp.click()}
+
+function tbOpenLineSwatch(el){tbShowSwatch(el,c=>{const line=tbSelectedEl?.querySelector('line');if(line){line.setAttribute('stroke',c);el.style.background=c}})}
+function tbNativeLineColor(){const inp=document.createElement('input');inp.type='color';inp.value='#e6edf3';inp.addEventListener('input',()=>{const line=tbSelectedEl?.querySelector('line');if(line)line.setAttribute('stroke',inp.value);document.getElementById('tb-line-color').style.background=inp.value});inp.click()}
 
 function tbToggleBold(){if(!tbSelectedEl)return;const cs=getComputedStyle(tbSelectedEl);tbSelectedEl.style.fontWeight=cs.fontWeight>=600?'400':'700';updateToolbar(tbSelectedEl)}
 function tbToggleItalic(){if(!tbSelectedEl)return;const cs=getComputedStyle(tbSelectedEl);tbSelectedEl.style.fontStyle=cs.fontStyle==='italic'?'normal':'italic';updateToolbar(tbSelectedEl)}
@@ -751,12 +789,18 @@ function tbColorToHex(c){if(!c||c.startsWith('var'))return'#e6edf3';if(c.startsW
 // Listen for text box focus/blur to update toolbar
 document.addEventListener('focusin',e=>{if(e.target.classList?.contains('canvas-textbox'))updateToolbar(e.target)});
 document.addEventListener('focusout',e=>{if(e.target.classList?.contains('canvas-textbox'))setTimeout(()=>{if(!document.activeElement?.classList?.contains('canvas-textbox'))updateToolbar(null)},100)});
-// Listen for clicks on line annotations
+// Listen for clicks on line annotations and clear on background click
 document.addEventListener('click',e=>{
     const lineWrap=e.target.closest('.canvas-anno-wrap');
     if(lineWrap&&lineWrap.querySelector('svg line')){updateToolbar(lineWrap);return}
-    if(!e.target.closest('#canvas-toolbar')&&!e.target.classList?.contains('canvas-textbox'))updateToolbar(null);
+    // Don't clear toolbar when clicking toolbar itself, swatch popups, or data points
+    if(e.target.closest('#canvas-toolbar')||e.target.closest('.tb-swatch-popup')||e.target.closest('.data-pt'))return;
+    if(e.target.classList?.contains('canvas-textbox'))return;
+    // Only clear if clicking on canvas background
+    if(e.target.closest('#canvas-viewport')&&!e.target.closest('.proker-svg'))updateToolbar(null);
 });
+// Initialize toolbar with base buttons
+setTimeout(()=>updateToolbar(null),100);
 
 // Scroll wheel on canvas viewport zooms canvas
 document.addEventListener('DOMContentLoaded',()=>{
@@ -1438,6 +1482,9 @@ function renderPlot(p,qd,fidx){
     chart.on('resetcolors',()=>{p._forceUpdate=true;const{data:q}=getQData();renderPlot(p,q,getFilteredIdx())});
     chart.on('freeze',()=>freezePlot(p.plotId));
     chart.on('updatefrozen',()=>updateFrozenPlot(p.plotId));
+    chart.on('pointselect',d=>{d.plotId=p.plotId;updateToolbar(null,d)});
+    chart.on('pointdeselect',()=>updateToolbar(null));
+    chart.on('titleselect',d=>updateToolbar(d.element));
     chart._frozen=p.frozen||false;
 
     // Store snapshot of current settings when rendered

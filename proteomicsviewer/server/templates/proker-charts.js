@@ -303,9 +303,17 @@ class ProkerChart {
             pt.addEventListener('click', e => {
                 e.stopPropagation();
                 const x = parseFloat(pt.dataset.x), y = parseFloat(pt.dataset.y);
+                const ti = parseInt(pt.dataset.ti), i = parseInt(pt.dataset.i);
                 const custom = pt.dataset.custom || pt.dataset.hover || '';
                 const label = custom.replace(/&lt;br&gt;/g, '\n').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-                this._emit('click', { x, y, text: label, element: pt });
+                // Highlight selected point
+                svg.querySelectorAll('.data-pt-selected').forEach(s => s.classList.remove('data-pt-selected'));
+                pt.classList.add('data-pt-selected');
+                pt.setAttribute('stroke', this.opts.theme.accent);
+                pt.setAttribute('stroke-width', '2.5');
+                // Get current color
+                const color = pt.getAttribute('fill') || '#e6edf3';
+                this._emit('pointselect', { x, y, ti, i, color, text: label, element: pt, plotId: this.container?.id });
                 this._toggleAnnotation(x, y, label);
             });
         });
@@ -342,8 +350,9 @@ class ProkerChart {
                 if (el.classList.contains('chart-title')) this._titlePos = {x:nx,y:ny};
                 else if (el.dataset.axis === 'x') this._xTitlePos = {x:nx,y:ny};
                 else if (el.dataset.axis === 'y') this._yTitlePos = {x:nx,y:ny};
-                // If didn't move much, treat as click → edit
+                // If didn't move much, treat as click → edit and select
                 if (!moved || (Math.abs(e.clientX-startMX)<3 && Math.abs(e.clientY-startMY)<3)) {
+                    this._emit('titleselect', { element: el });
                     if (el.classList.contains('chart-title')) this._editChartTitle(el);
                     else this._editAxisTitle(el);
                 }
@@ -477,10 +486,16 @@ class ProkerChart {
             this._showContextMenu(e.clientX, e.clientY);
         });
 
-        // Left-click on bg dismisses selection
+        // Left-click on bg dismisses selection and clears point highlight
         svg.addEventListener('click', () => {
             this._clearSelection();
             this._closeContextMenu();
+            svg.querySelectorAll('.data-pt-selected').forEach(s => {
+                s.classList.remove('data-pt-selected');
+                s.setAttribute('stroke', this.opts.theme.plot);
+                s.setAttribute('stroke-width', '1');
+            });
+            this._emit('pointdeselect', {});
         });
 
         // Left-click drag on plot background → move entire plot on canvas
