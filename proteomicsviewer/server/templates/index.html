@@ -373,6 +373,10 @@ async function uploadFile(file,append){
                 <span style="font-size:11px;color:var(--text-sec)">Grid</span>
                 <span class="gs-swatch" id="gs-grid-color-sw" onclick="gsOpenPicker('gs-grid-color')" ondblclick="gsNative('gs-grid-color')" style="margin-left:auto"></span>
             </div>
+            <div id="gs-threshold-row" style="display:flex;align-items:center;gap:6px">
+                <input type="checkbox" id="gs-show-thresholds" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)">
+                <span style="font-size:11px;color:var(--text-sec)">Threshold lines</span>
+            </div>
             <div style="display:flex;align-items:center;gap:6px">
                 <input type="checkbox" id="gs-show-plotbg" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)">
                 <span style="font-size:11px;color:var(--text-sec)">Plot background</span>
@@ -610,7 +614,7 @@ async function uploadFile(file,append){
     <div class="panel-section">
         <div class="section-label">Export Data</div>
         <button class="btn-primary" onclick="exportCSV()" style="font-size:14px;padding:12px">Export Analysis as CSV</button>
-        <div style="font-size:11px;color:var(--text-sec);margin-top:6px">Exports raw data, processed data, group assignments, processing settings, and analysis metadata.</div>
+        <div style="font-size:11px;color:var(--text-sec);margin-top:6px">Exports raw data, processed data, group assignments, processing settings, volcano plot statistics, PCA scores, and analysis metadata.</div>
     </div>
 </div>
 
@@ -1373,7 +1377,7 @@ function pearsonR(x,y){const n=x.length,mx=mean(x),my=mean(y);let num=0,dx2=0,dy
 function lnGamma(z){const c=[.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];if(z<.5)return Math.log(Math.PI/Math.sin(Math.PI*z))-lnGamma(1-z);z-=1;let x=c[0];for(let i=1;i<9;i++)x+=c[i]/(z+i);const t=z+7.5;return .5*Math.log(2*Math.PI)+(z+.5)*Math.log(t)-t+Math.log(x)}
 function betacf(x,a,b){let qab=a+b,qap=a+1,qam=a-1,c=1,d=1-qab*x/qap;if(Math.abs(d)<1e-30)d=1e-30;d=1/d;let h=d;for(let m=1;m<=200;m++){let m2=2*m,aa=m*(b-m)*x/((qam+m2)*(a+m2));d=1+aa*d;if(Math.abs(d)<1e-30)d=1e-30;c=1+aa/c;if(Math.abs(c)<1e-30)c=1e-30;d=1/d;h*=d*c;aa=-(a+m)*(qab+m)*x/((a+m2)*(qap+m2));d=1+aa*d;if(Math.abs(d)<1e-30)d=1e-30;c=1+aa/c;if(Math.abs(c)<1e-30)c=1e-30;d=1/d;let del=d*c;h*=del;if(Math.abs(del-1)<3e-7)break}return h}
 function betainc(x,a,b){if(x<=0)return 0;if(x>=1)return 1;const f=Math.exp(lnGamma(a+b)-lnGamma(a)-lnGamma(b)+a*Math.log(x)+b*Math.log(1-x));if(x<(a+1)/(a+b+2))return f*betacf(x,a,b)/a;return 1-f*betacf(1-x,b,a)/b}
-function ttest(a1,a2){if(a1.length<2||a2.length<2)return 1;const m1=mean(a1),m2=mean(a2),v1=variance(a1),v2=variance(a2),n1=a1.length,n2=a2.length,se=Math.sqrt(v1/n1+v2/n2);if(se===0)return 1;const t=Math.abs(m1-m2)/se,df=(v1/n1+v2/n2)**2/((v1/n1)**2/(n1-1)+(v2/n2)**2/(n2-1));if(isNaN(df)||df<1)return 1;return betainc(df/(df+t*t),df/2,.5)}
+function ttest(a1,a2,s0){if(a1.length<2||a2.length<2)return 1;const m1=mean(a1),m2=mean(a2),v1=variance(a1),v2=variance(a2),n1=a1.length,n2=a2.length,se=Math.sqrt(v1/n1+v2/n2);const denom=s0?se+s0:se;if(denom===0)return 1;const t=Math.abs(m1-m2)/denom,df=(v1/n1+v2/n2)**2/((v1/n1)**2/(n1-1)+(v2/n2)**2/(n2-1));if(isNaN(df)||df<1)return 1;return betainc(df/(df+t*t),df/2,.5)}
 function bhFDR(pvals){const n=pvals.length;const idx=pvals.map((p,i)=>({p,i})).sort((a,b)=>a.p-b.p);const adj=new Array(n);let prev=1;for(let r=n;r>=1;r--){const j=idx[r-1].i;adj[j]=Math.min(prev,idx[r-1].p*n/r);prev=adj[j]}return adj}
 function imputeZeros(vals){const nz=vals.filter(v=>v>0);const minV=nz.length?Math.min(...nz)/2:1;return vals.map(v=>v>0?v:minV)}
 
@@ -1509,6 +1513,8 @@ function showVizConfig(type){
         html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-impute" checked> Impute missing values</label>`;
         html+=`<div class="af-row"><span class="af-lbl">FDR threshold</span><select id="vc-fdr"><option value="0.05">0.05</option><option value="0.01">0.01</option><option value="0.001">0.001</option></select></div>`;
         html+=`<div class="af-row"><span class="af-lbl">|Log2 FC| threshold</span><input type="number" id="vc-fc" value="1" min="0" step="0.25" style="width:80px"></div>`;
+        html+=`<div class="af-row"><span class="af-lbl">S0 (low-abundance correction)</span><input type="number" id="vc-s0" value="0" min="0" max="10" step="0.1" style="width:80px" title="Fudge factor added to the t-test denominator to penalize noisy fold changes at low abundance. 0 = off, typical values 0.1–2.0 (Perseus default: 0.1)"></div>`;
+        html+=`<div style="font-size:10px;color:var(--text-sec);margin-top:2px;line-height:1.4">S0 dampens extreme fold changes from low-abundance proteins by adding a constant to the t-test denominator. Higher values = stronger dampening.</div>`;
     }
     html+=`<button class="btn-primary" onclick="addPlotToCanvas('${type}')" style="margin-top:10px">Add to Canvas</button></div>`;
     c.innerHTML=html;
@@ -1579,7 +1585,7 @@ function addPlotToCanvas(type){
         config.style=document.getElementById('vc-enr-style')?.value||'dot';
         config.log2=document.getElementById('vc-enr-log2')?.checked||false;
     }
-    if(type==='volcano'){config.impute=document.getElementById('vc-impute')?.checked;config.fdr=+(document.getElementById('vc-fdr')?.value||.05);config.fc=+(document.getElementById('vc-fc')?.value||1)}
+    if(type==='volcano'){config.impute=document.getElementById('vc-impute')?.checked;config.fdr=+(document.getElementById('vc-fdr')?.value||.05);config.fc=+(document.getElementById('vc-fc')?.value||1);config.s0=+(document.getElementById('vc-s0')?.value||0)}
     if(type==='unique'){
         config.featuredGroup=document.getElementById('vc-uniq-grp')?.value||'';
         config.mode=document.getElementById('vc-uniq-mode')?.value||'not_control';
@@ -1841,6 +1847,7 @@ function buildUniqueConfig(chart,p,qd,fidx){
 function buildVolcanoConfig(chart,p,qd,fidx){
     if(isAggSum()){chart.setData([]).setXTitle('').setYTitle('Sums mode — no statistics').render();return}
     const gx=p.config.gx,gy=p.config.gy,fcT=p.config.fc||1,fdrT=p.config.fdr||0.05,doImpute=p.config.impute;
+    const s0=p.config.s0||0;
     const fc=[],rawP=[],labels=[],fulls=[];
     for(let fi=0;fi<fidx.length;fi++){
         let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
@@ -1849,7 +1856,7 @@ function buildVolcanoConfig(chart,p,qd,fidx){
         if(mA===0||mB===0)continue;
         if(doImpute){vA=imputeZeros(vA);vB=imputeZeros(vB)}
         fc.push(Math.log2(mA/mB));
-        rawP.push(ttest(vA,vB));
+        rawP.push(ttest(vA,vB,s0));
         labels.push(pLabel(fidx,fi));
         fulls.push(pFullLabel(fidx,fi));
     }
@@ -1858,6 +1865,15 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     const traces=[];
     ['ns','up','down'].forEach(cat=>{const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);if(!idx.length)return;
         traces.push({x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),mode:'markers',marker:{size:cat==='ns'?4:6,color:cat==='up'?grpColor(gx):cat==='down'?grpColor(gy):'#6e7681',opacity:cat==='ns'?0.5:0.85,symbol:'circle'},text:idx.map(i=>labels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),customdata:idx.map(i=>fulls[i])})});
+    // Threshold reference lines (dotted)
+    const fdrLine=-Math.log10(fdrT);
+    chart._refLines=[
+        {axis:'x',value:fcT,color:'#8b949e',dash:'4,4',width:1,opacity:0.6},
+        {axis:'x',value:-fcT,color:'#8b949e',dash:'4,4',width:1,opacity:0.6},
+        {axis:'y',value:fdrLine,color:'#8b949e',dash:'4,4',width:1,opacity:0.6}
+    ];
+    if(p.config.showThresholds===false) chart._showRefLines=false;
+    chart._plotType='volcano';
     chart.setChartTitle(p.title||'').setData(traces).setXTitle('\u2190 '+gy+' | Log2 Fold Change | '+gx+' \u2192').setYTitle('-Log10(FDR adj. P-value)').render();
 }
 
@@ -2186,6 +2202,51 @@ function exportCSV(){
     }
     csv+='\n';
 
+    // ── Volcano Plot Statistics ──
+    const volcanoPlots=CANVAS_PLOTS.filter(cp=>cp.type==='volcano');
+    volcanoPlots.forEach(vp=>{
+        const gx=vp.config.gx,gy=vp.config.gy,fcT=vp.config.fc||1,fdrT=vp.config.fdr||0.05;
+        const doImpute=vp.config.impute,s0=vp.config.s0||0;
+        csv+='=== VOLCANO: '+gx+' vs '+gy+' ===\n';
+        csv+='Settings,"FDR threshold='+fdrT+', |Log2 FC| threshold='+fcT+', Impute='+(doImpute?'Yes':'No')+', S0='+s0+'"\n';
+        csv+='Protein ID,Gene Name,Mean '+gx+',Mean '+gy+',Log2 Fold Change,P-value,FDR adj. P-value,Significant\n';
+        const rows=[];
+        for(let fi=0;fi<fidx.length;fi++){
+            let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
+            const mA=mean(vA),mB=mean(vB);
+            if(mA===0||mB===0)continue;
+            if(doImpute){vA=imputeZeros(vA);vB=imputeZeros(vB)}
+            const fcVal=Math.log2(mA/mB);
+            const pVal=ttest(vA,vB,s0);
+            const pi=fidx[fi];const pr=RAW.proteins[pi];
+            rows.push({id:pr.majority_id,gene:pr.gene_name,mA,mB,fc:fcVal,p:pVal,fi});
+        }
+        const rawP=rows.map(r=>r.p);const adjP=bhFDR(rawP);
+        rows.forEach((r,i)=>{
+            const sig=adjP[i]<fdrT&&Math.abs(r.fc)>=fcT;
+            const dir=sig?(r.fc>0?'Up ('+gx+')':'Down ('+gy+')'):'NS';
+            csv+='"'+r.id+'","'+r.gene+'",'+r.mA.toFixed(4)+','+r.mB.toFixed(4)+','+r.fc.toFixed(4)+','+r.p.toExponential(4)+','+adjP[i].toExponential(4)+','+dir+'\n';
+        });
+        csv+='\n';
+    });
+
+    // ── PCA Scores ──
+    const pcaPlots=CANVAS_PLOTS.filter(cp=>cp.type==='pca');
+    pcaPlots.forEach(pp=>{
+        const pcaGroups=pp.config.gx.split(',');
+        const sampleNames=[],sampleGroups=[];
+        pcaGroups.forEach(g=>{const bin=BINS.find(b=>b.label===g);if(bin)bin.samples.forEach(s=>{sampleNames.push(s);sampleGroups.push(g)})});
+        if(sampleNames.length<3)return;
+        const pca=computePCA(sampleNames,qd,fidx);
+        csv+='=== PCA: '+pcaGroups.join(', ')+' ===\n';
+        csv+='Variance Explained,PC1='+pca.varExpl[0].toFixed(2)+'%,PC2='+pca.varExpl[1].toFixed(2)+'%\n';
+        csv+='Sample,Group,PC1,PC2\n';
+        pca.scores.forEach((sc,i)=>{
+            csv+='"'+sc.name+'","'+sampleGroups[i]+'",'+sc.pc1.toFixed(6)+','+sc.pc2.toFixed(6)+'\n';
+        });
+        csv+='\n';
+    });
+
     // ── Credits ──
     csv+='=== CREDITS ===\n';
     csv+='Pro-ker Proteomics Analysis\n';
@@ -2215,10 +2276,14 @@ function applyGraphSettings(){
     const showGrid=document.getElementById('gs-show-grid').checked;
     const showPlotBg=document.getElementById('gs-show-plotbg').checked;
     const showPaperBg=document.getElementById('gs-show-paperbg').checked;
+    const showThresholds=document.getElementById('gs-show-thresholds').checked;
     gsTargetPlots.forEach(plotId=>{
         const chart=CHARTS[plotId];if(!chart)return;
         chart.restyle({size,symbol:shape,color,opacity,hollow});
-        chart.relayout({plotBg:showPlotBg?plotBg:null,paperBg:showPaperBg?paperBg:null,gridColor,showGrid,transparentBg:!showPaperBg&&!showPlotBg,fontSize});
+        chart.relayout({plotBg:showPlotBg?plotBg:null,paperBg:showPaperBg?paperBg:null,gridColor,showGrid,showRefLines:showThresholds,transparentBg:!showPaperBg&&!showPlotBg,fontSize});
+        // Persist threshold visibility to canvas plot config
+        const cp=CANVAS_PLOTS.find(c=>c.plotId===plotId);
+        if(cp&&cp.config) cp.config.showThresholds=showThresholds;
     });
 }
 
@@ -2679,6 +2744,11 @@ function openGraphSettingsForPlot(plotId){
         document.getElementById('gs-font-size').value=el.layout.font?.size||12;
         document.getElementById('gs-font-size-val').textContent=el.layout.font?.size||12;
     }
+    // Show/hide threshold toggle based on plot type
+    const chart=CHARTS[plotId];
+    const hasRefLines=chart&&chart._refLines&&chart._refLines.length>0;
+    document.getElementById('gs-threshold-row').style.display=hasRefLines?'flex':'none';
+    if(hasRefLines) document.getElementById('gs-show-thresholds').checked=chart._showRefLines!==false;
     closePanels();
     document.getElementById('graph-settings-panel').classList.remove('hidden');
     gsUpdateSwatches();

@@ -34,6 +34,7 @@ class ProkerChart {
         this._zoomed = false;
         this._origXRange = null;
         this._origYRange = null;
+        this._refLines = []; // [{axis:'x'|'y', value, color, dash, width, opacity}]
 
         // Symbol renderers
         this._symbols = {
@@ -267,6 +268,25 @@ class ProkerChart {
                 const x2 = m.left + xScale(mx), y2 = m.top + yScale(mx);
                 svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${T.text}" stroke-width="0.8" opacity="0.4" stroke-dasharray="none"/>`;
             }
+        }
+
+        // Reference lines (threshold lines, etc.) — hidden when _showRefLines === false
+        if (this._refLines && this._refLines.length && this._showRefLines !== false) {
+            this._refLines.forEach(rl => {
+                const c = rl.color || T.textSec;
+                const dash = rl.dash || '5,4';
+                const w = rl.width || 1;
+                const op = rl.opacity != null ? rl.opacity : 0.7;
+                if (rl.axis === 'x') {
+                    const px = m.left + xScale(rl.value);
+                    if (px >= m.left && px <= m.left + pw)
+                        svg += `<line x1="${px}" y1="${m.top}" x2="${px}" y2="${m.top + ph}" stroke="${c}" stroke-width="${w}" stroke-dasharray="${dash}" opacity="${op}"/>`;
+                } else {
+                    const py = m.top + yScale(rl.value);
+                    if (py >= m.top && py <= m.top + ph)
+                        svg += `<line x1="${m.left}" y1="${py}" x2="${m.left + pw}" y2="${py}" stroke="${c}" stroke-width="${w}" stroke-dasharray="${dash}" opacity="${op}"/>`;
+                }
+            });
         }
 
         // Annotation layer (rendered after data so on top)
@@ -1024,6 +1044,7 @@ class ProkerChart {
         if (props.showGrid !== undefined) this._showGrid = props.showGrid;
         if (props.transparentBg !== undefined) this._transparentBg = props.transparentBg;
         if (props.fontSize) this._fontSize = props.fontSize;
+        if (props.showRefLines !== undefined) this._showRefLines = props.showRefLines;
         this.render();
         return this;
     }
