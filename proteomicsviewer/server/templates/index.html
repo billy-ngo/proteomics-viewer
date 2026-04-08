@@ -776,7 +776,75 @@ var canvasScale=1.0;
 // ── Context toolbar ──
 var tbSelectedEl=null;
 var tbSelectedPoint=null; // {plotId, ti, i, x, y}
-const TB_SWATCH_COLORS=['#e6edf3','#000000','#ffffff','#f85149','#ff7b72','#ffa657','#d29922','#3fb950','#56d364','#58a6ff','#79c0ff','#bc8cff','#d2a8ff','#db61a2','#f0883e','#8b949e','#0969da','#1a7f37','#cf222e','#8250df','#0550ae','#116329','#82071e','#6639ba','#033d8b','#044f1e','#67060c','#512a97'];
+// BiNgo-style 120-color palette (12 per row, organized by color family)
+const SWATCH_PALETTE=[
+    // Grays
+    '#000000','#1a1a1a','#333333','#4d4d4d','#666666','#808080','#999999','#b3b3b3','#cccccc','#e6e6e6','#f2f2f2','#ffffff',
+    // Reds
+    '#4e0000','#7f0000','#b71c1c','#c62828','#d32f2f','#e53935','#ef5350','#f44336','#ef9a9a','#ffcdd2','#ffebee','#fff5f5',
+    // Oranges
+    '#4e2600','#7f3d00','#e65100','#ef6c00','#f57c00','#fb8c00','#ff9800','#ffa726','#ffb74d','#ffcc80','#ffe0b2','#fff3e0',
+    // Yellows
+    '#4e4400','#7f6f00','#f57f17','#f9a825','#fbc02d','#fdd835','#ffeb3b','#fff176','#fff59d','#fff9c4','#fffde7','#fffff0',
+    // Greens
+    '#003300','#1b5e20','#2e7d32','#388e3c','#43a047','#4caf50','#66bb6a','#81c784','#a5d6a7','#c8e6c9','#e8f5e9','#f1f8e9',
+    // Teals
+    '#003333','#004d40','#00695c','#00796b','#00897b','#009688','#26a69a','#4db6ac','#80cbc4','#b2dfdb','#e0f2f1','#e0f7fa',
+    // Blues
+    '#001a33','#0d47a1','#1565c0','#1976d2','#1e88e5','#2196f3','#42a5f5','#64b5f6','#90caf9','#bbdefb','#e3f2fd','#e8eaf6',
+    // Purples
+    '#1a0033','#311b92','#4527a0','#512da8','#5e35b1','#673ab7','#7e57c2','#9575cd','#b39ddb','#d1c4e9','#ede7f6','#f3e5f5',
+    // Pinks
+    '#330019','#880e4f','#ad1457','#c2185b','#d81b60','#e91e63','#ec407a','#f06292','#f48fb1','#f8bbd0','#fce4ec','#fff0f5',
+    // Browns
+    '#1b0000','#3e2723','#4e342e','#5d4037','#6d4c41','#795548','#8d6e63','#a1887f','#bcaaa4','#d7ccc8','#efebe9','#fafafa',
+];
+
+// ── Universal color swatch popup ──
+// Click any color square → opens this. Double-click → native picker.
+function showColorSwatch(anchorEl,currentColor,onPick){
+    document.querySelectorAll('.swatch-popup').forEach(e=>e.remove());
+    const rect=anchorEl.getBoundingClientRect();
+    const popup=document.createElement('div');
+    popup.className='swatch-popup';
+    popup.style.cssText='position:fixed;z-index:300;background:var(--surface,#161b22);border:1px solid var(--border,#30363d);border-radius:8px;padding:8px;box-shadow:0 8px 24px rgba(0,0,0,.6);display:grid;grid-template-columns:repeat(12,20px);gap:2px';
+    // Position: try below, fall back to above
+    let top=rect.bottom+4,left=rect.left-100;
+    if(top+280>window.innerHeight) top=rect.top-280;
+    if(left<8) left=8;
+    if(left+260>window.innerWidth) left=window.innerWidth-268;
+    popup.style.left=left+'px';popup.style.top=top+'px';
+
+    SWATCH_PALETTE.forEach(c=>{
+        const s=document.createElement('span');
+        s.style.cssText='width:20px;height:20px;border-radius:3px;cursor:pointer;border:1px solid transparent;display:block';
+        s.style.background=c;
+        if(c===currentColor) s.style.border='2px solid var(--accent,#58a6ff)';
+        s.addEventListener('click',()=>{onPick(c);popup.remove()});
+        s.addEventListener('mouseenter',()=>{s.style.transform='scale(1.15)';s.style.zIndex='1'});
+        s.addEventListener('mouseleave',()=>{s.style.transform='';s.style.zIndex=''});
+        popup.appendChild(s);
+    });
+    // Hex input row
+    const hexRow=document.createElement('div');
+    hexRow.style.cssText='grid-column:1/-1;display:flex;gap:4px;margin-top:6px;align-items:center';
+    hexRow.innerHTML='<span style="font-size:11px;color:var(--text-sec,#8b949e)">#</span><input type="text" value="'+(currentColor||'').replace('#','')+'" maxlength="6" placeholder="hex" style="flex:1;font-size:11px;padding:3px 6px;font-family:monospace;background:var(--bg,#0d1117);color:var(--text,#e6edf3);border:1px solid var(--border,#30363d);border-radius:3px;outline:none">';
+    hexRow.querySelector('input').addEventListener('keydown',e=>{
+        if(e.key==='Enter'){let v=e.target.value.trim().replace('#','');if(/^[0-9a-fA-F]{3,6}$/.test(v)){if(v.length===3)v=v[0]+v[0]+v[1]+v[1]+v[2]+v[2];onPick('#'+v);popup.remove()}}
+    });
+    popup.appendChild(hexRow);
+    document.body.appendChild(popup);
+    // Close on click outside (but not immediately)
+    setTimeout(()=>document.addEventListener('mousedown',function handler(e){
+        if(!popup.contains(e.target)){popup.remove();document.removeEventListener('mousedown',handler)}
+    }),10);
+}
+
+function openNativeColorPicker(currentColor,onPick){
+    const inp=document.createElement('input');inp.type='color';inp.value=currentColor||'#ffffff';
+    inp.addEventListener('input',()=>onPick(inp.value));
+    inp.click();
+}
 
 function tbBase(){
     // Always-visible annotation buttons
@@ -826,41 +894,29 @@ function updateToolbar(el,pointData){
 }
 
 // Swatch popups
-function tbShowSwatch(anchorEl,onPick){
-    document.querySelectorAll('.tb-swatch-popup').forEach(e=>e.remove());
-    const rect=anchorEl.getBoundingClientRect();
-    const popup=document.createElement('div');popup.className='tb-swatch-popup';
-    popup.style.left=rect.left+'px';popup.style.top=(rect.bottom+4)+'px';popup.style.position='fixed';
-    TB_SWATCH_COLORS.forEach(c=>{const s=document.createElement('span');s.style.background=c;s.onclick=()=>{onPick(c);popup.remove()};popup.appendChild(s)});
-    // Hex input
-    const row=document.createElement('div');row.style.cssText='grid-column:1/-1;display:flex;gap:4px;margin-top:4px;align-items:center';
-    row.innerHTML='<span style="font-size:10px;color:var(--text-sec)">#</span><input type="text" maxlength="6" placeholder="hex" style="width:100%;font-size:11px;padding:2px 4px;font-family:monospace">';
-    row.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter'){let v=e.target.value.trim().replace('#','');if(/^[0-9a-fA-F]{3,6}$/.test(v)){if(v.length===3)v=v[0]+v[0]+v[1]+v[1]+v[2]+v[2];onPick('#'+v);popup.remove()}}});
-    popup.appendChild(row);
-    document.body.appendChild(popup);
-    setTimeout(()=>document.addEventListener('click',e=>{if(!popup.contains(e.target))popup.remove()},{once:true}),10);
+// Toolbar swatch functions using unified showColorSwatch
+function tbOpenPointSwatch(el){
+    const c=tbSelectedPoint?.color||'#e6edf3';
+    showColorSwatch(el,c,color=>{
+        if(!tbSelectedPoint)return;
+        const chart=CHARTS[tbSelectedPoint.plotId];if(!chart)return;
+        if(!chart._colorOverrides)chart._colorOverrides=[];
+        chart._colorOverrides.push({ti:tbSelectedPoint.ti,i:tbSelectedPoint.i,color});
+        chart.render();el.style.background=color;
+    });
 }
-
-function tbOpenPointSwatch(el){tbShowSwatch(el,c=>{
-    if(!tbSelectedPoint)return;
-    const chart=CHARTS[tbSelectedPoint.plotId];if(!chart)return;
-    if(!chart._colorOverrides)chart._colorOverrides=[];
-    chart._colorOverrides.push({ti:tbSelectedPoint.ti,i:tbSelectedPoint.i,color:c});
-    chart.render();
-    el.style.background=c;
-})}
-function tbNativePointColor(){const inp=document.createElement('input');inp.type='color';inp.value='#ff4444';inp.addEventListener('input',()=>{
-    if(!tbSelectedPoint)return;const chart=CHARTS[tbSelectedPoint.plotId];if(!chart)return;
-    if(!chart._colorOverrides)chart._colorOverrides=[];
-    chart._colorOverrides.push({ti:tbSelectedPoint.ti,i:tbSelectedPoint.i,color:inp.value});
-    chart.render();document.getElementById('tb-pt-color').style.background=inp.value;
-});inp.click()}
-
-function tbOpenTextSwatch(el){tbShowSwatch(el,c=>{if(tbSelectedEl){tbSelectedEl.style.color=c;el.style.background=c}})}
-function tbNativeTextColor(){const inp=document.createElement('input');inp.type='color';inp.value=tbColorToHex(tbSelectedEl?.style?.color||'#e6edf3');inp.addEventListener('input',()=>{if(tbSelectedEl)tbSelectedEl.style.color=inp.value;document.getElementById('tb-text-color').style.background=inp.value});inp.click()}
-
-function tbOpenLineSwatch(el){tbShowSwatch(el,c=>{const line=tbSelectedEl?.querySelector('line');if(line){line.setAttribute('stroke',c);el.style.background=c}})}
-function tbNativeLineColor(){const inp=document.createElement('input');inp.type='color';inp.value='#e6edf3';inp.addEventListener('input',()=>{const line=tbSelectedEl?.querySelector('line');if(line)line.setAttribute('stroke',inp.value);document.getElementById('tb-line-color').style.background=inp.value});inp.click()}
+function tbNativePointColor(){
+    openNativeColorPicker(tbSelectedPoint?.color||'#ff4444',c=>{
+        if(!tbSelectedPoint)return;const chart=CHARTS[tbSelectedPoint.plotId];if(!chart)return;
+        if(!chart._colorOverrides)chart._colorOverrides=[];
+        chart._colorOverrides.push({ti:tbSelectedPoint.ti,i:tbSelectedPoint.i,color:c});
+        chart.render();var sw=document.getElementById('tb-pt-color');if(sw)sw.style.background=c;
+    });
+}
+function tbOpenTextSwatch(el){showColorSwatch(el,tbColorToHex(tbSelectedEl?.style?.color||'#e6edf3'),c=>{if(tbSelectedEl){tbSelectedEl.style.color=c;el.style.background=c}})}
+function tbNativeTextColor(){openNativeColorPicker(tbColorToHex(tbSelectedEl?.style?.color||'#e6edf3'),c=>{if(tbSelectedEl)tbSelectedEl.style.color=c;var sw=document.getElementById('tb-text-color');if(sw)sw.style.background=c})}
+function tbOpenLineSwatch(el){var line=tbSelectedEl?.querySelector('line');showColorSwatch(el,tbColorToHex(line?.getAttribute('stroke')||'#e6edf3'),c=>{if(line){line.setAttribute('stroke',c);el.style.background=c}})}
+function tbNativeLineColor(){var line=tbSelectedEl?.querySelector('line');openNativeColorPicker(tbColorToHex(line?.getAttribute('stroke')||'#e6edf3'),c=>{if(line)line.setAttribute('stroke',c);var sw=document.getElementById('tb-line-color');if(sw)sw.style.background=c})}
 
 function tbToggleBold(){if(!tbSelectedEl)return;const cs=getComputedStyle(tbSelectedEl);tbSelectedEl.style.fontWeight=cs.fontWeight>=600?'400':'700';updateToolbar(tbSelectedEl)}
 function tbToggleItalic(){if(!tbSelectedEl)return;const cs=getComputedStyle(tbSelectedEl);tbSelectedEl.style.fontStyle=cs.fontStyle==='italic'?'normal':'italic';updateToolbar(tbSelectedEl)}
@@ -2181,13 +2237,6 @@ const THEME_UI_FIELDS=[
     {key:'border',label:'Border'},{key:'text',label:'Text'},{key:'text-sec',label:'Text secondary'},
     {key:'accent',label:'Accent'},{key:'danger',label:'Alerts'},
 ];
-const PICKER_COLORS=[
-    '#000000','#1a1a1a','#333333','#4d4d4d','#666666','#808080','#999999','#b3b3b3','#cccccc','#e6e6e6','#f2f2f2','#ffffff',
-    '#4a0000','#8b0000','#b22222','#dc2626','#ef4444','#f87171','#001a4a','#003087','#0969da','#3b82f6','#60a5fa','#93c5fd',
-    '#004d00','#006400','#1a7f37','#22c55e','#4ade80','#86efac','#4a3500','#7c4d00','#b45309','#eab308','#facc15','#fde68a',
-    '#2e003e','#4c1d95','#6d28d9','#8b5cf6','#a78bfa','#c4b5fd','#4a0028','#831843','#be185d','#ec4899','#f472b6','#f9a8d4',
-    '#003d3d','#065f46','#0d9488','#14b8a6','#2dd4bf','#5eead4','#3d1f00','#78350f','#92400e','#d97706','#f59e0b','#fbbf24',
-];
 var currentThemeName='dark';
 var customTheme={...THEME_PRESETS.dark};
 
@@ -2229,36 +2278,15 @@ function renderThemeUI(){
     // Render color swatch rows
     const c=document.getElementById('theme-ui-colors');if(!c)return;
     c.innerHTML=THEME_UI_FIELDS.map(f=>
-        `<div class="tc-row"><span class="tc-swatch" style="background:${customTheme[f.key]}" onclick="openColorPicker('${f.key}',this)" ondblclick="openNativeColorPicker('${f.key}')"></span><span class="tc-label">${f.label}</span></div>`
+        `<div class="tc-row"><span class="tc-swatch" style="background:${customTheme[f.key]}" onclick="openColorPicker('${f.key}',this)" ondblclick="openThemeNativePicker('${f.key}')"></span><span class="tc-label">${f.label}</span></div>`
     ).join('');
 }
 
-var pickerTarget=null;
 function openColorPicker(key,el){
-    closeColorPicker();
-    const rect=el.getBoundingClientRect();
-    const popup=document.createElement('div');popup.className='color-picker-popup';popup.id='cp-popup';
-    popup.style.left=(rect.left-100)+'px';popup.style.top=(rect.bottom+4)+'px';
-    PICKER_COLORS.forEach(c=>{
-        const s=document.createElement('span');s.style.background=c;
-        s.onclick=()=>{setCustomColor(key,c);closeColorPicker()};
-        popup.appendChild(s);
-    });
-    const hexRow=document.createElement('div');
-    hexRow.style.cssText='grid-column:1/-1;display:flex;gap:4px;margin-top:4px;align-items:center';
-    hexRow.innerHTML=`<span style="font-size:10px;color:var(--text-sec)">#</span><input type="text" id="cp-hex" value="${(customTheme[key]||'#000000').replace('#','')}" maxlength="6" style="width:100%;font-size:11px;padding:3px 4px;font-family:monospace" placeholder="hex code">`;
-    hexRow.querySelector('input').addEventListener('keydown',e=>{
-        if(e.key==='Enter'){let v=e.target.value.trim().replace('#','');if(/^[0-9a-fA-F]{3,6}$/.test(v)){if(v.length===3)v=v[0]+v[0]+v[1]+v[1]+v[2]+v[2];setCustomColor(key,'#'+v);closeColorPicker()}}
-    });
-    popup.appendChild(hexRow);
-    popup.addEventListener('mouseleave',e=>{if(document.activeElement?.id==='cp-hex')return;setTimeout(closeColorPicker,200)});
-    document.body.appendChild(popup);pickerTarget=key;
+    showColorSwatch(el,customTheme[key]||'#000000',c=>setCustomColor(key,c));
 }
-function closeColorPicker(){const p=document.getElementById('cp-popup');if(p)p.remove();pickerTarget=null}
-function openNativeColorPicker(key){
-    const inp=document.createElement('input');inp.type='color';inp.value=customTheme[key]||'#000000';
-    inp.addEventListener('input',()=>setCustomColor(key,inp.value));
-    inp.click();
+function openThemeNativePicker(key){
+    openNativeColorPicker(customTheme[key]||'#000000',c=>setCustomColor(key,c));
 }
 
 function closePanels(){['theme-panel','info-panel','session-panel','export-panel','graph-settings-panel'].forEach(id=>document.getElementById(id)?.classList.add('hidden'))}
@@ -2609,42 +2637,13 @@ function gsUpdateSwatches(){
     ids.forEach(id=>{const sw=document.getElementById(id+'-sw');const inp=document.getElementById(id);if(sw&&inp)sw.style.background=inp.value});
 }
 function gsOpenPicker(inputId){
-    const sw=document.getElementById(inputId+'-sw');
-    if(!sw)return;
-    closeColorPicker();
-    const rect=sw.getBoundingClientRect();
-    const popup=document.createElement('div');popup.className='color-picker-popup';popup.id='cp-popup';
-    popup.style.left=rect.right+6+'px';popup.style.top=rect.top+'px';
-    PICKER_COLORS.forEach(c=>{
-        const s=document.createElement('span');s.style.background=c;
-        s.onclick=()=>{document.getElementById(inputId).value=c;gsUpdateSwatches();applyGraphSettings();closeColorPicker()};
-        popup.appendChild(s);
-    });
-    // Hex input row
-    const hexRow=document.createElement('div');
-    hexRow.style.cssText='grid-column:1/-1;display:flex;gap:4px;margin-top:4px;align-items:center';
-    hexRow.innerHTML=`<span style="font-size:10px;color:var(--text-sec)">#</span><input type="text" id="cp-hex" value="${(document.getElementById(inputId)?.value||'#000000').replace('#','')}" maxlength="6" style="width:100%;font-size:11px;padding:3px 4px;font-family:monospace" placeholder="hex code">`;
-    hexRow.querySelector('input').addEventListener('keydown',e=>{
-        if(e.key==='Enter'){
-            let v=e.target.value.trim().replace('#','');
-            if(/^[0-9a-fA-F]{3,6}$/.test(v)){
-                if(v.length===3)v=v[0]+v[0]+v[1]+v[1]+v[2]+v[2];
-                document.getElementById(inputId).value='#'+v;
-                gsUpdateSwatches();applyGraphSettings();closeColorPicker();
-            }
-        }
-    });
-    popup.appendChild(hexRow);
-    document.body.appendChild(popup);
-    // Don't auto-close on mouseleave when hex input is focused
-    popup.addEventListener('mouseleave',e=>{
-        if(document.activeElement?.id==='cp-hex')return;
-        setTimeout(closeColorPicker,300);
-    });
+    const sw=document.getElementById(inputId+'-sw');if(!sw)return;
+    const current=document.getElementById(inputId)?.value||'#000000';
+    showColorSwatch(sw,current,c=>{document.getElementById(inputId).value=c;gsUpdateSwatches();applyGraphSettings()});
 }
 function gsNative(inputId){
-    closeColorPicker();
-    document.getElementById(inputId)?.click();
+    const current=document.getElementById(inputId)?.value||'#000000';
+    openNativeColorPicker(current,c=>{document.getElementById(inputId).value=c;gsUpdateSwatches();applyGraphSettings()});
 }
 
 function openGraphSettingsForPlot(plotId){
