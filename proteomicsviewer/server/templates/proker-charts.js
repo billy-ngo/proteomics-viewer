@@ -119,9 +119,11 @@ class ProkerChart {
         // Build SVG
         let svg = `<svg class="proker-svg" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased">`;
 
-        // Background
-        svg += `<rect width="${w}" height="${h}" fill="${T.bg}" rx="0"/>`;
-        svg += `<rect x="${m.left}" y="${m.top}" width="${pw}" height="${ph}" fill="${T.plot}"/>`;
+        // Background (skip if transparent)
+        if (!this._transparentBg) {
+            svg += `<rect width="${w}" height="${h}" fill="${T.bg}" rx="0"/>`;
+            svg += `<rect x="${m.left}" y="${m.top}" width="${pw}" height="${ph}" fill="${T.plot}"/>`;
+        }
 
         // Grid lines (subtle, dashed) — toggle via _showGrid
         if (this._showGrid !== false) {
@@ -876,6 +878,7 @@ class ProkerChart {
         if (props.paperBg) this.opts.theme.bg = props.paperBg;
         if (props.gridColor) this.opts.theme.grid = props.gridColor;
         if (props.showGrid !== undefined) this._showGrid = props.showGrid;
+        if (props.transparentBg !== undefined) this._transparentBg = props.transparentBg;
         if (props.fontSize) { /* stored but SVG regenerated on render */ }
         this.render();
         return this;

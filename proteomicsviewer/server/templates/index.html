@@ -360,8 +360,9 @@ async function uploadFile(file,append){
             <input type="range" id="gs-font-size" min="8" max="20" value="12" style="flex:1">
         </div>
         <!-- Grid -->
-        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Grid</div>
-        <label class="checkbox-row" style="margin-bottom:10px"><input type="checkbox" id="gs-show-grid" checked onchange="applyGraphSettings()"> Show grid lines</label>
+        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Grid &amp; Background</div>
+        <label class="checkbox-row"><input type="checkbox" id="gs-show-grid" checked onchange="applyGraphSettings()"> Show grid lines</label>
+        <label class="checkbox-row" style="margin-bottom:10px"><input type="checkbox" id="gs-transparent-bg" onchange="applyGraphSettings()"> Transparent background</label>
         <button class="btn-primary" onclick="document.getElementById('graph-settings-panel').classList.add('hidden')" style="width:100%">Done</button>
     </div>
     <!-- Hidden native color inputs -->
@@ -1633,10 +1634,11 @@ function applyGraphSettings(){
     const paperBg=document.getElementById('gs-paper-bg').value;
     const gridColor=document.getElementById('gs-grid-color').value;
     const showGrid=document.getElementById('gs-show-grid').checked;
+    const transparentBg=document.getElementById('gs-transparent-bg').checked;
     gsTargetPlots.forEach(plotId=>{
         const chart=CHARTS[plotId];if(!chart)return;
         chart.restyle({size,symbol:shape,color,opacity});
-        chart.relayout({plotBg,paperBg,gridColor,showGrid});
+        chart.relayout({plotBg,paperBg,gridColor,showGrid,transparentBg});
     });
 }
 
