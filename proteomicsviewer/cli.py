@@ -462,8 +462,7 @@ def main():
 
     url = f"http://{'localhost' if args.host in ('0.0.0.0',) else args.host}:{args.port}"
 
-    print(f"\n  Starting Pro-ker at {url}")
-    print(f"  Run 'proker' to launch again.\n")
+    print(f"\n  Starting Pro-ker at {url}\n")
 
     if not args.no_browser:
         threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
