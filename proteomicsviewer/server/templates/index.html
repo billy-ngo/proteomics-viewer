@@ -1378,18 +1378,24 @@ function buildUniqueConfig(chart,p,qd,fidx){
         if(found)continue;
         items.push({label:pLabel(fidx,fi),abund:fm,full:pFullLabel(fidx,fi)});
     }
-    items.sort((a,b)=>b.abund-a.abund);const shown=items.slice(0,60);
-    // Beeswarm: place each point, check collision with all placed points, offset horizontally
-    const radius=0.04; // collision radius in x-units
+    items.sort((a,b)=>a.abund-b.abund);const shown=items.slice(0,80);
+    // Beeswarm: compute collision based on data range
+    // The Y collision threshold is proportional to the data range / number of points
+    const yMin=shown.length?shown[0].abund:0;
+    const yMax=shown.length?shown[shown.length-1].abund:1;
+    const yRange=yMax-yMin||1;
+    const dotSize=yRange/Math.max(shown.length,10)*1.2; // Y distance that counts as overlapping
+    const xStep=0.035; // horizontal offset step
     const placed=[];
     const jittered=shown.map(d=>{
         let bestX=0;
-        // Try x=0 first, then alternate left/right with increasing offset
-        for(let attempt=0;attempt<20;attempt++){
-            const tryX=attempt===0?0:((attempt%2?1:-1)*Math.ceil(attempt/2)*radius*2);
+        for(let attempt=0;attempt<30;attempt++){
+            const tryX=attempt===0?0:((attempt%2?1:-1)*Math.ceil(attempt/2)*xStep);
             let collides=false;
             for(const p of placed){
-                if(Math.abs(p.y-d.abund)<(radius*200)&&Math.abs(p.x-tryX)<radius*1.8){collides=true;break}
+                const dy=Math.abs(p.y-d.abund)/dotSize;
+                const dx=Math.abs(p.x-tryX)/xStep;
+                if(dy<1.0&&dx<0.9){collides=true;break}
             }
             if(!collides){bestX=tryX;break}
         }
