@@ -114,8 +114,14 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 /* Canvas */
 .welcome-card{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-sec);padding:24px}
 .welcome-card svg{width:64px;height:64px;opacity:.2;margin-bottom:16px}.welcome-card .wc-text{font-size:15px}
-#canvas{flex:1;overflow-y:auto;padding:8px 12px}
-#canvas.empty-canvas{display:flex;align-items:center;justify-content:center}
+#canvas-viewport{flex:1;overflow:auto;position:relative}
+#canvas{padding:8px 12px;transform-origin:top left;min-height:100%}
+#canvas.empty-canvas{display:flex;align-items:center;justify-content:center;min-height:100%}
+.canvas-zoom-controls{position:absolute;bottom:12px;right:12px;display:flex;gap:4px;z-index:10;opacity:0.7}
+.canvas-zoom-controls:hover{opacity:1}
+.canvas-zoom-btn{width:28px;height:28px;border:1px solid var(--border);background:var(--surface);color:var(--text-sec);border-radius:4px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;font-family:inherit}
+.canvas-zoom-btn:hover{color:var(--text);border-color:var(--text-sec)}
+.canvas-zoom-level{font-size:10px;color:var(--text-sec);display:flex;align-items:center;padding:0 4px}
 .canvas-plot{position:relative;margin-bottom:4px}
 .canvas-plot .cp-close{position:absolute;top:2px;right:6px;width:18px;height:18px;border:none;background:transparent;color:transparent;cursor:pointer;font-size:13px;z-index:6;display:flex;align-items:center;justify-content:center;border-radius:3px;transition:all .15s}
 .canvas-plot:hover .cp-close{color:var(--text-sec)}
@@ -616,8 +622,17 @@ async function uploadFile(file,append){
         <div class="wc-text">Data visualization will appear here</div>
     </div>
     <div id="canvas-wrap" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
-        <div id="canvas" class="empty-canvas">
-            <div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>
+        <div id="canvas-viewport">
+            <div id="canvas" class="empty-canvas">
+                <div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>
+            </div>
+            <div class="canvas-zoom-controls">
+                <button class="canvas-zoom-btn" onclick="canvasZoom(-0.1)" title="Zoom out">&minus;</button>
+                <span class="canvas-zoom-level" id="canvas-zoom-label">100%</span>
+                <button class="canvas-zoom-btn" onclick="canvasZoom(0.1)" title="Zoom in">+</button>
+                <button class="canvas-zoom-btn" onclick="canvasZoomFit()" title="Fit all" style="font-size:10px">Fit</button>
+                <button class="canvas-zoom-btn" onclick="canvasZoomReset()" title="Reset to 100%" style="font-size:10px">1:1</button>
+            </div>
         </div>
     </div>
 </main>
@@ -655,6 +670,36 @@ document.addEventListener('mousemove',e=>{if(!dr)return;const w=Math.max(260,Mat
 document.addEventListener('mouseup',()=>{if(!dr)return;dr=false;d.classList.remove('dragging');document.body.style.cursor='';document.body.style.userSelect='';resizeAllPlots()})})();
 
 function resizeAllPlots(){Object.values(CHARTS).forEach(c=>c.resize())}
+
+// Canvas zoom
+var canvasScale=1.0;
+function canvasZoom(delta){
+    canvasScale=Math.max(0.2,Math.min(2.0,canvasScale+delta));
+    applyCanvasZoom();
+}
+function canvasZoomReset(){canvasScale=1.0;applyCanvasZoom()}
+function canvasZoomFit(){
+    const viewport=document.getElementById('canvas-viewport');
+    const canvas=document.getElementById('canvas');
+    if(!viewport||!canvas)return;
+    // Temporarily reset scale to measure true content size
+    canvas.style.transform='scale(1)';
+    const contentH=canvas.scrollHeight;
+    const contentW=canvas.scrollWidth;
+    const viewH=viewport.clientHeight;
+    const viewW=viewport.clientWidth;
+    if(contentH<=0||contentW<=0)return;
+    canvasScale=Math.min(viewW/contentW,viewH/contentH,1.0);
+    canvasScale=Math.max(0.2,Math.round(canvasScale*20)/20); // snap to 5% increments
+    applyCanvasZoom();
+}
+function applyCanvasZoom(){
+    const canvas=document.getElementById('canvas');
+    if(!canvas)return;
+    canvas.style.transform='scale('+canvasScale+')';
+    canvas.style.width=(100/canvasScale)+'%';
+    document.getElementById('canvas-zoom-label').textContent=Math.round(canvasScale*100)+'%';
+}
 window.addEventListener('resize',resizeAllPlots);
 
 // ================================================================
