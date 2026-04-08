@@ -2,7 +2,7 @@
 setlocal
 
 echo ============================================
-echo   Pro-ker Proteomics Viewer Installer
+echo   Pro-ker Proteomics Analysis Installer
 echo ============================================
 echo.
 
@@ -16,9 +16,9 @@ if errorlevel 1 (
 )
 
 :: Install the package
-echo Installing Pro-ker Proteomics Viewer...
+echo Installing Pro-ker Proteomics Analysis...
 set "PROJDIR=%~dp0."
-pip install -e "%PROJDIR%" --quiet
+python -m pip install -e "%PROJDIR%" --quiet
 if errorlevel 1 (
     echo.
     echo ERROR: Installation failed. Try running as administrator.
@@ -34,7 +34,7 @@ echo   proker                    Start the viewer
 echo   proker file.txt           Start with a file pre-loaded
 echo   proker --port 9000        Use a custom port
 echo.
-echo Starting Pro-ker Proteomics Viewer now...
+echo Starting Pro-ker now...
 echo.
-proker
+python -m proteomicsviewer
 pause
