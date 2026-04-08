@@ -1238,39 +1238,82 @@ function imputeZeros(vals){const nz=vals.filter(v=>v>0);const minV=nz.length?Mat
 // PCA (dual method for n_samples << n_features)
 function computePCA(sampleNames,qd,fidx){
     const n=sampleNames.length,m=fidx.length;
-    // Build n×m matrix, center columns
-    const X=[];const colMean=new Array(m).fill(0);
-    sampleNames.forEach(s=>{const row=fidx.map(i=>qd[s]?qd[s][i]:0);X.push(row);row.forEach((v,j)=>colMean[j]+=v)});
-    colMean.forEach((v,j)=>colMean[j]/=n);
-    X.forEach(row=>row.forEach((v,j)=>row[j]=v-colMean[j]));
-    // K = X * X^T (n×n)
+    if(n<2||m<1) return{scores:sampleNames.map(s=>({name:s,pc1:0,pc2:0})),varExpl:[0,0]};
+
+    // Build n×m data matrix — qd[s] is already indexed by filtered position (0..m-1)
+    const X=[];
+    const colMean=new Array(m).fill(0);
+    sampleNames.forEach(s=>{
+        const row=[];
+        for(let fi=0;fi<m;fi++) row.push(qd[s]?qd[s][fi]:0);
+        X.push(row);
+        for(let j=0;j<m;j++) colMean[j]+=row[j];
+    });
+    // Center columns
+    for(let j=0;j<m;j++) colMean[j]/=n;
+    for(let i=0;i<n;i++) for(let j=0;j<m;j++) X[i][j]-=colMean[j];
+
+    // Compute kernel matrix K = X * X^T (n×n) — dual PCA for n<<m
     const K=Array.from({length:n},()=>new Array(n).fill(0));
-    for(let i=0;i<n;i++)for(let j=i;j<n;j++){let s=0;for(let k=0;k<m;k++)s+=X[i][k]*X[j][k];K[i][j]=s;K[j][i]=s}
-    // Jacobi eigendecomposition for symmetric K
+    for(let i=0;i<n;i++) for(let j=i;j<n;j++){
+        let dot=0;for(let k=0;k<m;k++) dot+=X[i][k]*X[j][k];
+        K[i][j]=dot;K[j][i]=dot;
+    }
+
+    // Jacobi eigendecomposition
     const eig=jacobiEigen(K,n);
-    // Sort by eigenvalue descending
-    const pairs=eig.values.map((v,i)=>({val:v,idx:i})).sort((a,b)=>b.val-a.val);
-    const totalVar=pairs.reduce((s,p)=>s+Math.max(0,p.val),0);
-    const scores=sampleNames.map((s,i)=>({name:s,pc1:eig.vectors[i][pairs[0].idx],pc2:eig.vectors[i][pairs[1]?.idx||0]}));
-    const varExpl=[pairs[0].val/totalVar*100,pairs[1]?pairs[1].val/totalVar*100:0];
+
+    // Sort eigenvalues descending
+    const pairs=eig.values.map((v,i)=>({val:Math.max(0,v),idx:i})).sort((a,b)=>b.val-a.val);
+    const totalVar=pairs.reduce((s,p)=>s+p.val,0)||1;
+
+    // PC scores are the eigenvectors (already in sample space for dual PCA)
+    // Scale by sqrt(eigenvalue) for proper projection
+    const scores=sampleNames.map((s,i)=>({
+        name:s,
+        pc1:eig.vectors[i][pairs[0].idx]*Math.sqrt(pairs[0].val||0),
+        pc2:pairs.length>1?eig.vectors[i][pairs[1].idx]*Math.sqrt(pairs[1].val||0):0
+    }));
+
+    const varExpl=[
+        pairs[0].val/totalVar*100,
+        pairs.length>1?pairs[1].val/totalVar*100:0
+    ];
     return{scores,varExpl};
 }
+
 function jacobiEigen(A,n){
-    // Copy A
-    const a=A.map(r=>[...r]);const v=Array.from({length:n},(_,i)=>{const row=new Array(n).fill(0);row[i]=1;return row});
-    for(let iter=0;iter<100;iter++){
+    const a=A.map(r=>[...r]);
+    const v=Array.from({length:n},(_,i)=>{const row=new Array(n).fill(0);row[i]=1;return row});
+    for(let iter=0;iter<200;iter++){
+        // Find largest off-diagonal element
         let maxOff=0,p=0,q=1;
-        for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)if(Math.abs(a[i][j])>maxOff){maxOff=Math.abs(a[i][j]);p=i;q=j}
-        if(maxOff<1e-10)break;
-        const theta=.5*Math.atan2(2*a[p][q],a[p][p]-a[q][q]);
+        for(let i=0;i<n;i++) for(let j=i+1;j<n;j++) if(Math.abs(a[i][j])>maxOff){maxOff=Math.abs(a[i][j]);p=i;q=j}
+        if(maxOff<1e-12) break;
+
+        // Compute rotation angle
+        const theta=0.5*Math.atan2(2*a[p][q],a[p][p]-a[q][q]);
         const c=Math.cos(theta),s=Math.sin(theta);
-        const rot=(M)=>{for(let i=0;i<n;i++){const mp=M[i][p],mq=M[i][q];M[i][p]=c*mp+s*mq;M[i][q]=-s*mp+c*mq}};
-        // Rotate rows
-        for(let i=0;i<n;i++){const ap=a[p][i],aq=a[q][i];a[p][i]=c*ap+s*aq;a[q][i]=-s*ap+c*aq}
-        // Rotate cols
-        for(let i=0;i<n;i++){const ap=a[i][p],aq=a[i][q];a[i][p]=c*ap+s*aq;a[i][q]=-s*ap+c*aq}
-        // Rotate eigenvectors
-        for(let i=0;i<n;i++){const vp=v[i][p],vq=v[i][q];v[i][p]=c*vp+s*vq;v[i][q]=-s*vp+c*vq}
+
+        // Apply Givens rotation to A: A' = G^T * A * G
+        // Rotate rows p and q
+        for(let i=0;i<n;i++){
+            const ap=a[p][i],aq=a[q][i];
+            a[p][i]= c*ap+s*aq;
+            a[q][i]=-s*ap+c*aq;
+        }
+        // Rotate columns p and q
+        for(let i=0;i<n;i++){
+            const ap=a[i][p],aq=a[i][q];
+            a[i][p]= c*ap+s*aq;
+            a[i][q]=-s*ap+c*aq;
+        }
+        // Accumulate eigenvectors
+        for(let i=0;i<n;i++){
+            const vp=v[i][p],vq=v[i][q];
+            v[i][p]= c*vp+s*vq;
+            v[i][q]=-s*vp+c*vq;
+        }
     }
     return{values:a.map((r,i)=>r[i]),vectors:v};
 }
