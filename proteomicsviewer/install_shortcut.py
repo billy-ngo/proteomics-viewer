@@ -147,7 +147,7 @@ def _install_macos(target_dir):
             <key>CFBundleIdentifier</key>
             <string>com.proker.app</string>
             <key>CFBundleVersion</key>
-            <string>3.4</string>
+            <string>3.5</string>
             <key>CFBundlePackageType</key>
             <string>APPL</string>
             {icon_entry}

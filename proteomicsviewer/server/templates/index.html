@@ -470,7 +470,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">3.4.0</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">3.5.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -507,6 +507,7 @@ async function uploadFile(file,append){
         <details style="margin-bottom:16px">
             <summary style="font-size:14px;font-weight:700;cursor:pointer;padding:4px 0">Version History</summary>
             <div style="font-size:12px;color:var(--text-sec);line-height:1.7;margin-top:8px;max-height:200px;overflow-y:auto">
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">3.5.0</strong> (April 2026)<br>Peptide coverage map (FASTA sequence input, residue-level visualization), desktop icon fix</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.4.0</strong> (April 2026)<br>Volcano threshold lines &amp; group side labels, S0 low-abundance correction, volcano/PCA data in CSV export, statistical methods documentation, README</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.3.0</strong> (April 2026)<br>BiNgo color swatches, undo/redo, hollow markers, resizable panels, volcano fixes</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.2.0</strong> (March 2026)<br>Intra-group dot plots, toolbar annotations, PCA fix, dot plot axis breaks</div>
@@ -748,7 +749,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='3.4.0';
+var PROKER_VERSION='3.5.0';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;

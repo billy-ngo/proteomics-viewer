@@ -2,6 +2,14 @@
 
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 
+## [3.5.0] - 2026-04-08
+
+### Added
+- **Peptide coverage map** — New section in the Analysis tab where users can select a protein, paste a FASTA sequence, and visualize which peptides were identified by mass spectrometry. Shows a color-coded coverage bar, residue-level highlighted sequence, and a sortable peptide position table. Reads peptide sequences from the MaxQuant "Peptide sequences" column in proteinGroups.txt.
+
+### Fixed
+- **Desktop icon** — Rewritten to match the browser favicon: dark rounded-rect background, correct back-card opacity color, card border strokes, and matching card proportions/positions
+
 ## [3.4.0] - 2026-04-08
 
 ### Added
