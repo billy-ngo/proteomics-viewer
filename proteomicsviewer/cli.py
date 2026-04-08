@@ -343,8 +343,10 @@ def _offer_shortcut_install():
             except Exception as e:
                 print(f"  Shortcut creation failed: {e}")
                 print("  You can try again later with: proker --install")
+            print()  # blank line before server starts
         return
-    except (EOFError, OSError):
+    except (EOFError, OSError, KeyboardInterrupt):
+        print()
         pass
 
     try:
@@ -459,6 +461,9 @@ def main():
         os.environ["PROTVIEW_AUTOLOAD"] = str(filepath)
 
     url = f"http://{'localhost' if args.host in ('0.0.0.0',) else args.host}:{args.port}"
+
+    print(f"\n  Starting Pro-ker at {url}")
+    print(f"  Run 'proker' to launch again.\n")
 
     if not args.no_browser:
         threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
