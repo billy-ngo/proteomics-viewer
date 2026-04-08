@@ -1,8 +1,9 @@
 """
 Pro-ker Proteomics Analysis icon generator.
 
-Renders two overlapping poker cards with red "2" and "BN" — matching the
-browser favicon SVG. Pure Python (struct + zlib), no Pillow required.
+Renders two overlapping poker cards with a red "2" centred on the front card.
+Simplified design that reads clearly at all icon sizes.
+Pure Python (struct + zlib), no Pillow required.
 
 Public API
 ----------
@@ -15,10 +16,8 @@ import struct
 import zlib
 
 _RED = (0xDC, 0x26, 0x26)
-_WHITE = (0xFF, 0xFF, 0xFF)
 _DARK = (0x0D, 0x11, 0x17)
-# Back card: white at 85% opacity on _DARK background
-_CARD_BACK = (0xDB, 0xDC, 0xDC)
+_CARD_BACK = (0xD0, 0xD2, 0xD3)
 _CARD_FRONT = (0xFF, 0xFF, 0xFF)
 _BORDER = (0xBB, 0xBB, 0xBB)
 
@@ -34,17 +33,14 @@ def _make_png(width, height, rows):
 
 
 def _rot(x, y, cx, cy, angle_deg):
-    """Rotate point (x,y) around (cx,cy) by angle_deg."""
     a = math.radians(angle_deg)
     dx, dy = x - cx, y - cy
     return cx + dx * math.cos(a) - dy * math.sin(a), cy + dx * math.sin(a) + dy * math.cos(a)
 
 
 def _in_rounded_rect(px, py, x0, y0, x1, y1, r):
-    """Check if pixel is inside an axis-aligned rounded rectangle."""
     if px < x0 or px > x1 or py < y0 or py > y1:
         return False
-    # Corner rounding
     hw = (x1 - x0) / 2
     hh = (y1 - y0) / 2
     cx = (x0 + x1) / 2
@@ -57,7 +53,6 @@ def _in_rounded_rect(px, py, x0, y0, x1, y1, r):
 
 
 def _in_rotated_rounded_rect(px, py, cx, cy, hw, hh, r, angle):
-    """Check if pixel (px,py) is inside a rotated rounded rectangle."""
     lx, ly = _rot(px, py, cx, cy, -angle)
     lx -= cx
     ly -= cy
@@ -72,45 +67,24 @@ def _in_rotated_rounded_rect(px, py, cx, cy, hw, hh, r, angle):
 
 
 def _on_rotated_rect_border(px, py, cx, cy, hw, hh, r, angle, thickness=1.0):
-    """Check if pixel is on the border of a rotated rounded rectangle."""
     return (_in_rotated_rounded_rect(px, py, cx, cy, hw, hh, r, angle) and
             not _in_rotated_rounded_rect(px, py, cx, cy, hw - thickness, hh - thickness, max(0, r - thickness * 0.5), angle))
 
 
-# Block-letter patterns (5x7 grid)
-_GLYPHS = {
-    '2': [
-        [0, 1, 1, 1, 0],
-        [1, 0, 0, 0, 1],
-        [0, 0, 0, 0, 1],
-        [0, 0, 0, 1, 0],
-        [0, 0, 1, 0, 0],
-        [0, 1, 0, 0, 0],
-        [1, 1, 1, 1, 1],
-    ],
-    'B': [
-        [1, 1, 1, 1, 0],
-        [1, 0, 0, 0, 1],
-        [1, 0, 0, 0, 1],
-        [1, 1, 1, 1, 0],
-        [1, 0, 0, 0, 1],
-        [1, 0, 0, 0, 1],
-        [1, 1, 1, 1, 0],
-    ],
-    'N': [
-        [1, 0, 0, 0, 1],
-        [1, 1, 0, 0, 1],
-        [1, 0, 1, 0, 1],
-        [1, 0, 0, 1, 1],
-        [1, 0, 0, 0, 1],
-        [1, 0, 0, 0, 1],
-        [1, 0, 0, 0, 1],
-    ],
-}
+# "2" glyph on a 5x7 grid
+_GLYPH_2 = [
+    [0, 1, 1, 1, 0],
+    [1, 0, 0, 0, 1],
+    [0, 0, 0, 0, 1],
+    [0, 0, 0, 1, 0],
+    [0, 0, 1, 0, 0],
+    [0, 1, 0, 0, 0],
+    [1, 1, 1, 1, 1],
+]
 
 
-def _draw_glyph(pixels, glyph, ox, oy, scale, color, size, angle=0, rcx=0, rcy=0):
-    """Draw a block-letter glyph, optionally rotated around (rcx, rcy)."""
+def _draw_glyph(pixels, glyph, ox, oy, scale, color, size):
+    """Draw a block-letter glyph (no rotation)."""
     for ri, row in enumerate(glyph):
         for ci, val in enumerate(row):
             if not val:
@@ -119,52 +93,40 @@ def _draw_glyph(pixels, glyph, ox, oy, scale, color, size, angle=0, rcx=0, rcy=0
                 for dx in range(scale):
                     lx = ox + ci * scale + dx
                     ly = oy + ri * scale + dy
-                    if angle != 0:
-                        lx, ly = _rot(lx, ly, rcx, rcy, angle)
-                        lx, ly = round(lx), round(ly)
                     if 0 <= lx < size and 0 <= ly < size:
                         pixels[ly][lx] = color
 
 
 def generate_png(size=48):
-    """Return PNG bytes for two overlapping poker cards matching the browser favicon."""
+    """Return PNG bytes for two overlapping cards with a red '2' on the front."""
     pixels = [[_DARK for _ in range(size)] for _ in range(size)]
     s = size
 
-    # Rounded background (matching favicon's rx=12 on 64px → 18.75% of size)
+    # Rounded dark background
     bg_r = max(2, round(s * 0.1875))
     for y in range(s):
         for x in range(s):
-            if _in_rounded_rect(x, y, 0, 0, s - 1, s - 1, bg_r):
-                pixels[y][x] = _DARK
-            else:
-                pixels[y][x] = (0, 0, 0, 0)  # transparent outside rounded rect
+            if not _in_rounded_rect(x, y, 0, 0, s - 1, s - 1, bg_r):
+                pixels[y][x] = (0, 0, 0, 0)
 
-    # Card proportions matching favicon SVG (32x45 on 64px canvas → 50%x70%)
+    # Card dimensions
     card_w = s * 0.50
-    card_h = s * 0.703
+    card_h = s * 0.68
     hw, hh = card_w / 2, card_h / 2
-    corner_r = max(2, s * 0.047)  # rx=3 on 64px
-    border_t = max(0.8, s * 0.012)
+    corner_r = max(2, s * 0.05)
+    border_t = max(0.8, s * 0.015)
 
-    # Card positions matching favicon SVG layout
-    # Favicon SVG: 64x64 canvas, translate(2,6) offset
-    # Back card: rect(3,3,32,45) rotated -10° around (22,26) in group space
-    # Front card: rect(26,1,32,45) rotated 8° around (40,26) in group space
-    # After translate: back rot center (24,32), front rot center (42,32)
-    back_cx = s * 0.30
+    # Back card: offset left, tilted -12°
+    back_cx = s * 0.36
     back_cy = s * 0.50
-    back_angle = -10
+    back_angle = -12
 
-    front_cx = s * 0.62
-    front_cy = s * 0.46
-    front_angle = 8
+    # Front card: offset right, tilted 6°
+    front_cx = s * 0.56
+    front_cy = s * 0.50
+    front_angle = 6
 
-    # Letter scales
-    ls = max(1, round(s / 48))    # scale for "2"
-    bn_s = max(1, round(s / 38))  # scale for "BN"
-
-    # Draw back card (slightly transparent look via blended color)
+    # Draw back card
     for y in range(s):
         for x in range(s):
             if _on_rotated_rect_border(x, y, back_cx, back_cy, hw, hh, corner_r, back_angle, border_t):
@@ -172,26 +134,7 @@ def generate_png(size=48):
             elif _in_rotated_rounded_rect(x, y, back_cx, back_cy, hw, hh, corner_r, back_angle):
                 pixels[y][x] = _CARD_BACK
 
-    # Draw "2" top-left and "BN" center on back card
-    _draw_glyph(pixels, _GLYPHS['2'],
-                round(back_cx - hw * 0.62), round(back_cy - hh * 0.72),
-                ls, _RED, s, back_angle, back_cx, back_cy)
-    # Upper BN
-    _draw_glyph(pixels, _GLYPHS['B'],
-                round(back_cx - bn_s * 5), round(back_cy - bn_s * 4.5),
-                bn_s, _RED, s, back_angle, back_cx, back_cy)
-    _draw_glyph(pixels, _GLYPHS['N'],
-                round(back_cx + bn_s * 0.5), round(back_cy - bn_s * 4.5),
-                bn_s, _RED, s, back_angle, back_cx, back_cy)
-    # Lower BN (inverted)
-    _draw_glyph(pixels, _GLYPHS['B'],
-                round(back_cx - bn_s * 5), round(back_cy + bn_s * 0.5),
-                bn_s, _RED, s, back_angle + 180, back_cx, back_cy)
-    _draw_glyph(pixels, _GLYPHS['N'],
-                round(back_cx + bn_s * 0.5), round(back_cy + bn_s * 0.5),
-                bn_s, _RED, s, back_angle + 180, back_cx, back_cy)
-
-    # Draw front card (on top, solid white)
+    # Draw front card
     for y in range(s):
         for x in range(s):
             if _on_rotated_rect_border(x, y, front_cx, front_cy, hw, hh, corner_r, front_angle, border_t):
@@ -199,26 +142,17 @@ def generate_png(size=48):
             elif _in_rotated_rounded_rect(x, y, front_cx, front_cy, hw, hh, corner_r, front_angle):
                 pixels[y][x] = _CARD_FRONT
 
-    # Draw "2" top-left and "BN" center on front card
-    _draw_glyph(pixels, _GLYPHS['2'],
-                round(front_cx - hw * 0.62), round(front_cy - hh * 0.72),
-                ls, _RED, s, front_angle, front_cx, front_cy)
-    # Upper BN
-    _draw_glyph(pixels, _GLYPHS['B'],
-                round(front_cx - bn_s * 5), round(front_cy - bn_s * 4.5),
-                bn_s, _RED, s, front_angle, front_cx, front_cy)
-    _draw_glyph(pixels, _GLYPHS['N'],
-                round(front_cx + bn_s * 0.5), round(front_cy - bn_s * 4.5),
-                bn_s, _RED, s, front_angle, front_cx, front_cy)
-    # Lower BN (inverted)
-    _draw_glyph(pixels, _GLYPHS['B'],
-                round(front_cx - bn_s * 5), round(front_cy + bn_s * 0.5),
-                bn_s, _RED, s, front_angle + 180, front_cx, front_cy)
-    _draw_glyph(pixels, _GLYPHS['N'],
-                round(front_cx + bn_s * 0.5), round(front_cy + bn_s * 0.5),
-                bn_s, _RED, s, front_angle + 180, front_cx, front_cy)
+    # Draw a single red "2" centred on the front card
+    glyph_w = 5
+    glyph_h = 7
+    sc = max(1, round(s / 20))  # scale so "2" fills ~25% of card width
+    total_w = glyph_w * sc
+    total_h = glyph_h * sc
+    ox = round(front_cx - total_w / 2)
+    oy = round(front_cy - total_h / 2)
+    _draw_glyph(pixels, _GLYPH_2, ox, oy, sc, _RED, s)
 
-    # Build rows (handle transparent pixels outside rounded background)
+    # Build rows
     rows = []
     for y in range(s):
         row = bytearray()
