@@ -123,11 +123,13 @@ class ProkerChart {
         svg += `<rect width="${w}" height="${h}" fill="${T.bg}" rx="0"/>`;
         svg += `<rect x="${m.left}" y="${m.top}" width="${pw}" height="${ph}" fill="${T.plot}"/>`;
 
-        // Grid lines (subtle, dashed)
-        svg += `<g class="grid" shape-rendering="crispEdges">`;
-        xTicks.forEach(v => { const x = Math.round(m.left + xScale(v)) + 0.5; svg += `<line x1="${x}" y1="${m.top}" x2="${x}" y2="${m.top + ph}" stroke="${T.grid}" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.6"/>`; });
-        yTicks.forEach(v => { const y = Math.round(m.top + yScale(v)) + 0.5; svg += `<line x1="${m.left}" y1="${y}" x2="${m.left + pw}" y2="${y}" stroke="${T.grid}" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.6"/>`; });
-        svg += `</g>`;
+        // Grid lines (subtle, dashed) — toggle via _showGrid
+        if (this._showGrid !== false) {
+            svg += `<g class="grid" shape-rendering="crispEdges">`;
+            xTicks.forEach(v => { const x = Math.round(m.left + xScale(v)) + 0.5; svg += `<line x1="${x}" y1="${m.top}" x2="${x}" y2="${m.top + ph}" stroke="${T.grid}" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.6"/>`; });
+            yTicks.forEach(v => { const y = Math.round(m.top + yScale(v)) + 0.5; svg += `<line x1="${m.left}" y1="${y}" x2="${m.left + pw}" y2="${y}" stroke="${T.grid}" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.6"/>`; });
+            svg += `</g>`;
+        }
 
         // Axes lines
         svg += `<g shape-rendering="crispEdges">`;
@@ -835,6 +837,7 @@ class ProkerChart {
         if (props.plotBg) this.opts.theme.plot = props.plotBg;
         if (props.paperBg) this.opts.theme.bg = props.paperBg;
         if (props.gridColor) this.opts.theme.grid = props.gridColor;
+        if (props.showGrid !== undefined) this._showGrid = props.showGrid;
         if (props.fontSize) { /* stored but SVG regenerated on render */ }
         this.render();
         return this;

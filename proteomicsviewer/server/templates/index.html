@@ -157,6 +157,16 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .canvas-plot .plot-title-input:focus{border-color:var(--accent);background:var(--card)}
 .canvas-drop-hint{border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;min-height:200px;color:var(--border);font-size:13px;transition:all .15s}
 .canvas-drop-hint.drag-over{border-color:var(--accent);color:var(--accent);background:rgba(88,166,255,.04)}
+/* Canvas annotations (text boxes, lines) */
+.canvas-anno{position:absolute;z-index:5}
+.canvas-textbox{background:transparent;border:1px dashed transparent;color:var(--text);font-family:Arial,sans-serif;font-size:13px;padding:4px 8px;cursor:move;min-width:40px;min-height:20px;border-radius:3px;outline:none;white-space:pre-wrap}
+.canvas-textbox:hover{border-color:var(--border)}
+.canvas-textbox:focus{border-color:var(--accent);cursor:text}
+.canvas-line{position:absolute;z-index:4;pointer-events:none}
+.canvas-line-handle{position:absolute;width:10px;height:10px;border-radius:50%;background:var(--accent);cursor:move;z-index:6;opacity:0;transition:opacity .15s}
+.canvas-anno-wrap:hover .canvas-line-handle{opacity:1}
+.canvas-anno-close{position:absolute;top:-8px;right:-8px;width:16px;height:16px;border-radius:50%;background:var(--danger);color:#fff;font-size:10px;border:none;cursor:pointer;display:none;align-items:center;justify-content:center;z-index:7}
+.canvas-anno-wrap:hover .canvas-anno-close{display:flex}
 /* Export bar */
 .export-bar{display:flex;gap:6px;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--surface)}
 .export-bar .spacer{flex:1}
@@ -286,7 +296,7 @@ async function uploadFile(file,append){
         </button>
         <button class="hdr-btn" onclick="toggleExportPanel()" title="Export current plots as SVG or PNG">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M6 1v7M3 5.5L6 8.5 9 5.5M2 11h8"/></svg>
-            Export Image
+            Export Canvas
         </button>
     </div>
 </nav>
@@ -349,6 +359,9 @@ async function uploadFile(file,append){
             <span style="font-size:11px;color:var(--text-sec)">Font size <span id="gs-font-size-val" style="color:var(--accent)">12</span></span>
             <input type="range" id="gs-font-size" min="8" max="20" value="12" style="flex:1">
         </div>
+        <!-- Grid -->
+        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Grid</div>
+        <label class="checkbox-row" style="margin-bottom:10px"><input type="checkbox" id="gs-show-grid" checked onchange="applyGraphSettings()"> Show grid lines</label>
         <button class="btn-primary" onclick="document.getElementById('graph-settings-panel').classList.add('hidden')" style="width:100%">Done</button>
     </div>
     <!-- Hidden native color inputs -->
@@ -361,7 +374,7 @@ async function uploadFile(file,append){
 <div id="export-panel" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px 28px;width:400px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.6)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
-            <div style="font-size:18px;font-weight:700">Export Image</div>
+            <div style="font-size:18px;font-weight:700">Export Canvas</div>
             <button onclick="document.getElementById('export-panel').classList.add('hidden')" style="width:28px;height:28px;border:none;background:transparent;color:var(--text-sec);cursor:pointer;font-size:20px;display:flex;align-items:center;justify-content:center;border-radius:4px" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-sec)'">&times;</button>
         </div>
         <div style="font-size:11px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Format</div>
@@ -579,6 +592,11 @@ async function uploadFile(file,append){
             <div class="viz-card" draggable="true" data-vtype="volcano" onclick="showVizConfig('volcano')"><div class="vc-icon">&#9651;</div><div><div class="vc-name">Volcano Plot</div><div class="vc-desc">Fold-change vs FDR-adjusted P-value</div></div></div>
             <div class="viz-card" draggable="true" data-vtype="dotplot" onclick="showVizConfig('dotplot')"><div class="vc-icon">&#8226;&#8226;</div><div><div class="vc-name">Dot Plot</div><div class="vc-desc">Abundance in group X vs group Y</div></div></div>
             <div class="viz-card" draggable="true" data-vtype="pca" onclick="showVizConfig('pca')"><div class="vc-icon">&#10038;</div><div><div class="vc-name">PCA</div><div class="vc-desc">Principal component analysis of samples</div></div></div>
+        </div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-sec);margin:14px 0 8px">Annotations</div>
+        <div style="display:flex;gap:6px">
+            <button class="btn-sm" onclick="addCanvasTextBox()" style="flex:1">+ Text Box</button>
+            <button class="btn-sm" onclick="addCanvasLine()" style="flex:1">+ Line</button>
         </div>
         <div id="viz-config-area"></div>
     </div>
@@ -1355,14 +1373,143 @@ function buildPCAConfig(chart,p,qd,fidx){
 // EXPORT
 // ================================================================
 function exportAllSVG(){
-    CANVAS_PLOTS.forEach(p=>{const chart=CHARTS[p.plotId];if(!chart)return;
-        const svgStr=chart.toSVG();const blob=new Blob([svgStr],{type:'image/svg+xml'});
-        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_')+'.svg';a.click()});
+    // Combine all plot SVGs into one canvas SVG
+    const canvas=document.getElementById('canvas');if(!canvas)return;
+    const plots=canvas.querySelectorAll('.proker-svg');
+    if(!plots.length)return;
+    let totalH=0;const maxW=Math.max(...[...plots].map(s=>parseInt(s.getAttribute('width'))||600));
+    const svgParts=[];
+    plots.forEach(svg=>{
+        const w=parseInt(svg.getAttribute('width'))||600;
+        const h=parseInt(svg.getAttribute('height'))||400;
+        const inner=svg.innerHTML;
+        svgParts.push(`<g transform="translate(0,${totalH})">${inner}</g>`);
+        totalH+=h+12;
+    });
+    const combined=`<svg xmlns="http://www.w3.org/2000/svg" width="${maxW}" height="${totalH}" style="font-family:Arial,Helvetica,sans-serif">${svgParts.join('')}</svg>`;
+    const blob=new Blob([combined],{type:'image/svg+xml'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='proker_canvas.svg';a.click();
 }
 function exportAllPNG(){
-    CANVAS_PLOTS.forEach(p=>{const chart=CHARTS[p.plotId];if(!chart)return;
-        chart.toPNG(1600,1000,2).then(blob=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(p.title||'plot').replace(/[^a-zA-Z0-9]/g,'_')+'.png';a.click()})});
+    const canvas=document.getElementById('canvas');if(!canvas)return;
+    const plots=canvas.querySelectorAll('.proker-svg');
+    if(!plots.length)return;
+    const scale=2;
+    const maxW=Math.max(...[...plots].map(s=>parseInt(s.getAttribute('width'))||600));
+    let totalH=0;
+    plots.forEach(s=>{totalH+=parseInt(s.getAttribute('height'))||400;totalH+=12});
+    // Combine SVGs then render to canvas
+    const svgParts=[];let yOff=0;
+    plots.forEach(svg=>{
+        const h=parseInt(svg.getAttribute('height'))||400;
+        svgParts.push(`<g transform="translate(0,${yOff})">${svg.innerHTML}</g>`);
+        yOff+=h+12;
+    });
+    const combined=`<svg xmlns="http://www.w3.org/2000/svg" width="${maxW}" height="${totalH}" style="font-family:Arial,Helvetica,sans-serif">${svgParts.join('')}</svg>`;
+    const cvs=document.createElement('canvas');cvs.width=maxW*scale;cvs.height=totalH*scale;
+    const ctx=cvs.getContext('2d');const img=new Image();
+    img.onload=()=>{ctx.drawImage(img,0,0,cvs.width,cvs.height);cvs.toBlob(blob=>{
+        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='proker_canvas.png';a.click()})};
+    img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(combined);
 }
+// ================================================================
+// CANVAS ANNOTATIONS (text boxes, lines)
+// ================================================================
+var canvasAnnoId=0;
+
+function addCanvasTextBox(){
+    const canvas=document.getElementById('canvas');if(!canvas)return;
+    const id='anno-'+canvasAnnoId++;
+    const wrap=document.createElement('div');
+    wrap.className='canvas-anno-wrap';wrap.id=id;
+    wrap.style.cssText='position:relative;display:inline-block;margin:4px 8px';
+    wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button><div class="canvas-textbox" contenteditable="true" style="cursor:move">Text</div>`;
+    canvas.appendChild(wrap);
+    // Make draggable
+    const tb=wrap.querySelector('.canvas-textbox');
+    let dragging=false,startX,startY,origL,origT;
+    tb.addEventListener('mousedown',e=>{
+        if(document.activeElement===tb&&tb.isContentEditable)return;// editing
+        dragging=true;startX=e.clientX;startY=e.clientY;
+        const r=wrap.getBoundingClientRect();origL=r.left;origT=r.top;
+        document.body.style.cursor='move';e.preventDefault();
+    });
+    document.addEventListener('mousemove',e=>{
+        if(!dragging)return;
+        wrap.style.position='absolute';
+        const canvasR=canvas.getBoundingClientRect();
+        wrap.style.left=(origL-canvasR.left+(e.clientX-startX))+'px';
+        wrap.style.top=(origT-canvasR.top+(e.clientY-startY))+'px';
+    });
+    document.addEventListener('mouseup',()=>{if(dragging){dragging=false;document.body.style.cursor=''}});
+    // Double-click to edit
+    tb.addEventListener('dblclick',()=>{tb.style.cursor='text';tb.focus()});
+    tb.addEventListener('blur',()=>{tb.style.cursor='move'});
+}
+
+function addCanvasLine(){
+    const canvas=document.getElementById('canvas');if(!canvas)return;
+    const id='anno-'+canvasAnnoId++;
+    const wrap=document.createElement('div');
+    wrap.className='canvas-anno-wrap';wrap.id=id;
+    wrap.style.cssText='position:relative;margin:4px 8px';
+    // SVG line with two draggable endpoints
+    const lineW=200,lineH=2;
+    wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button><svg width="200" height="40" style="overflow:visible"><line x1="0" y1="20" x2="200" y2="20" stroke="var(--text)" stroke-width="2" class="canvas-line-svg"/></svg><div class="canvas-line-handle" style="left:-5px;top:15px" data-end="1"></div><div class="canvas-line-handle" style="left:195px;top:15px" data-end="2"></div>`;
+    canvas.appendChild(wrap);
+
+    // Make entire line draggable
+    const svg=wrap.querySelector('svg');
+    const line=wrap.querySelector('line');
+    const h1=wrap.querySelector('[data-end="1"]');
+    const h2=wrap.querySelector('[data-end="2"]');
+
+    // Drag endpoints
+    [h1,h2].forEach(handle=>{
+        let dragging=false,startX,startY;
+        handle.addEventListener('mousedown',e=>{
+            dragging=true;startX=e.clientX;startY=e.clientY;
+            document.body.style.cursor='move';e.preventDefault();e.stopPropagation();
+        });
+        document.addEventListener('mousemove',e=>{
+            if(!dragging)return;
+            const dx=e.clientX-startX,dy=e.clientY-startY;
+            startX=e.clientX;startY=e.clientY;
+            const cl=parseFloat(handle.style.left)||0;
+            const ct=parseFloat(handle.style.top)||0;
+            handle.style.left=(cl+dx)+'px';handle.style.top=(ct+dy)+'px';
+            // Update SVG line
+            const end=handle.dataset.end;
+            if(end==='1'){line.setAttribute('x1',cl+dx+5);line.setAttribute('y1',ct+dy+5)}
+            else{line.setAttribute('x2',cl+dx+5);line.setAttribute('y2',ct+dy+5)}
+            // Resize SVG to fit
+            const x1=parseFloat(line.getAttribute('x1')),y1=parseFloat(line.getAttribute('y1'));
+            const x2=parseFloat(line.getAttribute('x2')),y2=parseFloat(line.getAttribute('y2'));
+            svg.setAttribute('width',Math.max(Math.abs(x2-x1)+20,40));
+            svg.setAttribute('height',Math.max(Math.abs(y2-y1)+20,40));
+        });
+        document.addEventListener('mouseup',()=>{if(dragging){dragging=false;document.body.style.cursor=''}});
+    });
+
+    // Drag whole line
+    let wDrag=false,wSX,wSY;
+    svg.style.cursor='move';
+    svg.addEventListener('mousedown',e=>{
+        wDrag=true;wSX=e.clientX;wSY=e.clientY;
+        document.body.style.cursor='move';e.preventDefault();
+    });
+    document.addEventListener('mousemove',e=>{
+        if(!wDrag)return;
+        const dx=e.clientX-wSX,dy=e.clientY-wSY;wSX=e.clientX;wSY=e.clientY;
+        wrap.style.position='absolute';
+        const canvasR=canvas.getBoundingClientRect();
+        const r=wrap.getBoundingClientRect();
+        wrap.style.left=(r.left-canvasR.left+dx)+'px';
+        wrap.style.top=(r.top-canvasR.top+dy)+'px';
+    });
+    document.addEventListener('mouseup',()=>{if(wDrag){wDrag=false;document.body.style.cursor=''}});
+}
+
 function doExport(fmt){
     if(fmt==='svg')exportAllSVG();else exportAllPNG();
     document.getElementById('export-panel')?.classList.add('hidden');
@@ -1385,10 +1532,11 @@ function applyGraphSettings(){
     const plotBg=document.getElementById('gs-plot-bg').value;
     const paperBg=document.getElementById('gs-paper-bg').value;
     const gridColor=document.getElementById('gs-grid-color').value;
+    const showGrid=document.getElementById('gs-show-grid').checked;
     gsTargetPlots.forEach(plotId=>{
         const chart=CHARTS[plotId];if(!chart)return;
         chart.restyle({size,symbol:shape,color,opacity});
-        chart.relayout({plotBg,paperBg,gridColor});
+        chart.relayout({plotBg,paperBg,gridColor,showGrid});
     });
 }
 
@@ -1681,7 +1829,7 @@ const TOUR_STEPS=[
     {target:'header-btns',title:'Save, Theme &amp; Export',position:'bottom',desc:
         '<div class="tl">\u2022 <b>Save Session</b> \u2014 export your full analysis state as JSON, or restore a previous session</div>'+
         '<div class="tl">\u2022 <b>Theme</b> \u2014 4 presets (Dark, Light, Soft, Hi-Con) plus custom color editing</div>'+
-        '<div class="tl">\u2022 <b>Export Image</b> \u2014 download all plots as PNG</div>'+
+        '<div class="tl">\u2022 <b>Export Canvas</b> \u2014 download all plots as PNG</div>'+
         '<div class="td">Sessions auto-save to the browser. Theme preferences persist across sessions.</div>'},
 ];
 
