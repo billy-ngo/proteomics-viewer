@@ -974,11 +974,13 @@ class ProkerChart {
 
     // ── Restyle (for graph settings) ─────────────────────────────
     restyle(props) {
+        // Only apply single color if there's exactly one trace (don't override multi-group colors)
+        const applyColor = props.color && this.traces.length === 1 && !Array.isArray(this.traces[0]?.marker?.color);
         this.traces.forEach(trace => {
             if (!trace.marker) trace.marker = {};
             if (props.size != null) trace.marker.size = props.size;
             if (props.symbol) trace.marker.symbol = props.symbol;
-            if (props.color && !Array.isArray(trace.marker.color)) trace.marker.color = props.color;
+            if (applyColor) trace.marker.color = props.color;
             if (props.opacity != null) trace.marker.opacity = props.opacity;
         });
         this.render();
