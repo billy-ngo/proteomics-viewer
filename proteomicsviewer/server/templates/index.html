@@ -459,7 +459,7 @@ async function uploadFile(file,append){
 </div>
 
 <div id="info-panel" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px 32px;width:420px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.6)">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px 32px;width:500px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.6);max-height:85vh;overflow-y:auto">
         <!-- Logo + Title row -->
         <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">
             <svg viewBox="0 0 100 80" width="48" height="38" style="flex-shrink:0">
@@ -470,9 +470,10 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">2.7.0</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">3.4.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
+            <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
         </div>
         <!-- Citation box -->
         <div style="margin:16px 0;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:6px;font-size:13px;color:var(--text-sec);font-style:italic;line-height:1.5">
@@ -501,6 +502,26 @@ async function uploadFile(file,append){
                 <div style="margin-top:10px;margin-bottom:8px"><strong style="color:var(--text)">PCA &mdash; Principal Component Analysis</strong></div>
                 <div style="margin-bottom:4px"><em>Algorithm</em> &mdash; Dual-space PCA (kernel method) optimized for datasets where the number of samples is much smaller than the number of features. Computes the n&times;n kernel matrix K = X&middot;X<sup>T</sup> from the mean-centered data matrix, then performs Jacobi eigendecomposition.</div>
                 <div style="margin-bottom:4px"><em>Scores</em> &mdash; PC scores are eigenvectors scaled by the square root of their eigenvalues. Variance explained is reported as a percentage of total variance for each component.</div>
+            </div>
+        </details>
+        <details style="margin-bottom:16px">
+            <summary style="font-size:14px;font-weight:700;cursor:pointer;padding:4px 0">Version History</summary>
+            <div style="font-size:12px;color:var(--text-sec);line-height:1.7;margin-top:8px;max-height:200px;overflow-y:auto">
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">3.4.0</strong> (April 2026)<br>Volcano threshold lines &amp; group side labels, S0 low-abundance correction, volcano/PCA data in CSV export, statistical methods documentation, README</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">3.3.0</strong> (April 2026)<br>BiNgo color swatches, undo/redo, hollow markers, resizable panels, volcano fixes</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">3.2.0</strong> (March 2026)<br>Intra-group dot plots, toolbar annotations, PCA fix, dot plot axis breaks</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">3.1.0</strong> (March 2026)<br>Number inputs for graph settings, centered plots, scroll zoom</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">3.0.0</strong> (March 2026)<br>Custom ProkerChart SVG engine (replaces Plotly), context toolbar, canvas zoom</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">2.9.0</strong> (March 2026)<br>Beeswarm unique plot, radio aggregation, freeze graphs</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">2.8.0</strong> (March 2026)<br>Dynamic version, rebuilt tutorial, transparent backgrounds</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">2.7.0</strong> (March 2026)<br>Fix color selection, clean labels, draggable plots</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">2.6.0</strong> (February 2026)<br>Comprehensive CSV export</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">2.5.0</strong> (February 2026)<br>Export Canvas (SVG/PNG), text boxes, lines, grid toggle</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">2.4.0</strong> (February 2026)<br>Arial font, improved visual quality, ProkerChart SVG engine</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">2.3.0</strong> (February 2026)<br>Fix axis/title editing</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">2.2.0</strong> (February 2026)<br>Editable titles/axes, right-click selection</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">2.1.0</strong> (February 2026)<br>Graph settings, click-to-label, intensity toggle, axis editing</div>
+                <div><strong style="color:var(--text)">2.0.0</strong> (February 2026)<br>BiNgo-style header, info panel, themes, session save, auto-update, desktop shortcut</div>
             </div>
         </details>
         <!-- Close button -->
@@ -709,7 +730,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='3.2.0';
+var PROKER_VERSION='3.4.0';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;

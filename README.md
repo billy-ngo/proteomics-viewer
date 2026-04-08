@@ -158,6 +158,12 @@ Plots on the canvas can be exported as:
 - Tyanova, S. et al. (2016). The Perseus computational platform for comprehensive analysis of (prote)omics data. *Nature Methods*, 13(9), 731-740.
 - Cox, J. & Mann, M. (2008). MaxQuant enables high peptide identification rates. *Nature Biotechnology*, 26(12), 1367-1372.
 
+## Version History
+
+See [CHANGELOG.md](CHANGELOG.md) for the full version history.
+
+**Current version: 3.4.0** (April 2026)
+
 ## Citation
 
 ```
