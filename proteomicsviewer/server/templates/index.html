@@ -1842,7 +1842,17 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     if(isAggSum()){chart.setData([]).setXTitle('').setYTitle('Sums mode — no statistics').render();return}
     const gx=p.config.gx,gy=p.config.gy,fcT=p.config.fc||1,fdrT=p.config.fdr||0.05,doImpute=p.config.impute;
     const fc=[],rawP=[],labels=[],fulls=[];
-    for(let fi=0;fi<fidx.length;fi++){let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);if(doImpute){vA=imputeZeros(vA);vB=imputeZeros(vB)}const mA=mean(vA),mB=mean(vB);if(mA===0&&mB===0)continue;fc.push(Math.log2((mA+.1)/(mB+.1)));rawP.push(ttest(vA,vB));labels.push(pLabel(fidx,fi));fulls.push(pFullLabel(fidx,fi))}
+    for(let fi=0;fi<fidx.length;fi++){
+        let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
+        const mA=mean(vA),mB=mean(vB);
+        // Skip proteins not detected in both groups (infinite FC, not meaningful)
+        if(mA===0||mB===0)continue;
+        if(doImpute){vA=imputeZeros(vA);vB=imputeZeros(vB)}
+        fc.push(Math.log2(mA/mB));
+        rawP.push(ttest(vA,vB));
+        labels.push(pLabel(fidx,fi));
+        fulls.push(pFullLabel(fidx,fi));
+    }
     const adjP=bhFDR(rawP);const negLog=adjP.map(p=>-Math.log10(Math.max(p,1e-300)));
     const cats=fc.map((f,i)=>adjP[i]<fdrT&&Math.abs(f)>=fcT?(f>0?'up':'down'):'ns');
     const traces=[];
