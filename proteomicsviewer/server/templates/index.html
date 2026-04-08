@@ -440,13 +440,13 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)">2.0.0</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">2.7.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
         </div>
         <!-- Citation box -->
         <div style="margin:16px 0;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:6px;font-size:13px;color:var(--text-sec);font-style:italic;line-height:1.5">
-            Ngo, B.M. (2026). Pro-ker Proteomics Analysis (v2.0.0) [Software].
+            Ngo, B.M. (2026). Pro-ker Proteomics Analysis [Software].
         </div>
         <!-- References collapsible -->
         <details style="margin-bottom:16px">
@@ -638,6 +638,9 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
+var PROKER_VERSION='2.7.0';
+// Fetch version from backend
+fetch('/health').then(r=>r.json()).then(d=>{if(d.version){PROKER_VERSION=d.version;const el=document.getElementById('info-version');if(el)el.textContent=d.version}}).catch(()=>{});
 
 function getChartTheme(){
     return{bg:customTheme.bg||'#0d1117',plot:customTheme.surface||'#161b22',grid:customTheme.card||'#21262d',line:customTheme.border||'#30363d',text:customTheme.text||'#e6edf3',textSec:customTheme['text-sec']||'#8b949e',accent:customTheme.accent||'#58a6ff'};
@@ -1522,7 +1525,7 @@ function exportCSV(){
     // ── Sheet 1: Metadata ──
     csv+='=== ANALYSIS METADATA ===\n';
     csv+='Software,Pro-ker Proteomics Analysis\n';
-    csv+='Version,'+(__version__||'2.5.0')+'\n';
+    csv+='Version,'+PROKER_VERSION+'\n';
     csv+='Website,https://github.com/billy-ngo/proteomics-viewer\n';
     csv+='Export Date,"'+new Date().toLocaleString()+'"\n';
     csv+='Source File,"'+RAW.filename+'"\n';
@@ -1893,46 +1896,60 @@ const TOUR_STEPS=[
         '<div class="tl">\u2022 <b>Click</b> the upload zone to browse</div>'+
         '<div class="tl">\u2022 <b>Drag &amp; drop</b> a file anywhere on the page</div>'+
         '<div class="tl">\u2022 <b>CLI:</b> <code>proker file.txt</code> to auto-load</div>'+
+        '<div class="tl">\u2022 Dropping a file while data is loaded shows options to replace or append</div>'+
         '<div class="td">Supported: MaxQuant proteinGroups.txt (tab-separated)</div>'},
     {target:'grouping',title:'Sample Groups',position:'bottom',desc:
         'After loading, samples appear as draggable chips:'+
-        '<div class="tl">\u2022 <b>Click</b> a chip to select it</div>'+
+        '<div class="tl">\u2022 <b>Click</b> a chip to select, <b>Ctrl+click</b> for multi-select</div>'+
         '<div class="tl">\u2022 <b>Drag</b> chips between groups to reassign</div>'+
         '<div class="tl">\u2022 <b>Rubber-band select</b> \u2014 click &amp; drag on empty space</div>'+
-        '<div class="tl">\u2022 <b>Rename</b> groups by clicking the label text</div>'+
+        '<div class="tl">\u2022 <b>Rename</b> groups by clicking the label, change color with the swatch</div>'+
         '<div class="tl">\u2022 <b>+ Add Group</b> to create new bins</div>'},
     {target:'processing',title:'Processing',position:'bottom',action:'processing',desc:
         'Configure how your data is processed:'+
-        '<div class="tl">\u2022 <b>Intensity Analysis</b> \u2014 use intensity values (with optional LFQ), or uncheck for raw spectral counts</div>'+
-        '<div class="tl">\u2022 <b>Normalization</b> \u2014 total-sum normalization, optionally within a specific organism (locus tag prefix)</div>'+
-        '<div class="tl">\u2022 <b>Pruning</b> \u2014 filter low-abundance proteins by spectral count or intensity</div>'+
-        '<div class="tl">\u2022 <b>Aggregation</b> \u2014 averages (default) or sums</div>'+
-        '<div class="td">Changes here update all visualizations in real-time.</div>'},
+        '<div class="tl">\u2022 <b>Intensity Analysis</b> \u2014 check for intensity values (with optional LFQ), uncheck for raw spectral counts</div>'+
+        '<div class="tl">\u2022 <b>Group Aggregation</b> \u2014 averages (enables statistics) or sums (shows per-sample breakdown on hover)</div>'+
+        '<div class="tl">\u2022 <b>Normalization</b> \u2014 total-sum normalization across all peptides or within specific organisms by locus tag prefix</div>'+
+        '<div class="tl">\u2022 <b>Pruning</b> \u2014 filter low-abundance proteins with flexible threshold rules</div>'+
+        '<div class="td">All changes update visualizations in real-time.</div>'},
     {target:'analysis',title:'Analysis',position:'bottom',action:'analysis',desc:
-        'Define and save group comparisons:'+
+        'Define comparisons and export data:'+
         '<div class="tl">\u2022 <b>New Analysis</b> \u2014 name a pairwise comparison (e.g. IP vs Control)</div>'+
-        '<div class="tl">\u2022 <b>Derived Groups</b> \u2014 create ratios (A/B), differences (A\u2212B), or combinations</div>'+
+        '<div class="tl">\u2022 <b>Derived Groups</b> \u2014 create ratios (A/B), differences (A\u2212B), sums, or products</div>'+
+        '<div class="tl">\u2022 <b>Export CSV</b> \u2014 comprehensive export with raw data, processed data, all settings, group assignments, and credits</div>'+
         '<div class="td">Saved analyses are available when configuring visualizations.</div>'},
     {target:'visualization',title:'Visualization',position:'bottom',action:'visualization',desc:
-        'Add plots to the canvas:'+
-        '<div class="tl">\u2022 <b>Ranked Enrichment</b> \u2014 fold enrichment in rank order</div>'+
-        '<div class="tl">\u2022 <b>Unique Proteins</b> \u2014 proteins in one group but not others</div>'+
-        '<div class="tl">\u2022 <b>Volcano Plot</b> \u2014 fold-change vs BH-FDR p-value</div>'+
-        '<div class="tl">\u2022 <b>Dot Plot</b> \u2014 abundance group X vs Y with axis breaks</div>'+
+        'Add plots and annotations to the canvas:'+
+        '<div class="tl">\u2022 <b>Ranked Enrichment</b> \u2014 fold enrichment in rank order (ratio or log2)</div>'+
+        '<div class="tl">\u2022 <b>Unique Proteins</b> \u2014 proteins in one group but not a control or other groups</div>'+
+        '<div class="tl">\u2022 <b>Volcano Plot</b> \u2014 fold-change vs BH-FDR p-value with optional imputation</div>'+
+        '<div class="tl">\u2022 <b>Dot Plot</b> \u2014 abundance X vs Y with axis compression for single-group proteins</div>'+
         '<div class="tl">\u2022 <b>PCA</b> \u2014 principal component analysis of individual samples</div>'+
-        '<div class="td">Click a graph type to configure, then "Add to Canvas".</div>'},
-    {target:'canvas',title:'Canvas',position:'inside',desc:
-        'Your plots appear here on a continuous canvas:'+
-        '<div class="tl">\u2022 <b>Drag corners</b> to resize any plot</div>'+
-        '<div class="tl">\u2022 <b>Click titles</b> to rename plots</div>'+
-        '<div class="tl">\u2022 <b>Hover</b> over data points for details</div>'+
-        '<div class="tl">\u2022 <b>\u00D7 button</b> (on hover) to remove a plot</div>'+
-        '<div class="td">Plots persist when switching tabs \u2014 changes to groups or processing update them live.</div>'},
+        '<div class="tl">\u2022 <b>+ Text Box / + Line</b> \u2014 add draggable annotations to the canvas</div>'},
+    {target:'canvas',title:'Graph Interactions',position:'inside',desc:
+        'Interact with plots directly:'+
+        '<div class="tl">\u2022 <b>Click a point</b> \u2014 pin a label with a leader line (click again to remove)</div>'+
+        '<div class="tl">\u2022 <b>Drag labels</b> \u2014 reposition while the leader line stays tethered</div>'+
+        '<div class="tl">\u2022 <b>Click axis titles</b> \u2014 edit the text inline</div>'+
+        '<div class="tl">\u2022 <b>Click tick numbers</b> \u2014 edit the axis range (min/max)</div>'+
+        '<div class="tl">\u2022 <b>Drag titles</b> \u2014 reposition chart title and axis labels</div>'+
+        '<div class="tl">\u2022 <b>Left-drag on background</b> \u2014 move the entire plot around the canvas</div>'+
+        '<div class="tl">\u2022 <b>Drag corners</b> \u2014 resize width and height</div>'+
+        '<div class="tl">\u2022 <b>Double-click</b> \u2014 open graph settings</div>'},
+    {target:'canvas',title:'Right-Click Menu',position:'inside',desc:
+        'Right-click on any plot for options:'+
+        '<div class="tl">\u2022 <b>Right-click drag</b> \u2014 draw a selection box (persists until left-click)</div>'+
+        '<div class="tl">\u2022 <b>Zoom into selection</b> \u2014 zoom to the selected region</div>'+
+        '<div class="tl">\u2022 <b>Label selected points</b> \u2014 pin labels on all points in the selection</div>'+
+        '<div class="tl">\u2022 <b>Color selected</b> \u2014 change the color of selected points</div>'+
+        '<div class="tl">\u2022 <b>Graph settings</b> \u2014 dot size, shape, color, backgrounds, grid, transparency</div>'+
+        '<div class="tl">\u2022 <b>Reset zoom / Clear labels / Reset colors</b></div>'},
     {target:'header-btns',title:'Save, Theme &amp; Export',position:'bottom',desc:
-        '<div class="tl">\u2022 <b>Save Session</b> \u2014 export your full analysis state as JSON, or restore a previous session</div>'+
-        '<div class="tl">\u2022 <b>Theme</b> \u2014 4 presets (Dark, Light, Soft, Hi-Con) plus custom color editing</div>'+
-        '<div class="tl">\u2022 <b>Export Canvas</b> \u2014 download all plots as PNG</div>'+
-        '<div class="td">Sessions auto-save to the browser. Theme preferences persist across sessions.</div>'},
+        '<div class="tl">\u2022 <b>Save Session</b> \u2014 export full analysis state as JSON, load from file, or restore last auto-save</div>'+
+        '<div class="tl">\u2022 <b>Graph Settings</b> \u2014 batch edit all plots (dot size/shape/color, backgrounds, grid, transparency)</div>'+
+        '<div class="tl">\u2022 <b>Theme</b> \u2014 4 presets plus custom color editing with hex codes and swatches</div>'+
+        '<div class="tl">\u2022 <b>Export Canvas</b> \u2014 export all plots as combined SVG (vector) or PNG (raster)</div>'+
+        '<div class="td">Sessions auto-save to the browser. Transparent background option for clean SVG exports.</div>'},
 ];
 
 var tourStep=-1;

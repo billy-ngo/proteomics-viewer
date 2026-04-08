@@ -127,7 +127,8 @@ def get_data():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    from proteomicsviewer import __version__
+    return {"status": "ok", "version": __version__}
 
 
 # ── Auto-load from CLI argument ──────────────────────────────────
