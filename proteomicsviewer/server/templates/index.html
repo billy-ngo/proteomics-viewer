@@ -1359,7 +1359,8 @@ function buildEnrichmentConfig(chart,p,qd,fidx){
         data.push({val,label:pLabel(fidx,fi),full:pFullLabel(fidx,fi),hover});
     }
     data.sort((a,b)=>a.val-b.val);
-    chart.setData([{x:data.map((_,i)=>i+1),y:data.map(d=>d.val),mode:'markers',marker:{size:5,color:'#e6edf3',symbol:'circle'},text:data.map(d=>d.hover),customdata:data.map(d=>d.full)}]);
+    const total=data.length;
+    chart.setData([{x:data.map((_,i)=>i+1),y:data.map(d=>d.val),mode:'markers',marker:{size:5,color:'#e6edf3',symbol:'circle'},text:data.map((d,i)=>d.hover+'<br>Rank: #'+(i+1)+'/'+total),customdata:data.map(d=>d.full)}]);
     chart.setChartTitle(p.title||'').setXTitle('Rank').setYTitle(isLog2?'log2('+gx+'/'+gy+')':'Enrichment ('+gx+'/'+gy+')').render();
 }
 
