@@ -122,6 +122,15 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .canvas-zoom-btn{width:28px;height:28px;border:1px solid var(--border);background:var(--surface);color:var(--text-sec);border-radius:4px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;font-family:inherit}
 .canvas-zoom-btn:hover{color:var(--text);border-color:var(--text-sec)}
 .canvas-zoom-level{font-size:10px;color:var(--text-sec);display:flex;align-items:center;padding:0 4px}
+/* Context toolbar above canvas */
+#canvas-toolbar{height:28px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 10px;gap:6px;font-size:11px;color:var(--text-sec);flex-shrink:0}
+#canvas-toolbar:empty::after{content:'Select an element to see options';opacity:0.4}
+#canvas-toolbar .tb-sep{width:1px;height:16px;background:var(--border)}
+#canvas-toolbar button{padding:2px 6px;background:transparent;border:1px solid var(--border);border-radius:3px;color:var(--text-sec);cursor:pointer;font-family:inherit;font-size:11px}
+#canvas-toolbar button:hover{border-color:var(--text-sec);color:var(--text)}
+#canvas-toolbar button.tb-active{background:var(--accent);color:#fff;border-color:var(--accent)}
+#canvas-toolbar select{padding:1px 4px;background:var(--card);border:1px solid var(--border);border-radius:3px;color:var(--text);font-size:11px;font-family:inherit}
+#canvas-toolbar input[type="color"]{width:20px;height:18px;border:1px solid var(--border);border-radius:3px;cursor:pointer;background:var(--card);padding:0}
 .canvas-plot{position:relative;margin-bottom:4px}
 .canvas-plot .cp-close{position:absolute;top:2px;right:6px;width:18px;height:18px;border:none;background:transparent;color:transparent;cursor:pointer;font-size:13px;z-index:6;display:flex;align-items:center;justify-content:center;border-radius:3px;transition:all .15s}
 .canvas-plot:hover .cp-close{color:var(--text-sec)}
@@ -622,6 +631,7 @@ async function uploadFile(file,append){
         <div class="wc-text">Data visualization will appear here</div>
     </div>
     <div id="canvas-wrap" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div id="canvas-toolbar"></div>
         <div id="canvas-viewport">
             <div id="canvas" class="empty-canvas">
                 <div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>
@@ -673,6 +683,76 @@ function resizeAllPlots(){Object.values(CHARTS).forEach(c=>c.resize())}
 
 // Canvas zoom
 var canvasScale=1.0;
+// ── Context toolbar ──
+var tbSelectedEl=null;
+function updateToolbar(el){
+    const tb=document.getElementById('canvas-toolbar');if(!tb)return;
+    tbSelectedEl=el;
+    if(!el){tb.innerHTML='';return}
+    // Detect element type
+    if(el.classList?.contains('canvas-textbox')||el.contentEditable==='true'){
+        // Text element — show formatting options
+        const cs=getComputedStyle(el);
+        const isBold=cs.fontWeight>=600||cs.fontWeight==='bold';
+        const isItalic=cs.fontStyle==='italic';
+        const size=parseInt(cs.fontSize)||13;
+        const color=el.style.color||'var(--text)';
+        tb.innerHTML=`
+            <span style="opacity:0.5">Text:</span>
+            <button class="${isBold?'tb-active':''}" onclick="tbToggleBold()" title="Bold"><b>B</b></button>
+            <button class="${isItalic?'tb-active':''}" onclick="tbToggleItalic()" title="Italic"><i>I</i></button>
+            <div class="tb-sep"></div>
+            <select onchange="tbFontSize(this.value)" title="Font size">
+                ${[9,10,11,12,13,14,16,18,20,24,28,32].map(s=>`<option value="${s}" ${s===size?'selected':''}>${s}px</option>`).join('')}
+            </select>
+            <div class="tb-sep"></div>
+            <input type="color" value="${tbColorToHex(color)}" oninput="tbFontColor(this.value)" title="Text color">
+            <div class="tb-sep"></div>
+            <select onchange="tbFontFamily(this.value)" title="Font">
+                ${['Arial','Georgia','Courier New','Times New Roman','Verdana','Helvetica'].map(f=>`<option value="${f}" ${cs.fontFamily.includes(f)?'selected':''}>${f}</option>`).join('')}
+            </select>`;
+    } else if(el.closest?.('.canvas-line-svg')||el.closest?.('.canvas-anno-wrap')&&el.querySelector?.('line')){
+        // Line element
+        const line=el.querySelector('line')||el.closest('svg')?.querySelector('line');
+        if(line){
+            const sw=line.getAttribute('stroke-width')||'2';
+            const sc=line.getAttribute('stroke')||'var(--text)';
+            tb.innerHTML=`
+                <span style="opacity:0.5">Line:</span>
+                <select onchange="tbLineWidth(this.value)" title="Line width">
+                    ${[1,1.5,2,3,4,5].map(w=>`<option value="${w}" ${parseFloat(sw)===w?'selected':''}>${w}px</option>`).join('')}
+                </select>
+                <input type="color" value="${tbColorToHex(sc)}" oninput="tbLineColor(this.value)" title="Line color">
+                <div class="tb-sep"></div>
+                <select onchange="tbLineDash(this.value)" title="Line style">
+                    <option value="">Solid</option><option value="6,3">Dashed</option><option value="2,2">Dotted</option>
+                </select>`;
+        }
+    } else {
+        tb.innerHTML='';
+    }
+}
+
+function tbToggleBold(){if(!tbSelectedEl)return;const cs=getComputedStyle(tbSelectedEl);tbSelectedEl.style.fontWeight=cs.fontWeight>=600?'400':'700';updateToolbar(tbSelectedEl)}
+function tbToggleItalic(){if(!tbSelectedEl)return;const cs=getComputedStyle(tbSelectedEl);tbSelectedEl.style.fontStyle=cs.fontStyle==='italic'?'normal':'italic';updateToolbar(tbSelectedEl)}
+function tbFontSize(v){if(!tbSelectedEl)return;tbSelectedEl.style.fontSize=v+'px'}
+function tbFontColor(v){if(!tbSelectedEl)return;tbSelectedEl.style.color=v}
+function tbFontFamily(v){if(!tbSelectedEl)return;tbSelectedEl.style.fontFamily=v}
+function tbLineWidth(v){if(!tbSelectedEl)return;const line=tbSelectedEl.querySelector('line')||tbSelectedEl.closest('svg')?.querySelector('line');if(line)line.setAttribute('stroke-width',v)}
+function tbLineColor(v){if(!tbSelectedEl)return;const line=tbSelectedEl.querySelector('line')||tbSelectedEl.closest('svg')?.querySelector('line');if(line)line.setAttribute('stroke',v)}
+function tbLineDash(v){if(!tbSelectedEl)return;const line=tbSelectedEl.querySelector('line')||tbSelectedEl.closest('svg')?.querySelector('line');if(line)line.setAttribute('stroke-dasharray',v)}
+function tbColorToHex(c){if(!c||c.startsWith('var'))return'#e6edf3';if(c.startsWith('#'))return c;const m=c.match(/(\d+)/g);if(m&&m.length>=3)return'#'+m.slice(0,3).map(v=>(+v).toString(16).padStart(2,'0')).join('');return'#e6edf3'}
+
+// Listen for text box focus/blur to update toolbar
+document.addEventListener('focusin',e=>{if(e.target.classList?.contains('canvas-textbox'))updateToolbar(e.target)});
+document.addEventListener('focusout',e=>{if(e.target.classList?.contains('canvas-textbox'))setTimeout(()=>{if(!document.activeElement?.classList?.contains('canvas-textbox'))updateToolbar(null)},100)});
+// Listen for clicks on line annotations
+document.addEventListener('click',e=>{
+    const lineWrap=e.target.closest('.canvas-anno-wrap');
+    if(lineWrap&&lineWrap.querySelector('svg line')){updateToolbar(lineWrap);return}
+    if(!e.target.closest('#canvas-toolbar')&&!e.target.classList?.contains('canvas-textbox'))updateToolbar(null);
+});
+
 function canvasZoom(delta){
     canvasScale=Math.max(0.2,Math.min(2.0,canvasScale+delta));
     applyCanvasZoom();

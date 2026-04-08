@@ -458,7 +458,9 @@ class ProkerChart {
             const ex = Math.max(cx, this._selState.startX);
             const ey = Math.max(cy, this._selState.startY);
 
-            // Convert to data coords
+            // Store pixel bounds for accurate hit testing
+            this._selPx = { x0: sx, y0: sy, x1: ex, y1: ey };
+            // Convert to data coords (for zoom)
             const m = this._m;
             this._selState.x0 = this._xScale.invert(sx - m.left);
             this._selState.x1 = this._xScale.invert(ex - m.left);
@@ -770,11 +772,17 @@ class ProkerChart {
 
     _labelSelected() {
         const s = this._selState;
+        // Use pixel-based collision for accuracy
+        const m = this._m;
         this.traces.forEach(trace => {
             if (!trace.x || !trace.y) return;
             for (let i = 0; i < trace.x.length; i++) {
                 const x = trace.x[i], y = trace.y[i];
-                if (x >= s.x0 && x <= s.x1 && y >= s.y0 && y <= s.y1) {
+                if (!isFinite(x) || !isFinite(y)) continue;
+                // Convert data point to pixel coords and check against pixel selection bounds
+                const px = m.left + this._xScale(x);
+                const py = m.top + this._yScale(y);
+                if (px >= this._selPx.x0 && px <= this._selPx.x1 && py >= this._selPx.y0 && py <= this._selPx.y1) {
                     const text = trace.customdata?.[i] || trace.text?.[i] || '';
                     if (!text) continue;
                     const key = x + '_' + y;
@@ -790,13 +798,16 @@ class ProkerChart {
     }
 
     _colorSelected(color) {
-        const s = this._selState;
-        // Store color overrides
         if (!this._colorOverrides) this._colorOverrides = [];
+        const m = this._m;
         this.traces.forEach((trace, ti) => {
             if (!trace.x || !trace.y) return;
             for (let i = 0; i < trace.x.length; i++) {
-                if (trace.x[i] >= s.x0 && trace.x[i] <= s.x1 && trace.y[i] >= s.y0 && trace.y[i] <= s.y1) {
+                const x = trace.x[i], y = trace.y[i];
+                if (!isFinite(x) || !isFinite(y)) continue;
+                const px = m.left + this._xScale(x);
+                const py = m.top + this._yScale(y);
+                if (px >= this._selPx.x0 && px <= this._selPx.x1 && py >= this._selPx.y0 && py <= this._selPx.y1) {
                     this._colorOverrides.push({ ti, i, color });
                 }
             }
