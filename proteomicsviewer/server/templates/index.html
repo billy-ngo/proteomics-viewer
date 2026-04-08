@@ -649,6 +649,14 @@ async function uploadFile(file,append){
             <div id="dg-list" style="margin-top:8px"></div>
         </div>
     </div>
+    <div class="collapse-sec" style="border-top:1px solid var(--border)" id="species-highlight-section">
+        <div class="collapse-hdr" onclick="this.parentElement.classList.toggle('open')">Species Highlight <span class="chev">&#9656;</span></div>
+        <div class="collapse-body">
+            <div style="font-size:11px;color:var(--text-sec);margin-bottom:8px">Highlight proteins from a species/organism on all graphs by locus tag prefix.</div>
+            <div id="sph-list" style="max-height:200px;overflow-y:auto"></div>
+            <div style="font-size:10px;color:var(--text-sec);margin-top:6px" id="sph-empty">Load data to see available species prefixes.</div>
+        </div>
+    </div>
     <div class="collapse-sec" style="border-top:1px solid var(--border)">
         <div class="collapse-hdr" onclick="this.parentElement.classList.toggle('open')">Peptide Coverage Map <span class="chev">&#9656;</span></div>
         <div class="collapse-body">
@@ -1155,10 +1163,11 @@ function initGrouping(){
     document.getElementById('cu-filename').textContent=RAW.filename;
     buildProcessedData();
     populateCovProteins();
+    populateSpeciesHighlights();
     renderAll();startHeartbeat();
 }
 
-function renderAll(){renderUnassigned();renderBins();updateStatus();updateContinueBtn();buildProcessedData();populateCovProteins();refreshAllPlots();autoSaveSession()}
+function renderAll(){renderUnassigned();renderBins();updateStatus();updateContinueBtn();buildProcessedData();populateCovProteins();populateSpeciesHighlights();refreshAllPlots();autoSaveSession()}
 
 function createChip(sample){
     const c=document.createElement('div');c.className='sample-chip'+(SELECTED.has(sample)?' selected':'');c.dataset.sample=sample;c.draggable=true;
@@ -1456,6 +1465,67 @@ function showCoverageMap(){
 
     res.innerHTML=html;
 }
+
+// ================================================================
+// SPECIES HIGHLIGHT
+// ================================================================
+var SPECIES_HIGHLIGHTS=[]; // [{prefix:'HUMAN_', color:'#ff7b72', enabled:false}]
+const SPH_COLORS=['#ff7b72','#7ee787','#79c0ff','#d2a8ff','#ffa657','#f0883e','#56d364','#db61a2','#58a6ff','#d29922'];
+
+function populateSpeciesHighlights(){
+    if(!RAW)return;
+    const c=document.getElementById('sph-list');if(!c)return;
+    // Detect prefixes
+    const prefixes=new Set();
+    RAW.proteins.forEach(p=>{if(p.potential_contaminant||p.reverse)return;const m=(p.majority_id||p.id||'').match(/^([A-Za-z][A-Za-z0-9]*_)/);if(m)prefixes.add(m[1])});
+    const sorted=[...prefixes].sort();
+    if(!sorted.length){document.getElementById('sph-empty').textContent='No species prefixes detected.';c.innerHTML='';return}
+    document.getElementById('sph-empty').textContent='';
+    // Count proteins per prefix
+    const counts={};sorted.forEach(px=>{counts[px]=0});
+    RAW.proteins.forEach(p=>{if(p.potential_contaminant||p.reverse)return;const m=(p.majority_id||p.id||'').match(/^([A-Za-z][A-Za-z0-9]*_)/);if(m&&counts[m[1]]!==undefined)counts[m[1]]++});
+    // Preserve existing state
+    const prev={};SPECIES_HIGHLIGHTS.forEach(h=>{prev[h.prefix]={color:h.color,enabled:h.enabled}});
+    SPECIES_HIGHLIGHTS=sorted.map((px,i)=>({
+        prefix:px,
+        color:prev[px]?prev[px].color:SPH_COLORS[i%SPH_COLORS.length],
+        enabled:prev[px]?prev[px].enabled:false
+    }));
+    renderSpeciesHighlights();
+}
+function renderSpeciesHighlights(){
+    const c=document.getElementById('sph-list');if(!c)return;
+    c.innerHTML=SPECIES_HIGHLIGHTS.map((h,i)=>`<div style="display:flex;align-items:center;gap:6px;padding:3px 4px">
+        <input type="checkbox" ${h.enabled?'checked':''} onchange="sphToggle(${i},this.checked)" style="accent-color:${h.color}">
+        <input type="color" value="${h.color}" onchange="sphColor(${i},this.value)" style="width:20px;height:20px;border:none;padding:0;cursor:pointer;background:none" title="Pick color">
+        <span style="font-size:12px;font-family:monospace;color:${h.enabled?h.color:'var(--text-sec)'}">${h.prefix}</span>
+        <span style="font-size:10px;color:var(--text-sec);margin-left:auto">${getSpeciesCount(h.prefix)}</span>
+    </div>`).join('');
+}
+function getSpeciesCount(prefix){
+    if(!RAW)return 0;let n=0;
+    RAW.proteins.forEach(p=>{if(!p.potential_contaminant&&!p.reverse&&(p.majority_id||p.id||'').startsWith(prefix))n++});
+    return n;
+}
+function sphToggle(i,checked){
+    SPECIES_HIGHLIGHTS[i].enabled=checked;
+    renderSpeciesHighlights();
+    refreshAllPlots();
+}
+function sphColor(i,color){
+    SPECIES_HIGHLIGHTS[i].color=color;
+    renderSpeciesHighlights();
+    if(SPECIES_HIGHLIGHTS[i].enabled) refreshAllPlots();
+}
+function getHighlightColor(proteinIdx){
+    if(!SPECIES_HIGHLIGHTS.length)return null;
+    const pid=RAW.proteins[proteinIdx].majority_id||RAW.proteins[proteinIdx].id||'';
+    for(const h of SPECIES_HIGHLIGHTS){
+        if(h.enabled&&pid.startsWith(h.prefix))return h.color;
+    }
+    return null;
+}
+function hasActiveHighlights(){return SPECIES_HIGHLIGHTS.some(h=>h.enabled)}
 
 // ================================================================
 // CENTRAL DATA PIPELINE — reads all upstream tab settings
@@ -2054,11 +2124,12 @@ function buildEnrichmentConfig(chart,p,qd,fidx){
         const val=isLog2?Math.log2(mA/mB):(mA/mB);
         let hover=pLabel(fidx,fi)+'<br>'+(isLog2?'log2FC':'Ratio')+': '+(val<100?val.toFixed(3):val.toFixed(1))+'<br>'+gx+': '+fmtVal(mA)+'<br>'+gy+': '+fmtVal(mB);
         if(isAggSum()) hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);
-        data.push({val,label:pLabel(fidx,fi),full:pFullLabel(fidx,fi),hover});
+        data.push({val,label:pLabel(fidx,fi),full:pFullLabel(fidx,fi),hover,pidx:fidx[fi]});
     }
     data.sort((a,b)=>a.val-b.val);
     const total=data.length;
-    chart.setData([{x:data.map((_,i)=>i+1),y:data.map(d=>d.val),mode:'markers',marker:{size:5,color:'#e6edf3',symbol:'circle'},text:data.map((d,i)=>d.hover+'<br>Rank: #'+(i+1)+'/'+total),customdata:data.map(d=>d.full)}]);
+    const colors=hasActiveHighlights()?data.map(d=>getHighlightColor(d.pidx)||'#e6edf3'):'#e6edf3';
+    chart.setData([{x:data.map((_,i)=>i+1),y:data.map(d=>d.val),mode:'markers',marker:{size:5,color:colors,symbol:'circle'},text:data.map((d,i)=>d.hover+'<br>Rank: #'+(i+1)+'/'+total),customdata:data.map(d=>d.full)}]);
     chart.setChartTitle(p.title||'').setXTitle('Rank').setYTitle(isLog2?'log2('+gx+'/'+gy+')':'Enrichment ('+gx+'/'+gy+')').render();
 }
 
@@ -2074,7 +2145,7 @@ function buildUniqueConfig(chart,p,qd,fidx){
         const fm=mean(grpVals(fi,featured,qd,fidx));if(fm<=0)continue;
         let found=false;for(const eg of excludeGroups){if(eg===featured)continue;if(mean(grpVals(fi,eg,qd,fidx))>0){found=true;break}}
         if(found)continue;
-        items.push({label:pLabel(fidx,fi),abund:fm,full:pFullLabel(fidx,fi)});
+        items.push({label:pLabel(fidx,fi),abund:fm,full:pFullLabel(fidx,fi),pidx:fidx[fi]});
     }
     items.sort((a,b)=>a.abund-b.abund);const shown=items.slice(0,80);
     // Beeswarm: compute collision based on data range
@@ -2097,11 +2168,13 @@ function buildUniqueConfig(chart,p,qd,fidx){
             }
             if(!collides){bestX=tryX;break}
         }
-        const pt={x:bestX,y:d.abund,label:d.label,full:d.full};
+        const pt={x:bestX,y:d.abund,label:d.label,full:d.full,pidx:d.pidx};
         placed.push(pt);
         return pt;
     });
-    chart.setData([{x:jittered.map(d=>d.x),y:jittered.map(d=>d.y),mode:'markers',marker:{size:7,color:grpColor(featured),symbol:'circle'},text:jittered.map(d=>d.label+'<br>Abundance: '+fmtVal(d.y)),customdata:jittered.map(d=>d.full)}]);
+    const baseColor=grpColor(featured);
+    const uColors=hasActiveHighlights()?jittered.map(d=>getHighlightColor(d.pidx)||baseColor):baseColor;
+    chart.setData([{x:jittered.map(d=>d.x),y:jittered.map(d=>d.y),mode:'markers',marker:{size:7,color:uColors,symbol:'circle'},text:jittered.map(d=>d.label+'<br>Abundance: '+fmtVal(d.y)),customdata:jittered.map(d=>d.full)}]);
     chart.setChartTitle(p.title||'').setXTitle('').setYTitle('Abundance');
     const wrap=chart.container.closest('.canvas-plot');
     if(wrap&&!wrap.dataset.userResized){wrap.style.width='320px';wrap.dataset.userResized=''}
@@ -2112,7 +2185,7 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     if(isAggSum()){chart.setData([]).setXTitle('').setYTitle('Sums mode — no statistics').render();return}
     const gx=p.config.gx,gy=p.config.gy,fcT=p.config.fc||1,fdrT=p.config.fdr||0.05,doImpute=p.config.impute;
     const s0=p.config.s0||0;
-    const fc=[],rawP=[],labels=[],fulls=[];
+    const fc=[],rawP=[],labels=[],fulls=[],pidxArr=[];
     for(let fi=0;fi<fidx.length;fi++){
         let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
         const mA=mean(vA),mB=mean(vB);
@@ -2123,12 +2196,16 @@ function buildVolcanoConfig(chart,p,qd,fidx){
         rawP.push(ttest(vA,vB,s0));
         labels.push(pLabel(fidx,fi));
         fulls.push(pFullLabel(fidx,fi));
+        pidxArr.push(fidx[fi]);
     }
     const adjP=bhFDR(rawP);const negLog=adjP.map(p=>-Math.log10(Math.max(p,1e-300)));
     const cats=fc.map((f,i)=>adjP[i]<fdrT&&Math.abs(f)>=fcT?(f>0?'up':'down'):'ns');
+    const doHL=hasActiveHighlights();
     const traces=[];
     ['ns','up','down'].forEach(cat=>{const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);if(!idx.length)return;
-        traces.push({x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),mode:'markers',marker:{size:cat==='ns'?4:6,color:cat==='up'?grpColor(gx):cat==='down'?grpColor(gy):'#6e7681',opacity:cat==='ns'?0.5:0.85,symbol:'circle'},text:idx.map(i=>labels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),customdata:idx.map(i=>fulls[i])})});
+        const baseColor=cat==='up'?grpColor(gx):cat==='down'?grpColor(gy):'#6e7681';
+        const mColor=doHL?idx.map(i=>getHighlightColor(pidxArr[i])||baseColor):baseColor;
+        traces.push({x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),mode:'markers',marker:{size:cat==='ns'?4:6,color:mColor,opacity:cat==='ns'?0.5:0.85,symbol:'circle'},text:idx.map(i=>labels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),customdata:idx.map(i=>fulls[i])})});
     // Threshold reference lines (dotted)
     const fdrLine=-Math.log10(fdrT);
     chart._refLines=[
@@ -2165,9 +2242,10 @@ function buildDotplotConfig(chart,p,qd,fidx){
         const label=pLabel(fidx,fi),full=pFullLabel(fidx,fi);
         let hover=label+'<br>'+gx+': '+fmtVal(mx)+'<br>'+gy+': '+fmtVal(my);
         if(!intra&&isAggSum()) hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);
-        if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,full,hover});
-        else if(mx>0) xOnly.push({rawX:mx,x:txFn(mx),label,full,hover:label+'<br>Only in '+gx+'<br>'+gx+': '+fmtVal(mx)});
-        else yOnly.push({rawY:my,y:txFn(my),label,full,hover:label+'<br>Only in '+gy+'<br>'+gy+': '+fmtVal(my)});
+        const pi=fidx[fi];
+        if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,full,hover,pidx:pi});
+        else if(mx>0) xOnly.push({rawX:mx,x:txFn(mx),label,full,hover:label+'<br>Only in '+gx+'<br>'+gx+': '+fmtVal(mx),pidx:pi});
+        else yOnly.push({rawY:my,y:txFn(my),label,full,hover:label+'<br>Only in '+gy+'<br>'+gy+': '+fmtVal(my),pidx:pi});
     }
 
     // Place unique proteins at the axis floor — below the main cloud
@@ -2196,15 +2274,16 @@ function buildDotplotConfig(chart,p,qd,fidx){
     const yBreak=cloudMinY-rangeY*gapFrac/2;
     const xBreak=cloudMinX-rangeX*gapFrac/2;
 
+    const doHL=hasActiveHighlights();
     const traces=[];
     if(both.length) traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',
-        marker:{size:5,color:'#8b949e',opacity:0.6,symbol:'circle'},
+        marker:{size:5,color:doHL?both.map(d=>getHighlightColor(d.pidx)||'#8b949e'):'#8b949e',opacity:0.6,symbol:'circle'},
         text:both.map(d=>d.hover),customdata:both.map(d=>d.full)});
     if(xOnly.length) traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(()=>yBand),mode:'markers',
-        marker:{size:4,color:'#8b949e',opacity:0.5,symbol:'circle'},
+        marker:{size:4,color:doHL?xOnly.map(d=>getHighlightColor(d.pidx)||'#8b949e'):'#8b949e',opacity:0.5,symbol:'circle'},
         text:xOnly.map(d=>d.hover),customdata:xOnly.map(d=>d.full)});
     if(yOnly.length) traces.push({x:yOnly.map(()=>xBand),y:yOnly.map(d=>d.y),mode:'markers',
-        marker:{size:4,color:'#8b949e',opacity:0.5,symbol:'circle'},
+        marker:{size:4,color:doHL?yOnly.map(d=>getHighlightColor(d.pidx)||'#8b949e'):'#8b949e',opacity:0.5,symbol:'circle'},
         text:yOnly.map(d=>d.hover),customdata:yOnly.map(d=>d.full)});
 
     // Axis breaks for visual separation
