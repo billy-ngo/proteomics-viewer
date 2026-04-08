@@ -1748,27 +1748,42 @@ function buildDotplotConfig(chart,p,qd,fidx){
     const minX=allX.length?Math.min(...allX.filter(v=>v>0)):0;
     const minY=allY.length?Math.min(...allY.filter(v=>v>0)):0;
     // Floor position: one step below the minimum real value
-    const floorX=minX>0?minX*0.3:0;
-    const floorY=minY>0?minY*0.3:0;
+    // Tight axes: compute range from main cloud only
+    const cloudXvals=both.map(d=>d.x);
+    const cloudYvals=both.map(d=>d.y);
+    const cloudMinX=cloudXvals.length?Math.min(...cloudXvals):0;
+    const cloudMaxX=cloudXvals.length?Math.max(...cloudXvals):1;
+    const cloudMinY=cloudYvals.length?Math.min(...cloudYvals):0;
+    const cloudMaxY=cloudYvals.length?Math.max(...cloudYvals):1;
+    const rangeX=cloudMaxX-cloudMinX||1;
+    const rangeY=cloudMaxY-cloudMinY||1;
+
+    // Place unique proteins in a narrow band just below/left of the cloud
+    // with a small gap for visual separation
+    const gapFrac=0.08;
+    const bandFrac=0.05;
+    const yBand=cloudMinY-rangeY*(gapFrac+bandFrac/2);
+    const xBand=cloudMinX-rangeX*(gapFrac+bandFrac/2);
+    const yBreak=cloudMinY-rangeY*gapFrac/2;
+    const xBreak=cloudMinX-rangeX*gapFrac/2;
 
     const traces=[];
-    // Main cloud (gray)
     if(both.length) traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',
         marker:{size:5,color:'#8b949e',opacity:0.6,symbol:'circle'},
         text:both.map(d=>d.hover),customdata:both.map(d=>d.full)});
-    // X-only proteins along the bottom axis floor
-    if(xOnly.length) traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(()=>floorY),mode:'markers',
-        marker:{size:4,color:'#8b949e',opacity:0.4,symbol:'circle'},
+    if(xOnly.length) traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(()=>yBand),mode:'markers',
+        marker:{size:4,color:'#8b949e',opacity:0.5,symbol:'circle'},
         text:xOnly.map(d=>d.hover),customdata:xOnly.map(d=>d.full)});
-    // Y-only proteins along the left axis floor
-    if(yOnly.length) traces.push({x:yOnly.map(()=>floorX),y:yOnly.map(d=>d.y),mode:'markers',
-        marker:{size:4,color:'#8b949e',opacity:0.4,symbol:'circle'},
+    if(yOnly.length) traces.push({x:yOnly.map(()=>xBand),y:yOnly.map(d=>d.y),mode:'markers',
+        marker:{size:4,color:'#8b949e',opacity:0.5,symbol:'circle'},
         text:yOnly.map(d=>d.hover),customdata:yOnly.map(d=>d.full)});
 
-    // Diagonal y=x line through the main cloud
+    // Axis breaks for visual separation
+    const breaks=[];
+    if(xOnly.length) breaks.push({axis:'y',pos:yBreak});
+    if(yOnly.length) breaks.push({axis:'x',pos:xBreak});
+    chart._axisBreaks=breaks;
     chart._diagonalLine=both.length>0;
-    // No zigzag breaks — clean axis floor separation
-    chart._axisBreaks=[];
 
     chart.setChartTitle(p.title||'').setData(traces).setXTitle(gx+axSuffix).setYTitle(gy+axSuffix).render();
 }

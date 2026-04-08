@@ -293,31 +293,22 @@ class ProkerChart {
         });
         svg += `</g>`;
 
-        // Axis break indicators (zigzag marks)
+        // Axis break indicators (double slash marks on axis)
         if (this._axisBreaks && this._axisBreaks.length) {
             this._axisBreaks.forEach(brk => {
                 if (brk.axis === 'y') {
-                    // Horizontal break line across plot width
                     const by = m.top + yScale(brk.pos);
-                    const zz = 4; // zigzag amplitude
-                    let path = `M${m.left-3},${by}`;
-                    for (let x = m.left; x <= m.left + pw; x += 8) {
-                        path += `L${x},${by - zz}L${x + 4},${by + zz}`;
-                    }
-                    path += `L${m.left + pw + 3},${by}`;
-                    svg += `<path d="${path}" fill="none" stroke="${T.bg}" stroke-width="3"/>`;
-                    svg += `<path d="${path}" fill="none" stroke="${T.line}" stroke-width="1" stroke-dasharray="none"/>`;
+                    // Double diagonal slash on the Y axis
+                    const ax = m.left;
+                    svg += `<rect x="${ax-1}" y="${by-4}" width="${pw+2}" height="8" fill="${T.bg || T.plot}"/>`;
+                    svg += `<line x1="${ax-4}" y1="${by+3}" x2="${ax+4}" y2="${by-3}" stroke="${T.line}" stroke-width="1.5"/>`;
+                    svg += `<line x1="${ax-1}" y1="${by+3}" x2="${ax+7}" y2="${by-3}" stroke="${T.line}" stroke-width="1.5"/>`;
                 } else if (brk.axis === 'x') {
-                    // Vertical break line across plot height
                     const bx = m.left + xScale(brk.pos);
-                    const zz = 4;
-                    let path = `M${bx},${m.top - 3}`;
-                    for (let y = m.top; y <= m.top + ph; y += 8) {
-                        path += `L${bx - zz},${y}L${bx + zz},${y + 4}`;
-                    }
-                    path += `L${bx},${m.top + ph + 3}`;
-                    svg += `<path d="${path}" fill="none" stroke="${T.bg}" stroke-width="3"/>`;
-                    svg += `<path d="${path}" fill="none" stroke="${T.line}" stroke-width="1"/>`;
+                    const ay = m.top + ph;
+                    svg += `<rect x="${bx-4}" y="${m.top-1}" width="8" height="${ph+2}" fill="${T.bg || T.plot}"/>`;
+                    svg += `<line x1="${bx-3}" y1="${ay+4}" x2="${bx+3}" y2="${ay-4}" stroke="${T.line}" stroke-width="1.5"/>`;
+                    svg += `<line x1="${bx-3}" y1="${ay+7}" x2="${bx+3}" y2="${ay-1}" stroke="${T.line}" stroke-width="1.5"/>`;
                 }
             });
         }
