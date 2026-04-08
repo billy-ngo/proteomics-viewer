@@ -164,6 +164,7 @@ def parse_protein_groups(filepath):
                 "only_identified_by_site": is_only_by_site,
                 "reverse": is_reverse,
                 "potential_contaminant": is_contaminant,
+                "peptide_sequences": row.get("Peptide sequences", ""),
             }
             proteins.append(protein)
 

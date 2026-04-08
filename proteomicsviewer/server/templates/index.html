@@ -648,6 +648,24 @@ async function uploadFile(file,append){
             <div id="dg-list" style="margin-top:8px"></div>
         </div>
     </div>
+    <div class="collapse-sec" style="border-top:1px solid var(--border)">
+        <div class="collapse-hdr" onclick="this.parentElement.classList.toggle('open')">Peptide Coverage Map <span class="chev">&#9656;</span></div>
+        <div class="collapse-body">
+            <div style="font-size:11px;color:var(--text-sec);margin-bottom:8px">Paste a FASTA protein sequence to visualize which peptides were identified by mass spectrometry.</div>
+            <div class="af-row" style="margin-bottom:6px">
+                <span class="af-lbl">Protein</span>
+                <select id="cov-protein" onchange="covProteinChanged()" style="flex:1">
+                    <option value="">-- Select a protein --</option>
+                </select>
+            </div>
+            <div style="margin-bottom:6px">
+                <div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">FASTA sequence (paste header + sequence, or sequence only)</div>
+                <textarea id="cov-fasta" rows="4" placeholder=">sp|P12345|PROTEIN_NAME\nMKWVTFISLLFLFSSAYSRGVFRR..." style="width:100%;font-family:monospace;font-size:11px;resize:vertical;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px"></textarea>
+            </div>
+            <button class="btn-primary" onclick="showCoverageMap()" style="width:100%">Show Coverage</button>
+            <div id="cov-result" style="margin-top:10px"></div>
+        </div>
+    </div>
     <div id="stats-methods-section" class="collapse-sec hidden" style="border-top:1px solid var(--border)">
         <div class="collapse-hdr" onclick="this.parentElement.classList.toggle('open')">Statistical Methods Used <span class="chev">&#9656;</span></div>
         <div class="collapse-body" style="font-size:11px;color:var(--text-sec);line-height:1.6">
@@ -1135,10 +1153,11 @@ function initGrouping(){
     document.getElementById('compact-upload').classList.remove('hidden');
     document.getElementById('cu-filename').textContent=RAW.filename;
     buildProcessedData();
+    populateCovProteins();
     renderAll();startHeartbeat();
 }
 
-function renderAll(){renderUnassigned();renderBins();updateStatus();updateContinueBtn();buildProcessedData();refreshAllPlots();autoSaveSession()}
+function renderAll(){renderUnassigned();renderBins();updateStatus();updateContinueBtn();buildProcessedData();populateCovProteins();refreshAllPlots();autoSaveSession()}
 
 function createChip(sample){
     const c=document.createElement('div');c.className='sample-chip'+(SELECTED.has(sample)?' selected':'');c.dataset.sample=sample;c.draggable=true;
@@ -1260,6 +1279,182 @@ function createDerived(){
 }
 function renderDerived(){const c=document.getElementById('dg-list');c.innerHTML='';const sym={divide:'/',subtract:'-',add:'+',multiply:'*'};
     DERIVED.forEach((d,i)=>{c.innerHTML+=`<div class="ana-item"><span class="ana-name" style="color:var(--purple)">${d.name}</span><span class="ana-desc">${d.left} ${sym[d.op]} ${d.right}</span><button class="ana-del" onclick="DERIVED.splice(${i},1);renderDerived();populateGroupSelects()">&times;</button></div>`})}
+
+// ================================================================
+// PEPTIDE COVERAGE MAP
+// ================================================================
+function populateCovProteins(){
+    const sel=document.getElementById('cov-protein');if(!sel||!RAW)return;
+    const prev=sel.value;
+    sel.innerHTML='<option value="">-- Select a protein --</option>';
+    for(let pi=0;pi<RAW.proteins.length;pi++){
+        const p=RAW.proteins[pi];
+        if(p.potential_contaminant||p.reverse||p.only_identified_by_site)continue;
+        const label=(p.gene_name||p.majority_id||p.id).slice(0,50);
+        sel.innerHTML+=`<option value="${pi}">${label}</option>`;
+    }
+    if(prev) sel.value=prev;
+}
+function covProteinChanged(){
+    const sel=document.getElementById('cov-protein');
+    const pi=+sel.value;
+    if(isNaN(pi)||!RAW)return;
+    const p=RAW.proteins[pi];
+    // Auto-populate info
+    const res=document.getElementById('cov-result');
+    if(!p.peptide_sequences){
+        res.innerHTML='<div style="font-size:11px;color:var(--warning)">No peptide sequences found for this protein in the data file. The proteinGroups.txt must contain a "Peptide sequences" column.</div>';
+    } else {
+        res.innerHTML='';
+    }
+}
+function parseFasta(text){
+    const lines=text.trim().split(/\r?\n/);
+    let header='',seq='';
+    for(const line of lines){
+        if(line.startsWith('>')){header=line.slice(1).trim()}
+        else{seq+=line.replace(/\s/g,'')}
+    }
+    return{header,seq:seq.toUpperCase()};
+}
+function showCoverageMap(){
+    const res=document.getElementById('cov-result');
+    if(!RAW){res.innerHTML='<div style="color:var(--warning)">No data loaded.</div>';return}
+    const pi=+document.getElementById('cov-protein').value;
+    const fastaText=document.getElementById('cov-fasta').value.trim();
+    if(isNaN(pi)||pi===''){res.innerHTML='<div style="color:var(--warning)">Select a protein first.</div>';return}
+    const p=RAW.proteins[pi];
+    if(!p.peptide_sequences){
+        res.innerHTML='<div style="color:var(--warning)">No peptide sequences available for this protein. The proteinGroups.txt must contain a "Peptide sequences" column.</div>';
+        return;
+    }
+    const peptides=p.peptide_sequences.split(';').map(s=>s.trim().toUpperCase()).filter(s=>s.length>0);
+    if(!peptides.length){res.innerHTML='<div style="color:var(--warning)">No peptides found.</div>';return}
+
+    // Parse the user-provided FASTA sequence (if any)
+    let fullSeq='';
+    if(fastaText){
+        const fasta=parseFasta(fastaText);
+        fullSeq=fasta.seq;
+    }
+
+    // If no FASTA provided, build a placeholder from sequence_length
+    if(!fullSeq&&p.sequence_length>0){
+        fullSeq='X'.repeat(p.sequence_length);
+    }
+    if(!fullSeq){
+        res.innerHTML='<div style="color:var(--warning)">Paste a FASTA sequence above, or ensure the protein has a known sequence length.</div>';
+        return;
+    }
+
+    // Build coverage array
+    const seqLen=fullSeq.length;
+    const coverage=new Uint8Array(seqLen); // 0=not covered, 1=covered
+    const pepPositions=[];
+    let mappedCount=0;
+    const isPlaceholder=fullSeq[0]==='X'&&fullSeq[fullSeq.length-1]==='X';
+
+    peptides.forEach(pep=>{
+        if(isPlaceholder){
+            // Can't map onto placeholder — just note them
+            pepPositions.push({seq:pep,start:-1,end:-1});
+            return;
+        }
+        let idx=fullSeq.indexOf(pep);
+        while(idx!==-1){
+            mappedCount++;
+            for(let i=idx;i<idx+pep.length&&i<seqLen;i++) coverage[i]=1;
+            pepPositions.push({seq:pep,start:idx,end:idx+pep.length-1});
+            idx=fullSeq.indexOf(pep,idx+1);
+        }
+    });
+
+    const coveredAA=coverage.reduce((a,b)=>a+b,0);
+    const covPct=seqLen>0?(coveredAA/seqLen*100):0;
+
+    // Build HTML output
+    let html='';
+
+    // Summary stats
+    html+=`<div style="font-size:12px;margin-bottom:8px">`;
+    html+=`<div><strong>Protein:</strong> ${p.gene_name||p.majority_id||p.id}</div>`;
+    html+=`<div><strong>Sequence length:</strong> ${seqLen} aa</div>`;
+    html+=`<div><strong>Peptides identified:</strong> ${peptides.length}</div>`;
+    if(!isPlaceholder){
+        html+=`<div><strong>Peptides mapped:</strong> ${mappedCount}</div>`;
+        html+=`<div><strong>Coverage:</strong> ${coveredAA}/${seqLen} aa (${covPct.toFixed(1)}%)</div>`;
+        if(p.sequence_coverage) html+=`<div style="color:var(--text-sec)"><em>MaxQuant reported: ${p.sequence_coverage}%</em></div>`;
+    }
+    html+=`</div>`;
+
+    // Coverage bar visualization
+    if(!isPlaceholder){
+        html+=`<div style="font-size:11px;color:var(--text-sec);margin-bottom:4px">Coverage map <span style="color:var(--success)">&#9632;</span> covered <span style="color:var(--text-sec)">&#9632;</span> not covered</div>`;
+        // Render as a compact bar
+        const barW=Math.min(280,seqLen);
+        const binSize=Math.max(1,Math.ceil(seqLen/barW));
+        const bins=[];
+        for(let i=0;i<seqLen;i+=binSize){
+            let covCount=0,total=0;
+            for(let j=i;j<i+binSize&&j<seqLen;j++){covCount+=coverage[j];total++}
+            bins.push(covCount/total);
+        }
+        html+=`<div style="display:flex;height:18px;border:1px solid var(--border);border-radius:3px;overflow:hidden;margin-bottom:6px" title="Hover for position">`;
+        bins.forEach((frac,bi)=>{
+            const startAA=bi*binSize+1;
+            const endAA=Math.min((bi+1)*binSize,seqLen);
+            const color=frac>0.5?'var(--success)':frac>0?'rgba(63,185,80,0.4)':'var(--card)';
+            html+=`<div style="flex:1;background:${color}" title="aa ${startAA}-${endAA}: ${Math.round(frac*100)}%"></div>`;
+        });
+        html+=`</div>`;
+
+        // Residue-level map (colored sequence) — show for sequences up to 1000 aa
+        if(seqLen<=1000){
+            html+=`<div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Sequence detail</div>`;
+            html+=`<div style="font-family:monospace;font-size:10px;line-height:1.5;word-break:break-all;max-height:150px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:6px">`;
+            // Render 60 residues per line with position markers
+            for(let i=0;i<seqLen;i+=60){
+                const lineEnd=Math.min(i+60,seqLen);
+                // Position label
+                html+=`<span style="color:var(--text-sec);user-select:none">${String(i+1).padStart(5)}</span> `;
+                for(let j=i;j<lineEnd;j++){
+                    const aa=fullSeq[j];
+                    if(coverage[j]){
+                        html+=`<span style="color:var(--success);font-weight:700">${aa}</span>`;
+                    } else {
+                        html+=`<span style="color:var(--text-sec);opacity:0.5">${aa}</span>`;
+                    }
+                    if((j-i+1)%10===0&&j<lineEnd-1) html+=' ';
+                }
+                html+='\n';
+            }
+            html+=`</div>`;
+        }
+    } else {
+        // No full sequence — just list peptides
+        html+=`<div style="font-size:11px;color:var(--text-sec);margin-bottom:4px">Paste a FASTA sequence above to see the coverage map. Identified peptides:</div>`;
+        html+=`<div style="font-family:monospace;font-size:10px;line-height:1.6;max-height:120px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:6px;color:var(--success)">`;
+        peptides.forEach(pep=>{html+=pep+'<br>'});
+        html+=`</div>`;
+    }
+
+    // Peptide table
+    if(!isPlaceholder&&pepPositions.length>0){
+        html+=`<details style="margin-top:8px"><summary style="font-size:11px;cursor:pointer;color:var(--text-sec)">Peptide list (${peptides.length})</summary>`;
+        html+=`<div style="font-size:10px;max-height:150px;overflow-y:auto;margin-top:4px">`;
+        html+=`<table style="width:100%;border-collapse:collapse"><tr style="color:var(--text-sec)"><th style="text-align:left;padding:2px 4px">Peptide</th><th style="text-align:right;padding:2px 4px">Start</th><th style="text-align:right;padding:2px 4px">End</th><th style="text-align:right;padding:2px 4px">Length</th></tr>`;
+        pepPositions.filter(pp=>pp.start>=0).sort((a,b)=>a.start-b.start).forEach(pp=>{
+            html+=`<tr><td style="font-family:monospace;padding:2px 4px;color:var(--success)">${pp.seq}</td><td style="text-align:right;padding:2px 4px">${pp.start+1}</td><td style="text-align:right;padding:2px 4px">${pp.end+1}</td><td style="text-align:right;padding:2px 4px">${pp.seq.length}</td></tr>`;
+        });
+        const unmapped=pepPositions.filter(pp=>pp.start<0);
+        unmapped.forEach(pp=>{
+            html+=`<tr style="color:var(--warning)"><td style="font-family:monospace;padding:2px 4px">${pp.seq}</td><td style="text-align:right;padding:2px 4px" colspan="3">not mapped</td></tr>`;
+        });
+        html+=`</table></div></details>`;
+    }
+
+    res.innerHTML=html;
+}
 
 // ================================================================
 // CENTRAL DATA PIPELINE — reads all upstream tab settings
