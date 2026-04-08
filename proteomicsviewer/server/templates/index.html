@@ -1857,8 +1857,8 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     const cats=fc.map((f,i)=>adjP[i]<fdrT&&Math.abs(f)>=fcT?(f>0?'up':'down'):'ns');
     const traces=[];
     ['ns','up','down'].forEach(cat=>{const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);if(!idx.length)return;
-        traces.push({x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),mode:'markers',marker:{size:cat==='ns'?4:6,color:cat==='up'?grpColor(gx):cat==='down'?grpColor(gy):'#30363d',opacity:cat==='ns'?0.5:0.85,symbol:'circle'},text:idx.map(i=>labels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),customdata:idx.map(i=>fulls[i])})});
-    chart.setChartTitle(p.title||'').setData(traces).setXTitle('Log2 Fold Change').setYTitle('-Log10(FDR adj. P-value)').render();
+        traces.push({x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),mode:'markers',marker:{size:cat==='ns'?4:6,color:cat==='up'?grpColor(gx):cat==='down'?grpColor(gy):'#6e7681',opacity:cat==='ns'?0.5:0.85,symbol:'circle'},text:idx.map(i=>labels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),customdata:idx.map(i=>fulls[i])})});
+    chart.setChartTitle(p.title||'').setData(traces).setXTitle('\u2190 '+gy+' | Log2 Fold Change | '+gx+' \u2192').setYTitle('-Log10(FDR adj. P-value)').render();
 }
 
 function buildDotplotConfig(chart,p,qd,fidx){

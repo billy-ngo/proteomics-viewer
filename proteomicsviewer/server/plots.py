@@ -147,7 +147,7 @@ def make_volcano(ns_data, up_data, down_data, up_color, down_color,
             'label': [d['label'] for d in ns_data], 'hover': [d.get('hover', '') for d in ns_data],
             'full_label': [d.get('full_label', '') for d in ns_data],
         })
-        fig.circle('x', 'y', source=ns_src, size=3, color='#30363d', alpha=0.3)
+        fig.circle('x', 'y', source=ns_src, size=3, color='#6e7681', alpha=0.5)
 
     # Up points
     if up_data:
