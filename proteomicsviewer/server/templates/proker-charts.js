@@ -201,7 +201,12 @@ class ProkerChart {
                 const py = m.top + yScale(vy);
                 if (px < m.left || px > m.left + pw || py < m.top || py > m.top + ph) continue;
 
-                const c = colorFn ? colorFn(colors[i]) : (colors ? colors[i] : singleColor);
+                let c = colorFn ? colorFn(colors[i]) : (colors ? colors[i] : singleColor);
+                // Apply color overrides from selection coloring
+                if (this._colorOverrides) {
+                    const ovr = this._colorOverrides.find(o => o.ti === ti && o.i === i);
+                    if (ovr) c = ovr.color;
+                }
                 const symFn = this._symbols[symbol] || this._symbols.circle;
                 const hoverText = trace.text ? trace.text[i] || '' : '';
                 const customData = trace.customdata ? trace.customdata[i] || '' : '';
@@ -232,11 +237,10 @@ class ProkerChart {
             const textH = lines.length * lineH + 10;
 
             svg += `<g class="ann" data-key="${this._esc(ann.key)}" data-ai="${ai}">`;
-            svg += `<line x1="${px}" y1="${py}" x2="${lx}" y2="${ly}" stroke="${T.textSec}" stroke-width="1" stroke-dasharray="3,2"/>`;
-            svg += `<circle cx="${px}" cy="${py}" r="3" fill="${T.accent}" opacity="0.7"/>`;
-            svg += `<rect x="${lx - textW / 2}" y="${ly - textH / 2}" width="${textW}" height="${textH}" rx="4" fill="${T.bg}" stroke="${T.accent}" stroke-width="0.8" opacity="0.94"/>`;
+            svg += `<line x1="${px}" y1="${py}" x2="${lx}" y2="${ly}" stroke="${T.textSec}" stroke-width="0.8" stroke-dasharray="3,2"/>`;
+            svg += `<circle cx="${px}" cy="${py}" r="2.5" fill="${T.accent}" opacity="0.7"/>`;
             lines.forEach((line, li) => {
-                svg += `<text x="${lx}" y="${ly - textH / 2 + 13 + li * lineH}" text-anchor="middle" fill="${T.text}" font-size="10.5" font-weight="${li===0?'600':'400'}">${this._esc(line)}</text>`;
+                svg += `<text x="${lx}" y="${ly + li * lineH}" text-anchor="middle" fill="${T.text}" font-size="10.5" font-weight="400">${this._esc(line)}</text>`;
             });
             svg += `</g>`;
         });
@@ -453,6 +457,44 @@ class ProkerChart {
             this._clearSelection();
             this._closeContextMenu();
         });
+
+        // Left-click drag on plot background → move entire plot on canvas
+        {
+            let dragging = false, startMX, startMY;
+            const plotBgRect = svg.querySelector('rect'); // first rect is the background
+            if (plotBgRect) {
+                plotBgRect.style.cursor = 'grab';
+                plotBgRect.addEventListener('mousedown', e => {
+                    if (e.button !== 0) return;
+                    // Don't drag if clicking on a data point or title
+                    if (e.target.closest('.data-pt,.axis-title,.chart-title,.tick-label,.ann')) return;
+                    const wrap = this.container.closest('.canvas-plot');
+                    if (!wrap) return;
+                    dragging = true;
+                    startMX = e.clientX; startMY = e.clientY;
+                    document.body.style.cursor = 'grabbing';
+                    e.preventDefault();
+                });
+            }
+            document.addEventListener('mousemove', e => {
+                if (!dragging) return;
+                const wrap = this.container.closest('.canvas-plot');
+                if (!wrap) return;
+                const canvas = wrap.parentElement;
+                if (!canvas) return;
+                const canvasR = canvas.getBoundingClientRect();
+                const wrapR = wrap.getBoundingClientRect();
+                wrap.style.position = 'relative';
+                const curL = parseFloat(wrap.style.left) || 0;
+                const curT = parseFloat(wrap.style.top) || 0;
+                wrap.style.left = (curL + e.clientX - startMX) + 'px';
+                wrap.style.top = (curT + e.clientY - startMY) + 'px';
+                startMX = e.clientX; startMY = e.clientY;
+            });
+            document.addEventListener('mouseup', () => {
+                if (dragging) { dragging = false; document.body.style.cursor = ''; }
+            });
+        }
 
         // Double-click → emit for graph settings
         svg.addEventListener('dblclick', e => {
