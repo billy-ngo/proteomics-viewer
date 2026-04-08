@@ -437,15 +437,20 @@ class ProkerChart {
             this._clearSelection();
             this._closeContextMenu();
             const rect = svg.getBoundingClientRect();
+            // Account for CSS transform scale on canvas
+            const scaleX = this._w / rect.width;
+            const scaleY = this._h / rect.height;
             this._selState.active = true;
-            this._selState.startX = e.clientX - rect.left;
-            this._selState.startY = e.clientY - rect.top;
+            this._selState.startX = (e.clientX - rect.left) * scaleX;
+            this._selState.startY = (e.clientY - rect.top) * scaleY;
+            this._selScale = { x: scaleX, y: scaleY };
         });
 
         const onSelMove = e => {
             if (!this._selState.active) return;
             const rect = svg.getBoundingClientRect();
-            const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+            const sx = this._selScale?.x || 1, sy = this._selScale?.y || 1;
+            const cx = (e.clientX - rect.left) * sx, cy = (e.clientY - rect.top) * sy;
             const box = svg.querySelector('.sel-box');
             const x = Math.min(cx, this._selState.startX);
             const y = Math.min(cy, this._selState.startY);
@@ -461,7 +466,8 @@ class ProkerChart {
             if (e.button !== 2 || !this._selState.active) return;
             this._selState.active = false;
             const rect = svg.getBoundingClientRect();
-            const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+            const scX = this._selScale?.x || 1, scY = this._selScale?.y || 1;
+            const cx = (e.clientX - rect.left) * scX, cy = (e.clientY - rect.top) * scY;
             const sx = Math.min(cx, this._selState.startX);
             const sy = Math.min(cy, this._selState.startY);
             const ex = Math.max(cx, this._selState.startX);
