@@ -354,39 +354,41 @@ async function uploadFile(file,append){
         </div>
         <!-- Markers -->
         <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Markers</div>
-        <div style="display:grid;grid-template-columns:auto 1fr auto 1fr;gap:4px 8px;align-items:center;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
             <span class="gs-swatch" id="gs-dot-color-sw" onclick="gsOpenPicker('gs-dot-color')" ondblclick="gsNative('gs-dot-color')" title="Click: swatches, Double-click: picker"></span>
-            <span style="font-size:11px;color:var(--text-sec)">Color</span>
-            <select id="gs-dot-shape" style="width:auto;font-size:11px;padding:2px 20px 2px 4px"><option value="circle">&#9679;</option><option value="square">&#9632;</option><option value="diamond">&#9670;</option><option value="cross">+</option><option value="triangle-up">&#9650;</option><option value="star">&#9733;</option></select>
-            <span style="font-size:11px;color:var(--text-sec)">Shape</span>
-            <span style="font-size:11px;color:var(--text-sec);grid-column:1/2">Size</span>
-            <input type="range" id="gs-dot-size" min="2" max="16" value="5" style="grid-column:2/4">
-            <input type="number" id="gs-dot-size-num" min="1" max="30" value="5" style="grid-column:4/5;width:45px;font-size:11px;padding:2px 4px;text-align:center">
-            <span style="font-size:11px;color:var(--text-sec);grid-column:1/2">Opacity</span>
-            <input type="range" id="gs-dot-opacity" min="10" max="100" value="70" style="grid-column:2/4">
-            <input type="number" id="gs-dot-opacity-num" min="0" max="100" value="70" step="5" style="grid-column:4/5;width:45px;font-size:11px;padding:2px 4px;text-align:center" title="%">
+            <select id="gs-dot-shape" style="width:auto;font-size:11px;padding:2px 18px 2px 4px"><option value="circle">&#9679;</option><option value="square">&#9632;</option><option value="diamond">&#9670;</option><option value="cross">+</option><option value="triangle-up">&#9650;</option><option value="star">&#9733;</option></select>
+            <label class="checkbox-row" style="margin:0"><input type="checkbox" id="gs-hollow" onchange="applyGraphSettings()"> Hollow</label>
         </div>
-        <!-- Colors -->
-        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Colors</div>
-        <div style="display:grid;grid-template-columns:auto 1fr auto 1fr;gap:4px 8px;align-items:center;margin-bottom:12px">
-            <span class="gs-swatch" id="gs-plot-bg-sw" onclick="gsOpenPicker('gs-plot-bg')" ondblclick="gsNative('gs-plot-bg')"></span>
-            <span style="font-size:11px;color:var(--text-sec)">Plot bg</span>
-            <span class="gs-swatch" id="gs-paper-bg-sw" onclick="gsOpenPicker('gs-paper-bg')" ondblclick="gsNative('gs-paper-bg')"></span>
-            <span style="font-size:11px;color:var(--text-sec)">Paper bg</span>
-            <span class="gs-swatch" id="gs-grid-color-sw" onclick="gsOpenPicker('gs-grid-color')" ondblclick="gsNative('gs-grid-color')"></span>
-            <span style="font-size:11px;color:var(--text-sec)">Grid</span>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:11px;color:var(--text-sec)">
+            Size <input type="range" id="gs-dot-size" min="2" max="16" value="5" style="flex:1"> <input type="number" id="gs-dot-size-num" min="1" max="30" value="5" style="width:40px;font-size:11px;padding:2px;text-align:center">
         </div>
-        <!-- Font -->
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;font-size:11px;color:var(--text-sec)">
+            Opacity <input type="range" id="gs-dot-opacity" min="10" max="100" value="70" style="flex:1"> <input type="number" id="gs-dot-opacity-num" min="0" max="100" value="70" step="5" style="width:40px;font-size:11px;padding:2px;text-align:center">
+        </div>
+        <!-- Display -->
+        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Display</div>
+        <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">
+            <div style="display:flex;align-items:center;gap:6px">
+                <input type="checkbox" id="gs-show-grid" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)">
+                <span style="font-size:11px;color:var(--text-sec)">Grid</span>
+                <span class="gs-swatch" id="gs-grid-color-sw" onclick="gsOpenPicker('gs-grid-color')" ondblclick="gsNative('gs-grid-color')" style="margin-left:auto"></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+                <input type="checkbox" id="gs-show-plotbg" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)">
+                <span style="font-size:11px;color:var(--text-sec)">Plot background</span>
+                <span class="gs-swatch" id="gs-plot-bg-sw" onclick="gsOpenPicker('gs-plot-bg')" ondblclick="gsNative('gs-plot-bg')" style="margin-left:auto"></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+                <input type="checkbox" id="gs-show-paperbg" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)">
+                <span style="font-size:11px;color:var(--text-sec)">Paper background</span>
+                <span class="gs-swatch" id="gs-paper-bg-sw" onclick="gsOpenPicker('gs-paper-bg')" ondblclick="gsNative('gs-paper-bg')" style="margin-left:auto"></span>
+            </div>
+        </div>
+        <!-- Text -->
         <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Text</div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-            <span style="font-size:11px;color:var(--text-sec)">Font size</span>
-            <input type="range" id="gs-font-size" min="8" max="20" value="12" style="flex:1">
-            <input type="number" id="gs-font-size-num" min="6" max="36" value="12" style="width:45px;font-size:11px;padding:2px 4px;text-align:center">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;font-size:11px;color:var(--text-sec)">
+            Font size <input type="range" id="gs-font-size" min="8" max="20" value="12" style="flex:1"> <input type="number" id="gs-font-size-num" min="6" max="36" value="12" style="width:40px;font-size:11px;padding:2px;text-align:center">
         </div>
-        <!-- Grid -->
-        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Grid &amp; Background</div>
-        <label class="checkbox-row"><input type="checkbox" id="gs-show-grid" checked onchange="applyGraphSettings()"> Show grid lines</label>
-        <label class="checkbox-row" style="margin-bottom:10px"><input type="checkbox" id="gs-transparent-bg" onchange="applyGraphSettings()"> Transparent background</label>
         <button class="btn-primary" onclick="document.getElementById('graph-settings-panel').classList.add('hidden')" style="width:100%">Done</button>
     </div>
     <!-- Hidden native color inputs -->
@@ -2041,15 +2043,18 @@ function applyGraphSettings(){
     const shape=document.getElementById('gs-dot-shape').value;
     const color=document.getElementById('gs-dot-color').value;
     const opacity=(+document.getElementById('gs-dot-opacity').value)/100;
+    const hollow=document.getElementById('gs-hollow').checked;
+    const fontSize=+document.getElementById('gs-font-size').value;
     const plotBg=document.getElementById('gs-plot-bg').value;
     const paperBg=document.getElementById('gs-paper-bg').value;
     const gridColor=document.getElementById('gs-grid-color').value;
     const showGrid=document.getElementById('gs-show-grid').checked;
-    const transparentBg=document.getElementById('gs-transparent-bg').checked;
+    const showPlotBg=document.getElementById('gs-show-plotbg').checked;
+    const showPaperBg=document.getElementById('gs-show-paperbg').checked;
     gsTargetPlots.forEach(plotId=>{
         const chart=CHARTS[plotId];if(!chart)return;
-        chart.restyle({size,symbol:shape,color,opacity});
-        chart.relayout({plotBg,paperBg,gridColor,showGrid,transparentBg});
+        chart.restyle({size,symbol:shape,color,opacity,hollow});
+        chart.relayout({plotBg:showPlotBg?plotBg:null,paperBg:showPaperBg?paperBg:null,gridColor,showGrid,transparentBg:!showPaperBg&&!showPlotBg,fontSize});
     });
 }
 

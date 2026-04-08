@@ -127,6 +127,8 @@ class ProkerChart {
         const w = el.clientWidth || 600;
         const h = el.clientHeight || 400;
         const T = this.opts.theme;
+        const fs = this._fontSize || 12;
+        const tfs = Math.max(8, fs - 1); // tick font size slightly smaller
         const { xScale, yScale, pw, ph, m } = this._computeScales(w, h);
 
         // Store for interactions
@@ -145,9 +147,11 @@ class ProkerChart {
         // Build SVG
         let svg = `<svg class="proker-svg" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased">`;
 
-        // Background (skip if transparent)
-        if (!this._transparentBg) {
+        // Background
+        if (!this._transparentBg && !this._hidePaperBg) {
             svg += `<rect width="${w}" height="${h}" fill="${T.bg}" rx="0"/>`;
+        }
+        if (!this._transparentBg && !this._hidePlotBg) {
             svg += `<rect x="${m.left}" y="${m.top}" width="${pw}" height="${ph}" fill="${T.plot}"/>`;
         }
 
@@ -170,7 +174,7 @@ class ProkerChart {
         xTicks.forEach(v => {
             const x = Math.round(m.left + xScale(v)) + 0.5;
             svg += `<line x1="${x}" y1="${m.top + ph}" x2="${x}" y2="${m.top + ph + 5}" stroke="${T.line}" stroke-width="1" shape-rendering="crispEdges"/>`;
-            svg += `<text x="${x}" y="${m.top + ph + 18}" text-anchor="middle" fill="${T.textSec}" font-size="11" class="tick-label" data-axis="x" data-val="${v}" style="cursor:pointer">${xFmt(v)}</text>`;
+            svg += `<text x="${x}" y="${m.top + ph + 18}" text-anchor="middle" fill="${T.textSec}" font-size="${tfs}" class="tick-label" data-axis="x" data-val="${v}" style="cursor:pointer">${xFmt(v)}</text>`;
         });
         svg += `</g>`;
 
@@ -179,7 +183,7 @@ class ProkerChart {
         yTicks.forEach(v => {
             const y = Math.round(m.top + yScale(v)) + 0.5;
             svg += `<line x1="${m.left - 5}" y1="${y}" x2="${m.left}" y2="${y}" stroke="${T.line}" stroke-width="1" shape-rendering="crispEdges"/>`;
-            svg += `<text x="${m.left - 8}" y="${y + 4}" text-anchor="end" fill="${T.textSec}" font-size="11" class="tick-label" data-axis="y" data-val="${v}" style="cursor:pointer">${yFmt(v)}</text>`;
+            svg += `<text x="${m.left - 8}" y="${y + 4}" text-anchor="end" fill="${T.textSec}" font-size="${tfs}" class="tick-label" data-axis="y" data-val="${v}" style="cursor:pointer">${yFmt(v)}</text>`;
         });
         svg += `</g>`;
 
@@ -187,18 +191,18 @@ class ProkerChart {
         if (this._chartTitle) {
             const tx = this._titlePos ? this._titlePos.x : m.left + pw / 2;
             const ty = this._titlePos ? this._titlePos.y : 18;
-            svg += `<text x="${tx}" y="${ty}" text-anchor="middle" fill="${T.text}" font-size="14" font-weight="400" class="chart-title draggable-text" style="cursor:move">${this._esc(this._chartTitle)}</text>`;
+            svg += `<text x="${tx}" y="${ty}" text-anchor="middle" fill="${T.text}" font-size="${fs+1}" font-weight="400" class="chart-title draggable-text" style="cursor:move">${this._esc(this._chartTitle)}</text>`;
         }
 
         // X axis title (draggable)
         const xTitleX = this._xTitlePos ? this._xTitlePos.x : m.left + pw / 2;
         const xTitleY = this._xTitlePos ? this._xTitlePos.y : h - 6;
-        svg += `<text x="${xTitleX}" y="${xTitleY}" text-anchor="middle" fill="${T.text}" font-size="13" font-weight="400" class="axis-title draggable-text" data-axis="x" style="cursor:move">${this._esc(this.xTitle)}</text>`;
+        svg += `<text x="${xTitleX}" y="${xTitleY}" text-anchor="middle" fill="${T.text}" font-size="${fs}" font-weight="400" class="axis-title draggable-text" data-axis="x" style="cursor:move">${this._esc(this.xTitle)}</text>`;
 
         // Y axis title (rotated, draggable)
         const yTitleX = this._yTitlePos ? this._yTitlePos.x : 15;
         const yTitleY = this._yTitlePos ? this._yTitlePos.y : m.top + ph / 2;
-        svg += `<text x="${yTitleX}" y="${yTitleY}" text-anchor="middle" fill="${T.text}" font-size="13" font-weight="400" class="axis-title draggable-text" data-axis="y" transform="rotate(-90,${yTitleX},${yTitleY})" style="cursor:move">${this._esc(this.yTitle)}</text>`;
+        svg += `<text x="${yTitleX}" y="${yTitleY}" text-anchor="middle" fill="${T.text}" font-size="${fs}" font-weight="400" class="axis-title draggable-text" data-axis="y" transform="rotate(-90,${yTitleX},${yTitleY})" style="cursor:move">${this._esc(this.yTitle)}</text>`;
 
         // Data points (clip to plot area)
         svg += `<defs><clipPath id="clip-${this._uid()}"><rect x="${m.left}" y="${m.top}" width="${pw}" height="${ph}"/></clipPath></defs>`;
@@ -239,9 +243,12 @@ class ProkerChart {
                 const hoverText = trace.text ? trace.text[i] || '' : '';
                 const customData = trace.customdata ? trace.customdata[i] || '' : '';
 
+                const isHollow = marker._hollow;
                 const attrs = `class="data-pt" data-ti="${ti}" data-i="${i}" data-x="${vx}" data-y="${vy}" data-hover="${this._esc(hoverText)}" data-custom="${this._esc(customData)}" style="cursor:pointer"`;
                 if (symbol === 'cross') {
                     svg += symFn(px, py, size) + `stroke="${c}" opacity="${opacity}" ${attrs}/>`;
+                } else if (isHollow) {
+                    svg += symFn(px, py, size) + `fill="none" stroke="${c}" stroke-width="1.5" opacity="${opacity}" ${attrs}/>`;
                 } else {
                     svg += symFn(px, py, size) + `fill="${c}" fill-opacity="${opacity}" stroke="${T.plot}" stroke-width="1" ${attrs}/>`;
                 }
@@ -974,7 +981,6 @@ class ProkerChart {
 
     // ── Restyle (for graph settings) ─────────────────────────────
     restyle(props) {
-        // Only apply single color if there's exactly one trace (don't override multi-group colors)
         const applyColor = props.color && this.traces.length === 1 && !Array.isArray(this.traces[0]?.marker?.color);
         this.traces.forEach(trace => {
             if (!trace.marker) trace.marker = {};
@@ -982,6 +988,7 @@ class ProkerChart {
             if (props.symbol) trace.marker.symbol = props.symbol;
             if (applyColor) trace.marker.color = props.color;
             if (props.opacity != null) trace.marker.opacity = props.opacity;
+            if (props.hollow !== undefined) trace.marker._hollow = props.hollow;
         });
         this.render();
         return this;
@@ -989,11 +996,15 @@ class ProkerChart {
 
     relayout(props) {
         if (props.plotBg) this.opts.theme.plot = props.plotBg;
+        else if (props.plotBg === null) this._hidePlotBg = true;
+        if (props.plotBg) this._hidePlotBg = false;
         if (props.paperBg) this.opts.theme.bg = props.paperBg;
+        else if (props.paperBg === null) this._hidePaperBg = true;
+        if (props.paperBg) this._hidePaperBg = false;
         if (props.gridColor) this.opts.theme.grid = props.gridColor;
         if (props.showGrid !== undefined) this._showGrid = props.showGrid;
         if (props.transparentBg !== undefined) this._transparentBg = props.transparentBg;
-        if (props.fontSize) { /* stored but SVG regenerated on render */ }
+        if (props.fontSize) this._fontSize = props.fontSize;
         this.render();
         return this;
     }
