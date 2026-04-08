@@ -698,6 +698,11 @@ class ProkerChart {
             items += `<div class="rc-item" data-action="clearlabels">&#10005; Clear all labels</div>`;
         }
         items += `<div class="rc-item" data-action="resetcolors">&#8634; Reset colors</div>`;
+        items += `<div class="rc-sep"></div>`;
+        items += `<div class="rc-item" data-action="freeze">${this._frozen?'&#128275; Unfreeze data':'&#128274; Freeze data'}</div>`;
+        if (this._frozen) {
+            items += `<div class="rc-item" data-action="updatefrozen">&#8635; Update to current data</div>`;
+        }
         menu.innerHTML = items;
         document.body.appendChild(menu);
 
@@ -726,6 +731,8 @@ class ProkerChart {
                 else if (action === 'resetzoom') this._resetZoom();
                 else if (action === 'clearlabels') this.clearAnnotations();
                 else if (action === 'resetcolors') this._emit('resetcolors', {});
+                else if (action === 'freeze') this._emit('freeze', {});
+                else if (action === 'updatefrozen') this._emit('updatefrozen', {});
                 this._closeContextMenu();
                 if (action !== 'settings') this._clearSelection();
             });

@@ -523,10 +523,10 @@ async function uploadFile(file,append){
                 </div>
             </div>
             <div style="padding:0 12px 12px 37px">
-                <select id="proc-agg" onchange="updateProcPreview()">
-                    <option value="average">Averages (default)</option>
-                    <option value="sum">Sums</option>
-                </select>
+                <div style="display:flex;gap:12px">
+                    <label class="checkbox-row"><input type="radio" name="proc-agg" value="average" checked onchange="updateProcPreview()" style="accent-color:var(--accent)"> Averages</label>
+                    <label class="checkbox-row"><input type="radio" name="proc-agg" value="sum" onchange="updateProcPreview()" style="accent-color:var(--accent)"> Sums</label>
+                </div>
                 <div id="agg-warn" class="hidden" style="margin-top:6px;font-size:11px;color:var(--warning)">Note: Statistical tests (t-test, p-values, volcano plots) cannot be performed when using sums, as individual replicate variance is lost.</div>
             </div>
         </div>
@@ -817,7 +817,7 @@ function togglePruneGrp(){document.getElementById('prune-group').classList.toggl
 function populatePruneGrp(){const s=document.getElementById('prune-group');s.innerHTML='';BINS.filter(b=>b.samples.length>0).forEach(b=>{const o=document.createElement('option');o.value=b.label;o.textContent=b.label;s.appendChild(o)})}
 function updateProcPreview(){
     // Show/hide sums warning
-    const isSums = document.getElementById('proc-agg')?.value === 'sum';
+    const isSums = isAggSum();
     document.getElementById('agg-warn')?.classList.toggle('hidden', !isSums);
     // Rebuild the processed data from all upstream settings and re-render all canvas plots
     buildProcessedData();
@@ -1004,7 +1004,7 @@ function passesPruneThreshold(proteinIdx, samples, qd, threshold, agg){
 // Convenience wrappers — plots use these (they read from PROC_* cache)
 function getQData(){ return {qt: PROC_QT, data: PROC_QD}; }
 function getFilteredIdx(){ return PROC_FIDX; }
-function isAggSum(){return document.getElementById('proc-agg')?.value==='sum'}
+function isAggSum(){return document.querySelector('input[name="proc-agg"]:checked')?.value==='sum'}
 function grpMean(fi,grp,qd,fidx){
     const bin=BINS.find(b=>b.label===grp);
     if(bin){const vals=bin.samples.map(s=>qd[s]?qd[s][fi]:0);if(!vals.length)return 0;return isAggSum()?vals.reduce((a,b)=>a+b,0):vals.reduce((a,b)=>a+b,0)/vals.length}
@@ -1271,6 +1271,10 @@ function setupPlotResize(wrap,plotId){
 // ================================================================
 
 function renderPlot(p,qd,fidx){
+    // Skip frozen plots unless forced
+    if(p.frozen&&!p._forceUpdate)return;
+    p._forceUpdate=false;
+
     const div=document.getElementById(p.plotId);if(!div)return;
     if(CHARTS[p.plotId]){CHARTS[p.plotId].destroy();delete CHARTS[p.plotId]}
     const chart=new ProkerChart(div,{theme:getChartTheme()});
@@ -1283,7 +1287,55 @@ function renderPlot(p,qd,fidx){
     else if(p.type==='pca') buildPCAConfig(chart,p,qd,fidx);
 
     chart.on('dblclick',()=>openGraphSettingsForPlot(p.plotId));
-    chart.on('resetcolors',()=>{const{data:q}=getQData();renderPlot(p,q,getFilteredIdx())});
+    chart.on('resetcolors',()=>{p._forceUpdate=true;const{data:q}=getQData();renderPlot(p,q,getFilteredIdx())});
+    chart.on('freeze',()=>freezePlot(p.plotId));
+    chart.on('updatefrozen',()=>updateFrozenPlot(p.plotId));
+    chart._frozen=p.frozen||false;
+
+    // Store snapshot of current settings when rendered
+    p._snapshot={
+        qt:PROC_QT,
+        agg:isAggSum()?'sum':'average',
+        norm:document.getElementById('proc-norm')?.checked,
+        intensity:document.getElementById('proc-intensity')?.checked,
+        lfq:document.getElementById('proc-lfq')?.checked,
+        filteredCount:fidx.length,
+        groups:BINS.filter(b=>b.samples.length>0).map(b=>b.label+' ('+b.samples.join(',')+')').join('; '),
+    };
+
+    // Show frozen indicator
+    const wrap=div.closest('.canvas-plot');
+    if(wrap){
+        wrap.querySelector('.frozen-badge')?.remove();
+        if(p.frozen){
+            const badge=document.createElement('div');
+            badge.className='frozen-badge';
+            badge.style.cssText='position:absolute;top:4px;left:4px;font-size:9px;background:var(--accent);color:#fff;padding:1px 6px;border-radius:8px;z-index:6;opacity:0.8';
+            badge.textContent='FROZEN';
+            badge.title='Data locked. Right-click to update.\n\nSettings: '+Object.entries(p._snapshot).map(([k,v])=>k+': '+v).join(', ');
+            wrap.style.position='relative';
+            wrap.appendChild(badge);
+        }
+    }
+}
+
+function freezePlot(plotId){
+    const p=CANVAS_PLOTS.find(c=>c.plotId===plotId);
+    if(!p)return;
+    p.frozen=!p.frozen;
+    // Re-render to show/hide badge
+    const{data:qd}=getQData();const fidx=getFilteredIdx();
+    p._forceUpdate=true;
+    renderPlot(p,qd,fidx);
+}
+
+function updateFrozenPlot(plotId){
+    const p=CANVAS_PLOTS.find(c=>c.plotId===plotId);
+    if(!p)return;
+    p._forceUpdate=true;
+    buildProcessedData();
+    const{data:qd}=getQData();const fidx=getFilteredIdx();
+    renderPlot(p,qd,fidx);
 }
 
 function refreshAllPlots(){
@@ -1326,8 +1378,24 @@ function buildUniqueConfig(chart,p,qd,fidx){
         items.push({label:pLabel(fidx,fi),abund:fm,full:pFullLabel(fidx,fi)});
     }
     items.sort((a,b)=>b.abund-a.abund);const shown=items.slice(0,60);
-    const band=shown.length>1?(shown[0].abund-shown[shown.length-1].abund)/50:1;
-    const jittered=shown.map((d,i)=>{let jx=0,crowd=0;for(let j=i-1;j>=0&&j>=i-8;j--){if(Math.abs(shown[i].abund-shown[j].abund)<(band||1))crowd++}if(crowd>0)jx=(crowd%2===1?1:-1)*Math.ceil(crowd/2)*0.06;return{x:jx,y:d.abund,label:d.label,full:d.full}});
+    // Beeswarm: place each point, check collision with all placed points, offset horizontally
+    const radius=0.04; // collision radius in x-units
+    const placed=[];
+    const jittered=shown.map(d=>{
+        let bestX=0;
+        // Try x=0 first, then alternate left/right with increasing offset
+        for(let attempt=0;attempt<20;attempt++){
+            const tryX=attempt===0?0:((attempt%2?1:-1)*Math.ceil(attempt/2)*radius*2);
+            let collides=false;
+            for(const p of placed){
+                if(Math.abs(p.y-d.abund)<(radius*200)&&Math.abs(p.x-tryX)<radius*1.8){collides=true;break}
+            }
+            if(!collides){bestX=tryX;break}
+        }
+        const pt={x:bestX,y:d.abund,label:d.label,full:d.full};
+        placed.push(pt);
+        return pt;
+    });
     chart.setData([{x:jittered.map(d=>d.x),y:jittered.map(d=>d.y),mode:'markers',marker:{size:7,color:grpColor(featured),symbol:'circle'},text:jittered.map(d=>d.label+'<br>Abundance: '+fmtVal(d.y)),customdata:jittered.map(d=>d.full)}]);
     chart.setChartTitle(p.title||'').setXTitle('').setYTitle('Abundance');
     const wrap=chart.container.closest('.canvas-plot');
@@ -1809,7 +1877,7 @@ function buildSessionObject(){
         processing:{
             intensity:document.getElementById('proc-intensity')?.checked!==false,
             lfq:document.getElementById('proc-lfq')?.checked!==false,
-            agg:document.getElementById('proc-agg')?.value||'average',
+            agg:document.querySelector('input[name="proc-agg"]:checked')?.value||'average',
             norm:document.getElementById('proc-norm')?.checked||false,
             normScope:document.getElementById('norm-scope')?.value||'all',
             normRmContam:document.getElementById('norm-rm-contam')?.checked||false,
@@ -1842,7 +1910,8 @@ function loadSession(file){
                 const p=s.processing;
                 const setChk=(id,v)=>{const el=document.getElementById(id);if(el)el.checked=!!v};
                 const setVal=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v||''};
-                setChk('proc-intensity',p.intensity!==false);setChk('proc-lfq',p.lfq!==false);toggleIntensityOpts();setVal('proc-agg',p.agg);
+                setChk('proc-intensity',p.intensity!==false);setChk('proc-lfq',p.lfq!==false);toggleIntensityOpts();
+                const aggRadio=document.querySelector('input[name="proc-agg"][value="'+(p.agg||'average')+'"]');if(aggRadio)aggRadio.checked=true;
                 setChk('proc-norm',p.norm);setVal('norm-scope',p.normScope);
                 setChk('norm-rm-contam',p.normRmContam);
                 setChk('proc-prune',p.prune);setVal('prune-metric',p.pruneMetric);
