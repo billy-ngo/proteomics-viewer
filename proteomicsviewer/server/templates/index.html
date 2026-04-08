@@ -954,27 +954,41 @@ function updateToolbar(el,pointData){
         const cs=getComputedStyle(el);
         const isBold=cs.fontWeight>=600||cs.fontWeight==='bold';
         const isItalic=cs.fontStyle==='italic';
+        const isUnderline=cs.textDecorationLine?.includes('underline')||el.style.textDecoration?.includes('underline');
         const size=parseInt(cs.fontSize)||13;
+        const align=cs.textAlign||'left';
         html+=`<div class="tb-sep"></div>
             <button class="${isBold?'tb-active':''}" onclick="tbToggleBold()" title="Bold"><b>B</b></button>
             <button class="${isItalic?'tb-active':''}" onclick="tbToggleItalic()" title="Italic"><i>I</i></button>
+            <button class="${isUnderline?'tb-active':''}" onclick="tbToggleUnderline()" title="Underline" style="text-decoration:underline">U</button>
             <select onchange="tbFontSize(this.value)" title="Font size">
-                ${[9,10,11,12,13,14,16,18,20,24,28,32].map(s=>`<option value="${s}" ${s===size?'selected':''}>${s}px</option>`).join('')}
+                ${[8,9,10,11,12,13,14,16,18,20,24,28,32,36,48].map(s=>`<option value="${s}" ${s===size?'selected':''}>${s}px</option>`).join('')}
             </select>
             <span class="tb-color-swatch" id="tb-text-color" style="background:${tbColorToHex(el.style?.color||cs.color)}" onclick="tbOpenTextSwatch(this)" ondblclick="tbNativeTextColor()" title="Text color"></span>
             <select onchange="tbFontFamily(this.value)" title="Font" style="max-width:100px">
-                ${['Arial','Georgia','Courier New','Times New Roman','Verdana'].map(f=>`<option value="${f}" ${cs.fontFamily.includes(f)?'selected':''}>${f}</option>`).join('')}
+                ${['Arial','Georgia','Courier New','Times New Roman','Verdana','Helvetica'].map(f=>`<option value="${f}" ${cs.fontFamily.includes(f)?'selected':''}>${f}</option>`).join('')}
+            </select>
+            <select onchange="tbTextAlign(this.value)" title="Alignment">
+                ${['left','center','right'].map(a=>`<option value="${a}" ${align===a?'selected':''}>${a[0].toUpperCase()+a.slice(1)}</option>`).join('')}
             </select>`;
-    } else if(el&&(el.closest?.('.canvas-anno-wrap')&&el.querySelector?.('line'))){
-        const line=el.querySelector('line')||el.closest('svg')?.querySelector('line');
+    } else if(el&&(el.closest?.('.canvas-anno-wrap')&&(el.querySelector?.('line')||el.querySelector?.('svg line')))){
+        const line=el.querySelector('line')||el.querySelector('svg line');
         if(line){
             const sw=line.getAttribute('stroke-width')||'2';
+            const dash=line.getAttribute('stroke-dasharray')||'';
+            const hasArrow=!!el.querySelector('marker');
             html+=`<div class="tb-sep"></div><span style="opacity:0.5">Line:</span>
                 <select onchange="tbLineWidth(this.value)">
                     ${[1,1.5,2,3,4,5].map(w=>`<option value="${w}" ${parseFloat(sw)===w?'selected':''}>${w}px</option>`).join('')}
                 </select>
                 <span class="tb-color-swatch" id="tb-line-color" style="background:${tbColorToHex(line.getAttribute('stroke'))}" onclick="tbOpenLineSwatch(this)" ondblclick="tbNativeLineColor()"></span>
-                <select onchange="tbLineDash(this.value)"><option value="">Solid</option><option value="6,3">Dashed</option><option value="2,2">Dotted</option></select>`;
+                <select onchange="tbLineDash(this.value)">
+                    <option value="" ${dash===''?'selected':''}>Solid</option>
+                    <option value="6,3" ${dash==='6,3'?'selected':''}>Dashed</option>
+                    <option value="2,2" ${dash==='2,2'?'selected':''}>Dotted</option>
+                    <option value="8,3,2,3" ${dash==='8,3,2,3'?'selected':''}>Dash-dot</option>
+                </select>
+                <button class="${hasArrow?'tb-active':''}" onclick="tbToggleArrow()" title="Arrowhead">&#9654;</button>`;
         }
     }
     tb.innerHTML=html;
@@ -1002,17 +1016,34 @@ function tbNativePointColor(){
 }
 function tbOpenTextSwatch(el){showColorSwatch(el,tbColorToHex(tbSelectedEl?.style?.color||'#e6edf3'),c=>{if(tbSelectedEl){tbSelectedEl.style.color=c;el.style.background=c}})}
 function tbNativeTextColor(){openNativeColorPicker(tbColorToHex(tbSelectedEl?.style?.color||'#e6edf3'),c=>{if(tbSelectedEl)tbSelectedEl.style.color=c;var sw=document.getElementById('tb-text-color');if(sw)sw.style.background=c})}
-function tbOpenLineSwatch(el){var line=tbSelectedEl?.querySelector('line');showColorSwatch(el,tbColorToHex(line?.getAttribute('stroke')||'#e6edf3'),c=>{if(line){line.setAttribute('stroke',c);el.style.background=c}})}
-function tbNativeLineColor(){var line=tbSelectedEl?.querySelector('line');openNativeColorPicker(tbColorToHex(line?.getAttribute('stroke')||'#e6edf3'),c=>{if(line)line.setAttribute('stroke',c);var sw=document.getElementById('tb-line-color');if(sw)sw.style.background=c})}
+function _tbLine(){return tbSelectedEl?.querySelector('line')||tbSelectedEl?.querySelector('svg line')}
+function tbOpenLineSwatch(el){var line=_tbLine();showColorSwatch(el,tbColorToHex(line?.getAttribute('stroke')||'#e6edf3'),c=>{if(line){line.setAttribute('stroke',c);el.style.background=c}})}
+function tbNativeLineColor(){var line=_tbLine();openNativeColorPicker(tbColorToHex(line?.getAttribute('stroke')||'#e6edf3'),c=>{if(line)line.setAttribute('stroke',c);var sw=document.getElementById('tb-line-color');if(sw)sw.style.background=c})}
 
 function tbToggleBold(){if(!tbSelectedEl)return;const cs=getComputedStyle(tbSelectedEl);tbSelectedEl.style.fontWeight=cs.fontWeight>=600?'400':'700';updateToolbar(tbSelectedEl)}
 function tbToggleItalic(){if(!tbSelectedEl)return;const cs=getComputedStyle(tbSelectedEl);tbSelectedEl.style.fontStyle=cs.fontStyle==='italic'?'normal':'italic';updateToolbar(tbSelectedEl)}
 function tbFontSize(v){if(!tbSelectedEl)return;tbSelectedEl.style.fontSize=v+'px'}
 function tbFontColor(v){if(!tbSelectedEl)return;tbSelectedEl.style.color=v}
 function tbFontFamily(v){if(!tbSelectedEl)return;tbSelectedEl.style.fontFamily=v}
-function tbLineWidth(v){if(!tbSelectedEl)return;const line=tbSelectedEl.querySelector('line')||tbSelectedEl.closest('svg')?.querySelector('line');if(line)line.setAttribute('stroke-width',v)}
-function tbLineColor(v){if(!tbSelectedEl)return;const line=tbSelectedEl.querySelector('line')||tbSelectedEl.closest('svg')?.querySelector('line');if(line)line.setAttribute('stroke',v)}
-function tbLineDash(v){if(!tbSelectedEl)return;const line=tbSelectedEl.querySelector('line')||tbSelectedEl.closest('svg')?.querySelector('line');if(line)line.setAttribute('stroke-dasharray',v)}
+function tbLineWidth(v){const line=_tbLine();if(line)line.setAttribute('stroke-width',v)}
+function tbLineColor(v){const line=_tbLine();if(line)line.setAttribute('stroke',v)}
+function tbLineDash(v){const line=_tbLine();if(line)line.setAttribute('stroke-dasharray',v)}
+function tbToggleUnderline(){if(!tbSelectedEl)return;const has=tbSelectedEl.style.textDecoration?.includes('underline');tbSelectedEl.style.textDecoration=has?'none':'underline';updateToolbar(tbSelectedEl)}
+function tbTextAlign(v){if(!tbSelectedEl)return;tbSelectedEl.style.textAlign=v}
+function tbToggleArrow(){
+    if(!tbSelectedEl)return;
+    const svg=tbSelectedEl.querySelector('svg');if(!svg)return;
+    const line=svg.querySelector('line');if(!line)return;
+    const existing=svg.querySelector('defs');
+    if(existing){existing.remove();line.removeAttribute('marker-end');updateToolbar(tbSelectedEl);return}
+    const color=line.getAttribute('stroke')||'var(--text)';
+    const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+    const mid='arrow-'+Date.now();
+    defs.innerHTML=`<marker id="${mid}" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${color}"/></marker>`;
+    svg.prepend(defs);
+    line.setAttribute('marker-end',`url(#${mid})`);
+    updateToolbar(tbSelectedEl);
+}
 function tbColorToHex(c){if(!c||c.startsWith('var'))return'#e6edf3';if(c.startsWith('#'))return c;const m=c.match(/(\d+)/g);if(m&&m.length>=3)return'#'+m.slice(0,3).map(v=>(+v).toString(16).padStart(2,'0')).join('');return'#e6edf3'}
 
 // Listen for text box focus/blur to update toolbar
@@ -2396,6 +2427,10 @@ function addCanvasTextBox(){
         wrap.style.top=(origT+e.clientY-startY)+'px';
     });
     document.addEventListener('mouseup',()=>{if(dragging){dragging=false;document.body.style.cursor=''}});
+    // Single click selects for toolbar; double-click enters edit mode
+    tb.addEventListener('click',e=>{
+        if(document.activeElement!==tb) updateToolbar(tb);
+    });
     tb.addEventListener('dblclick',()=>tb.focus());
 }
 
@@ -2405,14 +2440,15 @@ function addCanvasLine(){
     const wrap=document.createElement('div');
     wrap.className='canvas-anno-wrap';
     wrap.style.cssText='position:absolute;left:50px;top:100px;width:200px;height:40px';
-    // Use absolute pixel positions for endpoints
     let x1=0,y1=20,x2=200,y2=20;
+    // Whole-wrap drag state (separate from endpoint drag)
+    let wDrag=false,wSX,wSY,wOL,wOT;
     function buildSVG(){
         const minX=Math.min(x1,x2)-10,minY=Math.min(y1,y2)-10;
         const w=Math.abs(x2-x1)+20,h=Math.abs(y2-y1)+20;
         wrap.style.width=w+'px';wrap.style.height=h+'px';
-        wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button><svg width="${w}" height="${h}" style="position:absolute;left:0;top:0;overflow:visible"><line x1="${x1-minX}" y1="${y1-minY}" x2="${x2-minX}" y2="${y2-minY}" stroke="var(--text)" stroke-width="2"/></svg><div class="canvas-line-handle" style="left:${x1-minX-5}px;top:${y1-minY-5}px" data-end="1"></div><div class="canvas-line-handle" style="left:${x2-minX-5}px;top:${y2-minY-5}px" data-end="2"></div>`;
-        // Re-attach endpoint drag
+        wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button><svg width="${w}" height="${h}" style="position:absolute;left:0;top:0;overflow:visible;cursor:move"><line x1="${x1-minX}" y1="${y1-minY}" x2="${x2-minX}" y2="${y2-minY}" stroke="var(--text)" stroke-width="2"/></svg><div class="canvas-line-handle" style="left:${x1-minX-5}px;top:${y1-minY-5}px" data-end="1"></div><div class="canvas-line-handle" style="left:${x2-minX-5}px;top:${y2-minY-5}px" data-end="2"></div>`;
+        // Endpoint drag
         wrap.querySelectorAll('.canvas-line-handle').forEach(h=>{
             let dr=false,sx,sy,ox1,oy1,ox2,oy2;
             h.addEventListener('mousedown',e=>{
@@ -2428,11 +2464,27 @@ function addCanvasLine(){
             });
             document.addEventListener('mouseup',()=>{if(dr){dr=false;document.body.style.cursor=''}});
         });
+        // Whole-line drag via SVG body
+        const svg=wrap.querySelector('svg');
+        svg.addEventListener('mousedown',e=>{
+            if(e.target.closest('.canvas-line-handle'))return;
+            e.preventDefault();e.stopPropagation();
+            wDrag=true;wSX=e.clientX;wSY=e.clientY;
+            wOL=parseFloat(wrap.style.left)||0;wOT=parseFloat(wrap.style.top)||0;
+            document.body.style.cursor='move';
+        });
+        // Click SVG to select line for toolbar
+        svg.addEventListener('click',e=>{
+            if(!e.defaultPrevented) updateToolbar(wrap);
+        });
     }
-    buildSVG();
-    // Drag whole line by SVG body
-    _makeDraggable(wrap,wrap.querySelector('svg'));
+    document.addEventListener('mousemove',e=>{
+        if(!wDrag)return;
+        wrap.style.left=(wOL+e.clientX-wSX)+'px';
+        wrap.style.top=(wOT+e.clientY-wSY)+'px';
+    });
     document.addEventListener('mouseup',()=>{if(wDrag){wDrag=false;document.body.style.cursor=''}});
+    buildSVG();
 }
 
 function doExport(fmt){
