@@ -1416,96 +1416,85 @@ function exportAllPNG(){
 // ================================================================
 var canvasAnnoId=0;
 
-function addCanvasTextBox(){
-    const canvas=document.getElementById('canvas');if(!canvas)return;
-    const id='anno-'+canvasAnnoId++;
-    const wrap=document.createElement('div');
-    wrap.className='canvas-anno-wrap';wrap.id=id;
-    wrap.style.cssText='position:relative;display:inline-block;margin:4px 8px';
-    wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button><div class="canvas-textbox" contenteditable="true" style="cursor:move">Text</div>`;
-    canvas.appendChild(wrap);
-    // Make draggable
-    const tb=wrap.querySelector('.canvas-textbox');
-    let dragging=false,startX,startY,origL,origT;
-    tb.addEventListener('mousedown',e=>{
-        if(document.activeElement===tb&&tb.isContentEditable)return;// editing
+function _makeDraggable(el,handle){
+    // Clean, absolute-position dragging with no jitter
+    let dragging=false,origL,origT,startX,startY;
+    handle.addEventListener('mousedown',e=>{
+        if(e.button!==0)return;
+        e.preventDefault();e.stopPropagation();
         dragging=true;startX=e.clientX;startY=e.clientY;
-        const r=wrap.getBoundingClientRect();origL=r.left;origT=r.top;
-        document.body.style.cursor='move';e.preventDefault();
+        origL=parseFloat(el.style.left)||0;
+        origT=parseFloat(el.style.top)||0;
+        el.style.position='absolute';
+        document.body.style.cursor='move';
     });
     document.addEventListener('mousemove',e=>{
         if(!dragging)return;
-        wrap.style.position='absolute';
-        const canvasR=canvas.getBoundingClientRect();
-        wrap.style.left=(origL-canvasR.left+(e.clientX-startX))+'px';
-        wrap.style.top=(origT-canvasR.top+(e.clientY-startY))+'px';
+        el.style.left=(origL+e.clientX-startX)+'px';
+        el.style.top=(origT+e.clientY-startY)+'px';
     });
     document.addEventListener('mouseup',()=>{if(dragging){dragging=false;document.body.style.cursor=''}});
-    // Double-click to edit
-    tb.addEventListener('dblclick',()=>{tb.style.cursor='text';tb.focus()});
-    tb.addEventListener('blur',()=>{tb.style.cursor='move'});
+}
+
+function addCanvasTextBox(){
+    const canvas=document.getElementById('canvas');if(!canvas)return;
+    const wrap=document.createElement('div');
+    wrap.className='canvas-anno-wrap';
+    wrap.style.cssText='position:absolute;left:50px;top:50px';
+    wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button><div class="canvas-textbox" contenteditable="true">Text</div>`;
+    canvas.style.position='relative';
+    canvas.appendChild(wrap);
+    const tb=wrap.querySelector('.canvas-textbox');
+    // Drag by the text box (unless editing)
+    let dragging=false,origL,origT,startX,startY;
+    tb.addEventListener('mousedown',e=>{
+        if(document.activeElement===tb)return;
+        e.preventDefault();dragging=true;startX=e.clientX;startY=e.clientY;
+        origL=parseFloat(wrap.style.left)||0;origT=parseFloat(wrap.style.top)||0;
+        document.body.style.cursor='move';
+    });
+    document.addEventListener('mousemove',e=>{
+        if(!dragging)return;
+        wrap.style.left=(origL+e.clientX-startX)+'px';
+        wrap.style.top=(origT+e.clientY-startY)+'px';
+    });
+    document.addEventListener('mouseup',()=>{if(dragging){dragging=false;document.body.style.cursor=''}});
+    tb.addEventListener('dblclick',()=>tb.focus());
 }
 
 function addCanvasLine(){
     const canvas=document.getElementById('canvas');if(!canvas)return;
-    const id='anno-'+canvasAnnoId++;
+    canvas.style.position='relative';
     const wrap=document.createElement('div');
-    wrap.className='canvas-anno-wrap';wrap.id=id;
-    wrap.style.cssText='position:relative;margin:4px 8px';
-    // SVG line with two draggable endpoints
-    const lineW=200,lineH=2;
-    wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button><svg width="200" height="40" style="overflow:visible"><line x1="0" y1="20" x2="200" y2="20" stroke="var(--text)" stroke-width="2" class="canvas-line-svg"/></svg><div class="canvas-line-handle" style="left:-5px;top:15px" data-end="1"></div><div class="canvas-line-handle" style="left:195px;top:15px" data-end="2"></div>`;
-    canvas.appendChild(wrap);
-
-    // Make entire line draggable
-    const svg=wrap.querySelector('svg');
-    const line=wrap.querySelector('line');
-    const h1=wrap.querySelector('[data-end="1"]');
-    const h2=wrap.querySelector('[data-end="2"]');
-
-    // Drag endpoints
-    [h1,h2].forEach(handle=>{
-        let dragging=false,startX,startY;
-        handle.addEventListener('mousedown',e=>{
-            dragging=true;startX=e.clientX;startY=e.clientY;
-            document.body.style.cursor='move';e.preventDefault();e.stopPropagation();
+    wrap.className='canvas-anno-wrap';
+    wrap.style.cssText='position:absolute;left:50px;top:100px;width:200px;height:40px';
+    // Use absolute pixel positions for endpoints
+    let x1=0,y1=20,x2=200,y2=20;
+    function buildSVG(){
+        const minX=Math.min(x1,x2)-10,minY=Math.min(y1,y2)-10;
+        const w=Math.abs(x2-x1)+20,h=Math.abs(y2-y1)+20;
+        wrap.style.width=w+'px';wrap.style.height=h+'px';
+        wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button><svg width="${w}" height="${h}" style="position:absolute;left:0;top:0;overflow:visible"><line x1="${x1-minX}" y1="${y1-minY}" x2="${x2-minX}" y2="${y2-minY}" stroke="var(--text)" stroke-width="2"/></svg><div class="canvas-line-handle" style="left:${x1-minX-5}px;top:${y1-minY-5}px" data-end="1"></div><div class="canvas-line-handle" style="left:${x2-minX-5}px;top:${y2-minY-5}px" data-end="2"></div>`;
+        // Re-attach endpoint drag
+        wrap.querySelectorAll('.canvas-line-handle').forEach(h=>{
+            let dr=false,sx,sy,ox1,oy1,ox2,oy2;
+            h.addEventListener('mousedown',e=>{
+                e.preventDefault();e.stopPropagation();
+                dr=true;sx=e.clientX;sy=e.clientY;ox1=x1;oy1=y1;ox2=x2;oy2=y2;
+                document.body.style.cursor='move';
+            });
+            document.addEventListener('mousemove',e=>{
+                if(!dr)return;
+                const dx=e.clientX-sx,dy=e.clientY-sy;
+                if(h.dataset.end==='1'){x1=ox1+dx;y1=oy1+dy}else{x2=ox2+dx;y2=oy2+dy}
+                buildSVG();
+            });
+            document.addEventListener('mouseup',()=>{if(dr){dr=false;document.body.style.cursor=''}});
         });
-        document.addEventListener('mousemove',e=>{
-            if(!dragging)return;
-            const dx=e.clientX-startX,dy=e.clientY-startY;
-            startX=e.clientX;startY=e.clientY;
-            const cl=parseFloat(handle.style.left)||0;
-            const ct=parseFloat(handle.style.top)||0;
-            handle.style.left=(cl+dx)+'px';handle.style.top=(ct+dy)+'px';
-            // Update SVG line
-            const end=handle.dataset.end;
-            if(end==='1'){line.setAttribute('x1',cl+dx+5);line.setAttribute('y1',ct+dy+5)}
-            else{line.setAttribute('x2',cl+dx+5);line.setAttribute('y2',ct+dy+5)}
-            // Resize SVG to fit
-            const x1=parseFloat(line.getAttribute('x1')),y1=parseFloat(line.getAttribute('y1'));
-            const x2=parseFloat(line.getAttribute('x2')),y2=parseFloat(line.getAttribute('y2'));
-            svg.setAttribute('width',Math.max(Math.abs(x2-x1)+20,40));
-            svg.setAttribute('height',Math.max(Math.abs(y2-y1)+20,40));
-        });
-        document.addEventListener('mouseup',()=>{if(dragging){dragging=false;document.body.style.cursor=''}});
-    });
-
-    // Drag whole line
-    let wDrag=false,wSX,wSY;
-    svg.style.cursor='move';
-    svg.addEventListener('mousedown',e=>{
-        wDrag=true;wSX=e.clientX;wSY=e.clientY;
-        document.body.style.cursor='move';e.preventDefault();
-    });
-    document.addEventListener('mousemove',e=>{
-        if(!wDrag)return;
-        const dx=e.clientX-wSX,dy=e.clientY-wSY;wSX=e.clientX;wSY=e.clientY;
-        wrap.style.position='absolute';
-        const canvasR=canvas.getBoundingClientRect();
-        const r=wrap.getBoundingClientRect();
-        wrap.style.left=(r.left-canvasR.left+dx)+'px';
-        wrap.style.top=(r.top-canvasR.top+dy)+'px';
-    });
+    }
+    buildSVG();
+    // Drag whole line by SVG body
+    _makeDraggable(wrap,wrap.querySelector('svg'));
     document.addEventListener('mouseup',()=>{if(wDrag){wDrag=false;document.body.style.cursor=''}});
 }
 
