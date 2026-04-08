@@ -92,7 +92,8 @@ class ProkerChart {
 
         // Auto-fit: if one axis is manual and the other is not, fit the auto axis
         // to the data visible within the manual axis range
-        if (this._xManual && !this._yManual && allX.length) {
+        // Skip auto-fit if chart has axis breaks (dotplot) to preserve break structure
+        if (this._xManual && !this._yManual && allX.length && !(this._axisBreaks && this._axisBreaks.length)) {
             const visibleY = [];
             this.traces.forEach(t => {
                 if (!t.x || !t.y) return;
@@ -102,7 +103,7 @@ class ProkerChart {
             });
             if (visibleY.length) { yMin = Math.min(...visibleY); yMax = Math.max(...visibleY); const pad = (yMax - yMin) * 0.05 || 0.5; yMin -= pad; yMax += pad; }
         }
-        if (this._yManual && !this._xManual && allY.length) {
+        if (this._yManual && !this._xManual && allY.length && !(this._axisBreaks && this._axisBreaks.length)) {
             const visibleX = [];
             this.traces.forEach(t => {
                 if (!t.x || !t.y) return;
@@ -580,7 +581,16 @@ class ProkerChart {
                 wrap.style.top = (origT + (e.clientY - startMY) / scale) + 'px';
             });
             document.addEventListener('mouseup', () => {
-                if (dragging) { dragging = false; document.body.style.cursor = ''; }
+                if (dragging) {
+                    dragging = false; document.body.style.cursor = '';
+                    const wrap = this.container.closest('.canvas-plot');
+                    if (wrap && typeof pushUndo === 'function') {
+                        const newL = parseFloat(wrap.style.left)||0, newT = parseFloat(wrap.style.top)||0;
+                        if (newL !== origL || newT !== origT) {
+                            pushUndo('moveGraph', { plotId: this.container.id, oldL: origL, oldT: origT, newL, newT });
+                        }
+                    }
+                }
             });
         }
 
@@ -614,18 +624,20 @@ class ProkerChart {
     // ── Annotation toggle ────────────────────────────────────────
     _toggleAnnotation(x, y, text) {
         const key = x + '_' + y;
+        const plotId = this.container?.id;
         const idx = this.annotations.findIndex(a => a.key === key);
         if (idx >= 0) {
-            this.annotations.splice(idx, 1);
+            const removed = this.annotations.splice(idx, 1)[0];
+            if (typeof pushUndo === 'function') pushUndo('removeLabel', { plotId, ann: removed });
         } else {
-            // Smart offset: alternate sides, stagger
             const i = this.annotations.length;
             const side = (i % 2 === 0) ? 1 : -1;
             const ax = 35 * side + Math.floor(i / 2) * 15 * side;
             const ay = -25 - (i % 3) * 16;
-            // Use first line of text for display
             const displayText = text.split('\n').filter(s => s.trim()).slice(0, 2).join('\n');
-            this.annotations.push({ x, y, text: displayText, key, ax, ay });
+            const ann = { x, y, text: displayText, key, ax, ay };
+            this.annotations.push(ann);
+            if (typeof pushUndo === 'function') pushUndo('addLabel', { plotId, ann: {...ann} });
         }
         this.render();
     }
@@ -729,8 +741,18 @@ class ProkerChart {
             const mn = parseFloat(inputs[0].value), mx = parseFloat(inputs[1].value);
             div.remove();
             if (isNaN(mn) || isNaN(mx) || mn >= mx) return;
+            const oldX = this.xRange ? [...this.xRange] : null;
+            const oldY = this.yRange ? [...this.yRange] : null;
             if (axis === 'x') this.setXRange(mn, mx); else this.setYRange(mn, mx);
             this._zoomed = true;
+            if (typeof pushUndo === 'function') {
+                pushUndo('axisRange', {
+                    plotId: this.container?.id,
+                    oldX, oldY,
+                    newX: this.xRange ? [...this.xRange] : null,
+                    newY: this.yRange ? [...this.yRange] : null
+                });
+            }
             this.render();
         };
         div.querySelector('.range-apply').onclick = commit;
@@ -865,6 +887,7 @@ class ProkerChart {
         if (!this._selPx) return;
         if (!this._colorOverrides) this._colorOverrides = [];
         const m = this._m;
+        const newOverrides = [];
         this.traces.forEach((trace, ti) => {
             if (!trace.x || !trace.y) return;
             for (let i = 0; i < trace.x.length; i++) {
@@ -873,10 +896,15 @@ class ProkerChart {
                 const px = m.left + this._xScale(x);
                 const py = m.top + this._yScale(y);
                 if (px >= this._selPx.x0 && px <= this._selPx.x1 && py >= this._selPx.y0 && py <= this._selPx.y1) {
-                    this._colorOverrides.push({ ti, i, color });
+                    const ovr = { ti, i, color };
+                    this._colorOverrides.push(ovr);
+                    newOverrides.push(ovr);
                 }
             }
         });
+        if (newOverrides.length && typeof pushUndo === 'function') {
+            pushUndo('colorPoints', { plotId: this.container?.id, overrides: newOverrides });
+        }
         this.render();
     }
 

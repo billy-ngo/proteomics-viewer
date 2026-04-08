@@ -670,7 +670,90 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='2.7.0';
+var PROKER_VERSION='3.2.0';
+
+// ── Undo/Redo system ──
+var undoStack=[], redoStack=[], MAX_UNDO=50;
+function pushUndo(action,data){
+    undoStack.push({action,data,ts:Date.now()});
+    if(undoStack.length>MAX_UNDO) undoStack.shift();
+    redoStack=[];
+}
+function performUndo(){
+    if(!undoStack.length)return;
+    const entry=undoStack.pop();
+    redoStack.push(entry);
+    applyUndoEntry(entry,false);
+}
+function performRedo(){
+    if(!redoStack.length)return;
+    const entry=redoStack.pop();
+    undoStack.push(entry);
+    applyUndoEntry(entry,true);
+}
+function applyUndoEntry(entry,isRedo){
+    const d=entry.data;
+    switch(entry.action){
+        case 'moveGraph':{
+            const wrap=document.getElementById('card-'+d.plotId);
+            if(wrap){wrap.style.left=(isRedo?d.newL:d.oldL)+'px';wrap.style.top=(isRedo?d.newT:d.oldT)+'px'}
+            break;
+        }
+        case 'addLabel':{
+            const chart=CHARTS[d.plotId];if(!chart)break;
+            if(isRedo){chart.annotations.push(d.ann);chart.render()}
+            else{chart.annotations=chart.annotations.filter(a=>a.key!==d.ann.key);chart.render()}
+            break;
+        }
+        case 'removeLabel':{
+            const chart=CHARTS[d.plotId];if(!chart)break;
+            if(isRedo){chart.annotations=chart.annotations.filter(a=>a.key!==d.ann.key);chart.render()}
+            else{chart.annotations.push(d.ann);chart.render()}
+            break;
+        }
+        case 'colorPoints':{
+            const chart=CHARTS[d.plotId];if(!chart)break;
+            if(isRedo){if(!chart._colorOverrides)chart._colorOverrides=[];chart._colorOverrides.push(...d.overrides);chart.render()}
+            else{chart._colorOverrides=(chart._colorOverrides||[]).filter(o=>!d.overrides.some(r=>r.ti===o.ti&&r.i===o.i&&r.color===o.color));chart.render()}
+            break;
+        }
+        case 'addPlot':{
+            if(isRedo){/* re-add would need full rebuild, skip */}
+            else{removePlot(d.plotId)}
+            break;
+        }
+        case 'removePlot':{
+            // Can't fully restore a removed plot, just track for awareness
+            break;
+        }
+        case 'addTextBox':case 'addLine':{
+            const el=document.getElementById(d.id);
+            if(isRedo){/* would need to re-create */}
+            else{if(el)el.remove()}
+            break;
+        }
+        case 'graphSettings':{
+            const chart=CHARTS[d.plotId];if(!chart)break;
+            const prev=isRedo?d.newSettings:d.oldSettings;
+            if(prev.traces)chart.traces=JSON.parse(JSON.stringify(prev.traces));
+            if(prev.theme)Object.assign(chart.opts.theme,prev.theme);
+            chart.render();
+            break;
+        }
+        case 'axisRange':{
+            const chart=CHARTS[d.plotId];if(!chart)break;
+            if(isRedo){chart.setXRange(d.newX?.[0],d.newX?.[1]);chart.setYRange(d.newY?.[0],d.newY?.[1])}
+            else{chart.setXRange(d.oldX?.[0],d.oldX?.[1]);chart.setYRange(d.oldY?.[0],d.oldY?.[1])}
+            chart.render();
+            break;
+        }
+    }
+}
+// Keyboard shortcut
+document.addEventListener('keydown',e=>{
+    if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){e.preventDefault();performUndo()}
+    if((e.ctrlKey||e.metaKey)&&(e.key==='y'||(e.key==='z'&&e.shiftKey))){e.preventDefault();performRedo()}
+});
 // Fetch version from backend
 fetch('/health').then(r=>r.json()).then(d=>{if(d.version){PROKER_VERSION=d.version;const el=document.getElementById('info-version');if(el)el.textContent=d.version}}).catch(()=>{});
 
