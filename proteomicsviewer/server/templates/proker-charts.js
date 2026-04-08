@@ -336,13 +336,14 @@ class ProkerChart {
 
         // Annotation drag
         svg.querySelectorAll('.ann').forEach(g => {
-            const rect = g.querySelector('rect');
             const texts = g.querySelectorAll('text');
             const line = g.querySelector('line');
+            const circle = g.querySelector('circle');
             const key = g.dataset.key;
             let dragging = false, startMX, startMY, origAx, origAy;
 
-            [rect, ...texts].forEach(target => {
+            // All child elements are drag handles
+            [...texts, circle].filter(Boolean).forEach(target => {
                 target.style.cursor = 'grab';
                 target.addEventListener('mousedown', e => {
                     e.stopPropagation();
@@ -360,20 +361,15 @@ class ProkerChart {
                 if (!dragging) return;
                 const dx = e.clientX - startMX, dy = e.clientY - startMY;
                 const newAx = origAx + dx, newAy = origAy + dy;
-                // Update line endpoint and label position
                 const px = parseFloat(line.getAttribute('x1'));
                 const py = parseFloat(line.getAttribute('y1'));
-                line.setAttribute('x2', px + newAx);
-                line.setAttribute('y2', py + newAy);
-                const rr = g.querySelector('rect');
-                const tw = parseFloat(rr.getAttribute('width'));
-                const th = parseFloat(rr.getAttribute('height'));
-                rr.setAttribute('x', px + newAx - tw / 2);
-                rr.setAttribute('y', py + newAy - th / 2);
+                const lx = px + newAx, ly = py + newAy;
+                line.setAttribute('x2', lx);
+                line.setAttribute('y2', ly);
                 const tt = g.querySelectorAll('text');
                 tt.forEach((t, i) => {
-                    t.setAttribute('x', px + newAx);
-                    t.setAttribute('y', py + newAy - th / 2 + 12 + i * 13);
+                    t.setAttribute('x', lx);
+                    t.setAttribute('y', ly + i * 14);
                 });
             };
             const onUp = () => {
