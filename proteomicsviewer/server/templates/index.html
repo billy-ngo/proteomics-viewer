@@ -1676,13 +1676,55 @@ function buildDotplotConfig(chart,p,qd,fidx){
     const txFn=tf==='log2'?(v=>Math.log2(v+1)):tf==='log10'?(v=>Math.log10(v+1)):(v=>v);
     const axSuffix=tf==='raw'?'':(tf==='log2'?' (log2)':' (log10)');
     const both=[],xOnly=[],yOnly=[];
-    for(let fi=0;fi<fidx.length;fi++){const mx=grpMean(fi,gx,qd,fidx),my=grpMean(fi,gy,qd,fidx);if(mx===0&&my===0)continue;const label=pLabel(fidx,fi),full=pFullLabel(fidx,fi);let hover=label+'<br>'+gx+': '+fmtVal(mx)+'<br>'+gy+': '+fmtVal(my);if(isAggSum())hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);if(mx>0&&my>0)both.push({x:txFn(mx),y:txFn(my),label,full,hover});else if(mx>0)xOnly.push({x:txFn(mx),y:0,label,full,hover:label+'<br>'+gx+': '+fmtVal(mx)});else yOnly.push({x:0,y:txFn(my),label,full,hover:label+'<br>'+gy+': '+fmtVal(my)})}
-    const allNzX=both.map(d=>d.x).filter(v=>v>0),allNzY=both.map(d=>d.y).filter(v=>v>0);
-    const minNzX=allNzX.length?Math.min(...allNzX):0,minNzY=allNzY.length?Math.min(...allNzY):0;
+    for(let fi=0;fi<fidx.length;fi++){
+        const mx=grpMean(fi,gx,qd,fidx),my=grpMean(fi,gy,qd,fidx);
+        if(mx===0&&my===0)continue;
+        const label=pLabel(fidx,fi),full=pFullLabel(fidx,fi);
+        let hover=label+'<br>'+gx+': '+fmtVal(mx)+'<br>'+gy+': '+fmtVal(my);
+        if(isAggSum()) hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);
+        if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,full,hover});
+        else if(mx>0) xOnly.push({x:txFn(mx),y:0,label,full,hover:label+'<br>Only in '+gx+'<br>'+gx+': '+fmtVal(mx)});
+        else yOnly.push({x:0,y:txFn(my),label,full,hover:label+'<br>Only in '+gy+'<br>'+gy+': '+fmtVal(my)});
+    }
+
+    // Compute break zone: place single-group proteins in a compressed band
+    // near the axis, separated from the main cloud by a gap
+    const allNzX=both.map(d=>d.x).filter(v=>v>0);
+    const allNzY=both.map(d=>d.y).filter(v=>v>0);
+    const minNzX=allNzX.length?Math.min(...allNzX):1;
+    const minNzY=allNzY.length?Math.min(...allNzY):1;
+    const maxNzX=allNzX.length?Math.max(...allNzX):1;
+    const maxNzY=allNzY.length?Math.max(...allNzY):1;
+
+    // Break position: 40% of the way from 0 to the minimum nonzero value
+    const breakX=minNzX*0.4;
+    const breakY=minNzY*0.4;
+    // Unique proteins placed in a band from 0 to breakX/breakY
+    const bandX=breakX*0.6; // center of the unique-protein band
+    const bandY=breakY*0.6;
+
     const traces=[];
-    if(both.length)traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',marker:{size:5,color:'#8b949e',opacity:0.7,symbol:'circle'},text:both.map(d=>d.hover),customdata:both.map(d=>d.full)});
-    if(xOnly.length)traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(()=>minNzY*0.18),mode:'markers',marker:{size:5,color:grpColor(gx),opacity:0.7,symbol:'triangle-right'},text:xOnly.map(d=>d.hover),customdata:xOnly.map(d=>d.full)});
-    if(yOnly.length)traces.push({x:yOnly.map(()=>minNzX*0.18),y:yOnly.map(d=>d.y),mode:'markers',marker:{size:5,color:grpColor(gy),opacity:0.7,symbol:'triangle-up'},text:yOnly.map(d=>d.hover),customdata:yOnly.map(d=>d.full)});
+    // Main cloud
+    if(both.length) traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',
+        marker:{size:5,color:'#8b949e',opacity:0.7,symbol:'circle'},
+        text:both.map(d=>d.hover),customdata:both.map(d=>d.full)});
+    // X-only (along bottom, in break zone)
+    if(xOnly.length) traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(()=>bandY),mode:'markers',
+        marker:{size:5,color:grpColor(gx),opacity:0.7,symbol:'triangle-right'},
+        text:xOnly.map(d=>d.hover),customdata:xOnly.map(d=>d.full)});
+    // Y-only (along left, in break zone)
+    if(yOnly.length) traces.push({x:yOnly.map(()=>bandX),y:yOnly.map(d=>d.y),mode:'markers',
+        marker:{size:5,color:grpColor(gy),opacity:0.7,symbol:'triangle-up'},
+        text:yOnly.map(d=>d.hover),customdata:yOnly.map(d=>d.full)});
+
+    // Set axis breaks as custom lines on the chart
+    const breaks=[];
+    if(xOnly.length||yOnly.length){
+        if(xOnly.length) breaks.push({axis:'y',pos:breakY}); // horizontal break line
+        if(yOnly.length) breaks.push({axis:'x',pos:breakX}); // vertical break line
+    }
+    chart._axisBreaks=breaks;
+
     chart.setChartTitle(p.title||'').setData(traces).setXTitle(gx+axSuffix).setYTitle(gy+axSuffix).render();
 }
 

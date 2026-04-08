@@ -273,6 +273,35 @@ class ProkerChart {
         });
         svg += `</g>`;
 
+        // Axis break indicators (zigzag marks)
+        if (this._axisBreaks && this._axisBreaks.length) {
+            this._axisBreaks.forEach(brk => {
+                if (brk.axis === 'y') {
+                    // Horizontal break line across plot width
+                    const by = m.top + yScale(brk.pos);
+                    const zz = 4; // zigzag amplitude
+                    let path = `M${m.left-3},${by}`;
+                    for (let x = m.left; x <= m.left + pw; x += 8) {
+                        path += `L${x},${by - zz}L${x + 4},${by + zz}`;
+                    }
+                    path += `L${m.left + pw + 3},${by}`;
+                    svg += `<path d="${path}" fill="none" stroke="${T.bg}" stroke-width="3"/>`;
+                    svg += `<path d="${path}" fill="none" stroke="${T.line}" stroke-width="1" stroke-dasharray="none"/>`;
+                } else if (brk.axis === 'x') {
+                    // Vertical break line across plot height
+                    const bx = m.left + xScale(brk.pos);
+                    const zz = 4;
+                    let path = `M${bx},${m.top - 3}`;
+                    for (let y = m.top; y <= m.top + ph; y += 8) {
+                        path += `L${bx - zz},${y}L${bx + zz},${y + 4}`;
+                    }
+                    path += `L${bx},${m.top + ph + 3}`;
+                    svg += `<path d="${path}" fill="none" stroke="${T.bg}" stroke-width="3"/>`;
+                    svg += `<path d="${path}" fill="none" stroke="${T.line}" stroke-width="1"/>`;
+                }
+            });
+        }
+
         // Selection box placeholder
         svg += `<rect class="sel-box" x="0" y="0" width="0" height="0" fill="rgba(88,166,255,0.1)" stroke="${T.accent}" stroke-width="1.5" stroke-dasharray="4" display="none"/>`;
 
