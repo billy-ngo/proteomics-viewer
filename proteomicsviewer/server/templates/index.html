@@ -484,7 +484,23 @@ async function uploadFile(file,append){
             <div style="font-size:12px;color:var(--text-sec);line-height:1.7;margin-top:8px">
                 <div>D3.js &mdash; Data visualization library</div>
                 <div>MaxQuant &mdash; Proteomics data processing</div>
-                <div>Benjamini-Hochberg &mdash; FDR correction method</div>
+                <div>Benjamini &amp; Hochberg (1995) &mdash; FDR correction method</div>
+                <div>Tusher, Tibshirani &amp; Chu (2001) &mdash; SAM / S0 fudge factor</div>
+                <div>Tyanova et al. (2016) &mdash; Perseus computational platform</div>
+            </div>
+        </details>
+        <details style="margin-bottom:16px">
+            <summary style="font-size:14px;font-weight:700;cursor:pointer;padding:4px 0">Statistical Methods</summary>
+            <div style="font-size:12px;color:var(--text-sec);line-height:1.7;margin-top:8px">
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">Volcano Plot &mdash; Differential Expression</strong></div>
+                <div style="margin-bottom:4px"><em>Welch&rsquo;s t-test</em> &mdash; Two-sample unequal-variance t-test comparing group means. Degrees of freedom estimated via the Welch&ndash;Satterthwaite equation. P-values are computed from the regularized incomplete beta function.</div>
+                <div style="margin-bottom:4px"><em>Benjamini&ndash;Hochberg FDR</em> &mdash; Multiple-testing correction controlling the false discovery rate. Adjusted p-values (q-values) are computed by ranking raw p-values and scaling by n/rank.</div>
+                <div style="margin-bottom:4px"><em>S0 correction</em> &mdash; A fudge factor added to the t-test denominator (SE + S0) to penalize fold changes driven by low-abundance noise (Tusher et al., 2001). At S0 = 0 this is a standard t-test. Typical values range from 0.1&ndash;2.0.</div>
+                <div style="margin-bottom:4px"><em>Missing value imputation</em> &mdash; Zero/missing intensities are replaced with half the minimum detected non-zero value for that protein, a simple down-shift imputation approach.</div>
+                <div style="margin-bottom:4px"><em>Log2 Fold Change</em> &mdash; Calculated as log2(mean_X / mean_Y). Positive values indicate higher abundance in Group X; negative values indicate higher abundance in Group Y.</div>
+                <div style="margin-top:10px;margin-bottom:8px"><strong style="color:var(--text)">PCA &mdash; Principal Component Analysis</strong></div>
+                <div style="margin-bottom:4px"><em>Algorithm</em> &mdash; Dual-space PCA (kernel method) optimized for datasets where the number of samples is much smaller than the number of features. Computes the n&times;n kernel matrix K = X&middot;X<sup>T</sup> from the mean-centered data matrix, then performs Jacobi eigendecomposition.</div>
+                <div style="margin-bottom:4px"><em>Scores</em> &mdash; PC scores are eigenvectors scaled by the square root of their eigenvalues. Variance explained is reported as a percentage of total variance for each component.</div>
             </div>
         </details>
         <!-- Close button -->
@@ -609,6 +625,25 @@ async function uploadFile(file,append){
             </div>
             <div style="display:flex;gap:6px"><input type="text" id="dg-name" placeholder="Name" style="flex:1"><button class="btn-sm" onclick="createDerived()">Create</button></div>
             <div id="dg-list" style="margin-top:8px"></div>
+        </div>
+    </div>
+    <div id="stats-methods-section" class="collapse-sec hidden" style="border-top:1px solid var(--border)">
+        <div class="collapse-hdr" onclick="this.parentElement.classList.toggle('open')">Statistical Methods Used <span class="chev">&#9656;</span></div>
+        <div class="collapse-body" style="font-size:11px;color:var(--text-sec);line-height:1.6">
+            <div id="stats-volcano-info" class="hidden" style="margin-bottom:10px">
+                <div style="font-weight:700;color:var(--text);margin-bottom:4px">Volcano Plot</div>
+                <div><strong>Test:</strong> Welch&rsquo;s t-test (two-sample, unequal variance). Degrees of freedom via Welch&ndash;Satterthwaite approximation.</div>
+                <div><strong>Multiple testing:</strong> Benjamini&ndash;Hochberg FDR correction. Adjusted p-values = raw_p &times; n / rank.</div>
+                <div><strong>S0 correction:</strong> When enabled, a fudge factor S0 is added to the standard error denominator (SE + S0) to penalize noisy fold changes at low abundance (Tusher et al., 2001; Perseus).</div>
+                <div><strong>Imputation:</strong> Missing/zero values replaced with min(non-zero) / 2.</div>
+                <div><strong>Fold change:</strong> log2(mean_GroupX / mean_GroupY).</div>
+            </div>
+            <div id="stats-pca-info" class="hidden">
+                <div style="font-weight:700;color:var(--text);margin-bottom:4px">PCA</div>
+                <div><strong>Method:</strong> Dual-space PCA via kernel matrix K = X&middot;X<sup>T</sup> with Jacobi eigendecomposition. Optimized for n_samples &lt;&lt; n_features.</div>
+                <div><strong>Preprocessing:</strong> Column mean centering. No additional scaling.</div>
+                <div><strong>Output:</strong> PC scores (eigenvectors &times; &radic;eigenvalue). Variance explained as % of total.</div>
+            </div>
         </div>
     </div>
     <div class="panel-section">
@@ -1607,6 +1642,7 @@ function addPlotToCanvas(type){
         }
     }
     CANVAS_PLOTS.push({id:nextPlotId-1,type,config,plotId,title});
+    updateStatsMethodsPanel();
 
     // Show canvas, hide welcome
     document.getElementById('right-welcome').classList.add('hidden');
@@ -1642,6 +1678,16 @@ function addPlotToCanvas(type){
     document.getElementById('viz-config-area').innerHTML='';
     setTimeout(()=>renderPlot(CANVAS_PLOTS[CANVAS_PLOTS.length-1],qd,fidx),100);
 }
+function updateStatsMethodsPanel(){
+    const hasVolcano=CANVAS_PLOTS.some(p=>p.type==='volcano');
+    const hasPCA=CANVAS_PLOTS.some(p=>p.type==='pca');
+    const section=document.getElementById('stats-methods-section');
+    if(!section)return;
+    if(hasVolcano||hasPCA){section.classList.remove('hidden');section.classList.add('open')}
+    else{section.classList.add('hidden');section.classList.remove('open')}
+    const vi=document.getElementById('stats-volcano-info');if(vi)vi.classList.toggle('hidden',!hasVolcano);
+    const pi=document.getElementById('stats-pca-info');if(pi)pi.classList.toggle('hidden',!hasPCA);
+}
 function renamePlot(plotId,newTitle){
     const p=CANVAS_PLOTS.find(p=>p.plotId===plotId);
     if(p) p.title=newTitle;
@@ -1649,6 +1695,7 @@ function renamePlot(plotId,newTitle){
 function removePlot(plotId){
     CANVAS_PLOTS=CANVAS_PLOTS.filter(p=>p.plotId!==plotId);
     document.getElementById('card-'+plotId)?.remove();
+    updateStatsMethodsPanel();
     if(!CANVAS_PLOTS.length){
         const canvas=document.getElementById('canvas');canvas.classList.add('empty-canvas');
         canvas.innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>';
