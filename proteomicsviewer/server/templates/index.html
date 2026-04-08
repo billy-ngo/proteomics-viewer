@@ -580,6 +580,11 @@ async function uploadFile(file,append){
             <div id="dg-list" style="margin-top:8px"></div>
         </div>
     </div>
+    <div class="panel-section">
+        <div class="section-label">Export Data</div>
+        <button class="btn-primary" onclick="exportCSV()" style="font-size:14px;padding:12px">Export Analysis as CSV</button>
+        <div style="font-size:11px;color:var(--text-sec);margin-top:6px">Exports raw data, processed data, group assignments, processing settings, and analysis metadata.</div>
+    </div>
 </div>
 
 <!-- ── VISUALIZATION TAB ── -->
@@ -610,12 +615,6 @@ async function uploadFile(file,append){
         <div class="wc-text">Data visualization will appear here</div>
     </div>
     <div id="canvas-wrap" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
-        <div class="export-bar">
-            <button class="btn-sm" onclick="exportAllSVG()">Export SVG</button>
-            <button class="btn-sm" onclick="exportAllPNG()">Export PNG</button>
-            <button class="btn-sm" onclick="exportCSV()">Export CSV</button>
-            <span class="spacer"></span>
-        </div>
         <div id="canvas" class="empty-canvas">
             <div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>
         </div>
@@ -1515,10 +1514,122 @@ function doExport(fmt){
     document.getElementById('export-panel')?.classList.add('hidden');
 }
 function exportCSV(){
-    if(!RAW)return;const{qt,data:qd}=getQData();const fidx=getFilteredIdx();const groups=BINS.filter(b=>b.samples.length>0).map(b=>b.label);
-    let csv='Protein ID,Gene Name';groups.forEach(g=>csv+=','+g+' (mean)');csv+='\n';
-    for(let fi=0;fi<fidx.length;fi++){const p=RAW.proteins[fidx[fi]];csv+=`"${p.majority_id}","${p.gene_name}"`;groups.forEach(g=>csv+=','+grpMean(fi,g,qd,fidx).toFixed(4));csv+='\n'}
-    const blob=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='proker_data.csv';a.click();
+    if(!RAW)return;
+    const{qt,data:qd}=getQData();
+    const fidx=getFilteredIdx();
+    const groups=BINS.filter(b=>b.samples.length>0);
+    const allSamples=[];groups.forEach(g=>g.samples.forEach(s=>allSamples.push(s)));
+    const useIntensity=document.getElementById('proc-intensity')?.checked;
+    const useLFQ=document.getElementById('proc-lfq')?.checked;
+    const aggMode=isAggSum()?'Sum':'Average';
+
+    // Determine raw quant type (before processing)
+    const rawQt=RAW.quant_types.includes('Intensity')?'Intensity':RAW.quant_types[0];
+    const rawQd=RAW.quant_data[rawQt]||{};
+
+    let csv='';
+
+    // ── Sheet 1: Metadata ──
+    csv+='=== ANALYSIS METADATA ===\n';
+    csv+='Software,Pro-ker Proteomics Analysis\n';
+    csv+='Version,'+(__version__||'2.5.0')+'\n';
+    csv+='Website,https://github.com/billy-ngo/proteomics-viewer\n';
+    csv+='Export Date,"'+new Date().toLocaleString()+'"\n';
+    csv+='Source File,"'+RAW.filename+'"\n';
+    csv+='Total Proteins (raw),'+RAW.total_proteins+'\n';
+    csv+='Proteins After Filtering,'+fidx.length+'\n';
+    csv+='Contaminants Removed,'+RAW.contaminants+'\n';
+    csv+='Reverse Hits Removed,'+RAW.reverse_hits+'\n';
+    csv+='\n';
+
+    // Processing settings
+    csv+='=== PROCESSING SETTINGS ===\n';
+    csv+='Quantification Type,"'+PROC_QT+'"\n';
+    csv+='Intensity Analysis,'+(useIntensity?'Yes':'No (raw spectral counts)')+'\n';
+    if(useIntensity) csv+='LFQ,'+(useLFQ?'Yes':'No')+'\n';
+    csv+='Aggregation Mode,'+aggMode+'\n';
+    const normOn=document.getElementById('proc-norm')?.checked;
+    csv+='Normalization,'+(normOn?'Yes':'No')+'\n';
+    if(normOn){
+        const normScope=document.getElementById('norm-scope')?.value;
+        csv+='Normalization Scope,"'+(normScope==='organism'?'Within organism(s): '+getSelOrgs().join('; '):'All detected peptides')+'"\n';
+        csv+='Remove Contaminants Before Normalizing,'+(document.getElementById('norm-rm-contam')?.checked?'Yes':'No')+'\n';
+    }
+    const pruneOn=document.getElementById('proc-prune')?.checked;
+    csv+='Pruning,'+(pruneOn?'Yes':'No')+'\n';
+    if(pruneOn){
+        csv+='Prune Metric,"'+document.getElementById('prune-metric')?.value+'"\n';
+        csv+='Prune Threshold,'+document.getElementById('prune-value')?.value+'\n';
+        csv+='Prune Aggregation,"'+document.getElementById('prune-agg')?.value+'"\n';
+        csv+='Prune Scope,"'+document.getElementById('prune-scope')?.value+'"\n';
+    }
+    csv+='\n';
+
+    // Sample grouping
+    csv+='=== SAMPLE GROUPS ===\n';
+    csv+='Group,Samples\n';
+    groups.forEach(g=>{csv+='"'+g.label+'","'+g.samples.join('; ')+'"\n'});
+    if(UNASSIGNED.length) csv+='Unassigned,"'+UNASSIGNED.join('; ')+'"\n';
+    csv+='\n';
+
+    // Derived groups
+    if(DERIVED.length){
+        csv+='=== DERIVED GROUPS ===\n';
+        csv+='Name,Operation,Left,Right\n';
+        const opSym={divide:'/',subtract:'-',add:'+',multiply:'*'};
+        DERIVED.forEach(d=>{csv+='"'+d.name+'","'+opSym[d.op]+'","'+d.left+'","'+d.right+'"\n'});
+        csv+='\n';
+    }
+
+    // Saved analyses
+    if(ANALYSES.length){
+        csv+='=== SAVED ANALYSES ===\n';
+        csv+='Name,Group X,Group Y\n';
+        ANALYSES.forEach(a=>{csv+='"'+a.name+'","'+a.groupX+'","'+a.groupY+'"\n'});
+        csv+='\n';
+    }
+
+    // ── Sheet 2: Raw Data (before processing) ──
+    csv+='=== RAW DATA ('+rawQt+') ===\n';
+    csv+='Protein ID,Gene Name,Mol Weight (kDa),Peptides,Unique Peptides,Sequence Coverage (%)';
+    allSamples.forEach(s=>csv+=','+s+' (raw)');
+    csv+='\n';
+    for(let i=0;i<RAW.proteins.length;i++){
+        const p=RAW.proteins[i];
+        if(p.potential_contaminant||p.reverse||p.only_identified_by_site)continue;
+        csv+='"'+p.majority_id+'","'+p.gene_name+'",'+p.mol_weight+','+p.peptides+','+p.unique_peptides+','+p.sequence_coverage;
+        allSamples.forEach(s=>{csv+=','+(rawQd[s]?rawQd[s][i]:0)});
+        csv+='\n';
+    }
+    csv+='\n';
+
+    // ── Sheet 3: Processed Data (after filtering + normalization) ──
+    csv+='=== PROCESSED DATA ('+PROC_QT+', '+aggMode+') ===\n';
+    csv+='Protein ID,Gene Name';
+    allSamples.forEach(s=>csv+=','+s+' (processed)');
+    groups.forEach(g=>csv+=','+g.label+' ('+aggMode.toLowerCase()+')');
+    csv+='\n';
+    for(let fi=0;fi<fidx.length;fi++){
+        const pi=fidx[fi];
+        const p=RAW.proteins[pi];
+        csv+='"'+p.majority_id+'","'+p.gene_name+'"';
+        allSamples.forEach(s=>{csv+=','+(qd[s]?qd[s][fi]:0)});
+        groups.forEach(g=>{csv+=','+grpMean(fi,g.label,qd,fidx).toFixed(4)});
+        csv+='\n';
+    }
+    csv+='\n';
+
+    // ── Credits ──
+    csv+='=== CREDITS ===\n';
+    csv+='Pro-ker Proteomics Analysis\n';
+    csv+='By Billy M Ngo (billy.ngo0108@gmail.com)\n';
+    csv+='https://github.com/billy-ngo/proteomics-viewer\n';
+    csv+='Ngo B.M. (2026). Pro-ker Proteomics Analysis [Software].\n';
+
+    const blob=new Blob([csv],{type:'text/csv'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    const name=RAW.filename?.replace(/\.[^.]+$/,'')||'proker';
+    a.download=name+'_analysis_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
 }
 
 // ================================================================
