@@ -58,8 +58,8 @@ class ProkerChart {
     setXTitle(t) { this.xTitle = t; return this; }
     setYTitle(t) { this.yTitle = t; return this; }
     setChartTitle(t) { this._chartTitle = t; return this; }
-    setXRange(min, max) { this.xRange = (min != null && max != null) ? [min, max] : null; return this; }
-    setYRange(min, max) { this.yRange = (min != null && max != null) ? [min, max] : null; return this; }
+    setXRange(min, max) { this.xRange = (min != null && max != null) ? [min, max] : null; this._xManual = !!this.xRange; return this; }
+    setYRange(min, max) { this.yRange = (min != null && max != null) ? [min, max] : null; this._yManual = !!this.yRange; return this; }
     setTheme(t) { Object.assign(this.opts.theme, t); return this; }
 
     on(event, cb) { if (!this.callbacks[event]) this.callbacks[event] = []; this.callbacks[event].push(cb); return this; }
@@ -79,6 +79,8 @@ class ProkerChart {
         });
 
         let xMin, xMax, yMin, yMax;
+
+        // First pass: determine fixed axis ranges
         if (this.xRange) { [xMin, xMax] = this.xRange; }
         else if (allX.length) { xMin = Math.min(...allX); xMax = Math.max(...allX); const pad = (xMax - xMin) * 0.02 || 0.5; xMin -= pad; xMax += pad; }
         else { xMin = 0; xMax = 1; }
@@ -86,6 +88,29 @@ class ProkerChart {
         if (this.yRange) { [yMin, yMax] = this.yRange; }
         else if (allY.length) { yMin = Math.min(...allY); yMax = Math.max(...allY); const pad = (yMax - yMin) * 0.02 || 0.5; yMin -= pad; yMax += pad; }
         else { yMin = 0; yMax = 1; }
+
+        // Auto-fit: if one axis is manual and the other is not, fit the auto axis
+        // to the data visible within the manual axis range
+        if (this._xManual && !this._yManual && allX.length) {
+            const visibleY = [];
+            this.traces.forEach(t => {
+                if (!t.x || !t.y) return;
+                for (let i = 0; i < t.x.length; i++) {
+                    if (isFinite(t.x[i]) && isFinite(t.y[i]) && t.x[i] >= xMin && t.x[i] <= xMax) visibleY.push(t.y[i]);
+                }
+            });
+            if (visibleY.length) { yMin = Math.min(...visibleY); yMax = Math.max(...visibleY); const pad = (yMax - yMin) * 0.05 || 0.5; yMin -= pad; yMax += pad; }
+        }
+        if (this._yManual && !this._xManual && allY.length) {
+            const visibleX = [];
+            this.traces.forEach(t => {
+                if (!t.x || !t.y) return;
+                for (let i = 0; i < t.x.length; i++) {
+                    if (isFinite(t.x[i]) && isFinite(t.y[i]) && t.y[i] >= yMin && t.y[i] <= yMax) visibleX.push(t.x[i]);
+                }
+            });
+            if (visibleX.length) { xMin = Math.min(...visibleX); xMax = Math.max(...visibleX); const pad = (xMax - xMin) * 0.05 || 0.5; xMin -= pad; xMax += pad; }
+        }
 
         // Use D3's nice() to get clean axis endpoints
         const xScale = d3.scaleLinear().domain([xMin, xMax]).nice().range([0, pw]);
@@ -721,8 +746,8 @@ class ProkerChart {
 
     _zoomToSelection() {
         const s = this._selState;
-        this.xRange = [s.x0, s.x1];
-        this.yRange = [s.y0, s.y1];
+        this.xRange = [s.x0, s.x1]; this._xManual = true;
+        this.yRange = [s.y0, s.y1]; this._yManual = true;
         this._zoomed = true;
         this.render();
     }
@@ -730,6 +755,8 @@ class ProkerChart {
     _resetZoom() {
         this.xRange = null;
         this.yRange = null;
+        this._xManual = false;
+        this._yManual = false;
         this._zoomed = false;
         this.render();
     }
