@@ -117,7 +117,7 @@ class ProkerChart {
         const yFmt = this._niceFormat(yScale.domain());
 
         // Build SVG
-        let svg = `<svg class="proker-svg" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="font-family:Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased">`;
+        let svg = `<svg class="proker-svg" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased">`;
 
         // Background
         svg += `<rect width="${w}" height="${h}" fill="${T.bg}" rx="0"/>`;
@@ -157,18 +157,18 @@ class ProkerChart {
         if (this._chartTitle) {
             const tx = this._titlePos ? this._titlePos.x : m.left + pw / 2;
             const ty = this._titlePos ? this._titlePos.y : 18;
-            svg += `<text x="${tx}" y="${ty}" text-anchor="middle" fill="${T.text}" font-size="14" font-weight="700" class="chart-title draggable-text" style="cursor:move">${this._esc(this._chartTitle)}</text>`;
+            svg += `<text x="${tx}" y="${ty}" text-anchor="middle" fill="${T.text}" font-size="14" font-weight="400" class="chart-title draggable-text" style="cursor:move">${this._esc(this._chartTitle)}</text>`;
         }
 
         // X axis title (draggable)
         const xTitleX = this._xTitlePos ? this._xTitlePos.x : m.left + pw / 2;
         const xTitleY = this._xTitlePos ? this._xTitlePos.y : h - 6;
-        svg += `<text x="${xTitleX}" y="${xTitleY}" text-anchor="middle" fill="${T.text}" font-size="13" font-weight="600" class="axis-title draggable-text" data-axis="x" style="cursor:move">${this._esc(this.xTitle)}</text>`;
+        svg += `<text x="${xTitleX}" y="${xTitleY}" text-anchor="middle" fill="${T.text}" font-size="13" font-weight="400" class="axis-title draggable-text" data-axis="x" style="cursor:move">${this._esc(this.xTitle)}</text>`;
 
         // Y axis title (rotated, draggable)
         const yTitleX = this._yTitlePos ? this._yTitlePos.x : 15;
         const yTitleY = this._yTitlePos ? this._yTitlePos.y : m.top + ph / 2;
-        svg += `<text x="${yTitleX}" y="${yTitleY}" text-anchor="middle" fill="${T.text}" font-size="13" font-weight="600" class="axis-title draggable-text" data-axis="y" transform="rotate(-90,${yTitleX},${yTitleY})" style="cursor:move">${this._esc(this.yTitle)}</text>`;
+        svg += `<text x="${yTitleX}" y="${yTitleY}" text-anchor="middle" fill="${T.text}" font-size="13" font-weight="400" class="axis-title draggable-text" data-axis="y" transform="rotate(-90,${yTitleX},${yTitleY})" style="cursor:move">${this._esc(this.yTitle)}</text>`;
 
         // Data points (clip to plot area)
         svg += `<defs><clipPath id="clip-${this._uid()}"><rect x="${m.left}" y="${m.top}" width="${pw}" height="${ph}"/></clipPath></defs>`;
@@ -208,7 +208,7 @@ class ProkerChart {
                 if (symbol === 'cross') {
                     svg += symFn(px, py, size) + `stroke="${c}" opacity="${opacity}" ${attrs}/>`;
                 } else {
-                    svg += symFn(px, py, size) + `fill="${c}" fill-opacity="${opacity}" stroke="${c}" stroke-opacity="0.4" stroke-width="0.8" ${attrs}/>`;
+                    svg += symFn(px, py, size) + `fill="${c}" fill-opacity="${opacity}" stroke="${T.plot}" stroke-width="1" ${attrs}/>`;
                 }
             }
         });
