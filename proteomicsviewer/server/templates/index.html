@@ -1356,6 +1356,12 @@ function showVizConfig(type){
     }
     if(type==='dotplot'){
         html+=`<div class="af-row"><span class="af-lbl">Axis transform</span><select id="vc-dot-transform"><option value="log10">Log10</option><option value="log2">Log2</option><option value="raw">Raw (no transform)</option></select></div>`;
+        html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-dot-intra" onchange="toggleDotIntra()"> Compare samples within a group</label>`;
+        html+=`<div id="vc-dot-intra-opts" class="hidden" style="margin-top:6px">`;
+        html+=`<div class="af-row"><span class="af-lbl">Group</span><select id="vc-dot-intra-grp" onchange="populateDotIntraSamples()">${opts}</select></div>`;
+        html+=`<div class="af-row"><span class="af-lbl">Sample X</span><select id="vc-dot-intra-sx"></select></div>`;
+        html+=`<div class="af-row"><span class="af-lbl">Sample Y</span><select id="vc-dot-intra-sy"></select></div>`;
+        html+=`</div>`;
     }
     if(type==='volcano'){
         html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-impute" checked> Impute missing values</label>`;
@@ -1364,6 +1370,30 @@ function showVizConfig(type){
     }
     html+=`<button class="btn-primary" onclick="addPlotToCanvas('${type}')" style="margin-top:10px">Add to Canvas</button></div>`;
     c.innerHTML=html;
+}
+function toggleDotIntra(){
+    const checked=document.getElementById('vc-dot-intra')?.checked;
+    document.getElementById('vc-dot-intra-opts')?.classList.toggle('hidden',!checked);
+    // Hide/show the group X/Y selectors (not needed for intra-group)
+    const gxRow=document.getElementById('vc-gx')?.closest('.af-row');
+    const gyRow=document.getElementById('vc-gy')?.closest('.af-row');
+    if(gxRow)gxRow.style.display=checked?'none':'';
+    if(gyRow)gyRow.style.display=checked?'none':'';
+    if(checked) populateDotIntraSamples();
+}
+function populateDotIntraSamples(){
+    const grpLabel=document.getElementById('vc-dot-intra-grp')?.value;
+    if(!grpLabel)return;
+    const bin=BINS.find(b=>b.label===grpLabel);
+    if(!bin)return;
+    const samples=bin.samples;
+    const sxSel=document.getElementById('vc-dot-intra-sx');
+    const sySel=document.getElementById('vc-dot-intra-sy');
+    if(!sxSel||!sySel)return;
+    const sopts=samples.map(s=>`<option value="${s}">${s}</option>`).join('');
+    sxSel.innerHTML=sopts;sySel.innerHTML=sopts;
+    // Default Y to second sample if available
+    if(samples.length>=2) sySel.value=samples[1];
 }
 function toggleUniqExclude(){
     const mode=document.getElementById('vc-uniq-mode')?.value;
@@ -1419,6 +1449,14 @@ function addPlotToCanvas(type){
     if(type==='dotplot'){
         config.topN=+(document.getElementById('vc-dot-topn')?.value||8);
         config.transform=document.getElementById('vc-dot-transform')?.value||'log10';
+        config.intraGroup=document.getElementById('vc-dot-intra')?.checked||false;
+        if(config.intraGroup){
+            config.intraGroupLabel=document.getElementById('vc-dot-intra-grp')?.value||'';
+            config.intraSampleX=document.getElementById('vc-dot-intra-sx')?.value||'';
+            config.intraSampleY=document.getElementById('vc-dot-intra-sy')?.value||'';
+            gx=config.intraSampleX;gy=config.intraSampleY;
+            title=config.intraSampleX+' vs '+config.intraSampleY;
+        }
     }
     CANVAS_PLOTS.push({id:nextPlotId-1,type,config,plotId,title});
 
@@ -1672,16 +1710,29 @@ function buildVolcanoConfig(chart,p,qd,fidx){
 }
 
 function buildDotplotConfig(chart,p,qd,fidx){
-    const gx=p.config.gx,gy=p.config.gy,tf=p.config.transform||'log10';
+    const tf=p.config.transform||'log10';
     const txFn=tf==='log2'?(v=>Math.log2(v+1)):tf==='log10'?(v=>Math.log10(v+1)):(v=>v);
     const axSuffix=tf==='raw'?'':(tf==='log2'?' (log2)':' (log10)');
+    const intra=p.config.intraGroup;
+    // Determine X and Y labels
+    const gx=intra?p.config.intraSampleX:p.config.gx;
+    const gy=intra?p.config.intraSampleY:p.config.gy;
+
     const both=[],xOnly=[],yOnly=[];
     for(let fi=0;fi<fidx.length;fi++){
-        const mx=grpMean(fi,gx,qd,fidx),my=grpMean(fi,gy,qd,fidx);
+        let mx,my;
+        if(intra){
+            // Compare individual samples directly
+            mx=qd[gx]?qd[gx][fi]:0;
+            my=qd[gy]?qd[gy][fi]:0;
+        } else {
+            mx=grpMean(fi,gx,qd,fidx);
+            my=grpMean(fi,gy,qd,fidx);
+        }
         if(mx===0&&my===0)continue;
         const label=pLabel(fidx,fi),full=pFullLabel(fidx,fi);
         let hover=label+'<br>'+gx+': '+fmtVal(mx)+'<br>'+gy+': '+fmtVal(my);
-        if(isAggSum()) hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);
+        if(!intra&&isAggSum()) hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);
         if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,full,hover});
         else if(mx>0) xOnly.push({rawX:mx,x:txFn(mx),label,full,hover:label+'<br>Only in '+gx+'<br>'+gx+': '+fmtVal(mx)});
         else yOnly.push({rawY:my,y:txFn(my),label,full,hover:label+'<br>Only in '+gy+'<br>'+gy+': '+fmtVal(my)});
