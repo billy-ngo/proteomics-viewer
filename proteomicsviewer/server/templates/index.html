@@ -1429,17 +1429,27 @@ function addPlotToCanvas(type){
     canvas.classList.remove('empty-canvas');
     const hint=document.getElementById('canvas-drop');if(hint)hint.remove();
 
-    // Create plot element centered in viewport
+    // Create plot element centered in the visible viewport area
     const plotWrap=document.createElement('div');plotWrap.className='canvas-plot';plotWrap.id='card-'+plotId;
     plotWrap.style.height='420px';
     plotWrap.style.width='700px';
+    plotWrap.style.position='absolute';
     plotWrap.innerHTML=`<button class="cp-close" onclick="removePlot('${plotId}')" title="Remove">&times;</button><div id="${plotId}" style="width:100%;height:100%"></div><div class="cp-handle se" data-corner="se"></div><div class="cp-handle sw" data-corner="sw"></div><div class="cp-handle ne" data-corner="ne"></div><div class="cp-handle nw" data-corner="nw"></div>`;
+    canvas.style.position='relative';
     canvas.appendChild(plotWrap);
-    // Center in viewport
+    // Position in center of what user currently sees
     const vp=document.getElementById('canvas-viewport');
     if(vp){
-        plotWrap.style.position='relative';
-        plotWrap.style.margin='0 auto';
+        const vpW=vp.clientWidth/canvasScale;
+        const vpH=vp.clientHeight/canvasScale;
+        const scrollL=vp.scrollLeft/canvasScale;
+        const scrollT=vp.scrollTop/canvasScale;
+        const plotW=700,plotH=420;
+        plotWrap.style.left=Math.max(0,scrollL+(vpW-plotW)/2)+'px';
+        plotWrap.style.top=Math.max(0,scrollT+(vpH-plotH)/2)+'px';
+        // Ensure canvas is tall/wide enough
+        const needH=parseFloat(plotWrap.style.top)+plotH+50;
+        if(canvas.offsetHeight<needH) canvas.style.minHeight=needH+'px';
     }
     setupPlotResize(plotWrap,plotId);
 
