@@ -547,18 +547,19 @@ class ProkerChart {
 
         // Left-click drag on plot background → move entire plot on canvas
         {
-            let dragging = false, startMX, startMY;
+            let dragging = false, startMX, startMY, origL, origT;
             const plotBgRect = svg.querySelector('rect'); // first rect is the background
             if (plotBgRect) {
                 plotBgRect.style.cursor = 'grab';
                 plotBgRect.addEventListener('mousedown', e => {
                     if (e.button !== 0) return;
-                    // Don't drag if clicking on a data point or title
                     if (e.target.closest('.data-pt,.axis-title,.chart-title,.tick-label,.ann')) return;
                     const wrap = this.container.closest('.canvas-plot');
                     if (!wrap) return;
                     dragging = true;
                     startMX = e.clientX; startMY = e.clientY;
+                    origL = parseFloat(wrap.style.left) || 0;
+                    origT = parseFloat(wrap.style.top) || 0;
                     document.body.style.cursor = 'grabbing';
                     e.preventDefault();
                 });
@@ -567,16 +568,10 @@ class ProkerChart {
                 if (!dragging) return;
                 const wrap = this.container.closest('.canvas-plot');
                 if (!wrap) return;
-                const canvas = wrap.parentElement;
-                if (!canvas) return;
-                const canvasR = canvas.getBoundingClientRect();
-                const wrapR = wrap.getBoundingClientRect();
-                wrap.style.position = 'relative';
-                const curL = parseFloat(wrap.style.left) || 0;
-                const curT = parseFloat(wrap.style.top) || 0;
-                wrap.style.left = (curL + e.clientX - startMX) + 'px';
-                wrap.style.top = (curT + e.clientY - startMY) + 'px';
-                startMX = e.clientX; startMY = e.clientY;
+                // Get canvas zoom scale to convert screen pixels to canvas coords
+                const scale = typeof canvasScale !== 'undefined' ? canvasScale : 1;
+                wrap.style.left = (origL + (e.clientX - startMX) / scale) + 'px';
+                wrap.style.top = (origT + (e.clientY - startMY) / scale) + 'px';
             });
             document.addEventListener('mouseup', () => {
                 if (dragging) { dragging = false; document.body.style.cursor = ''; }
