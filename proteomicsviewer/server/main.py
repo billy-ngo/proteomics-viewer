@@ -17,9 +17,6 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from proteomicsviewer.server.state import state
 from proteomicsviewer.server.parser import parse_protein_groups
-from proteomicsviewer.server.plots import (
-    make_enrichment, make_unique, make_volcano, make_dotplot, make_pca,
-)
 
 app = FastAPI(title="Pro-ker Proteomics Viewer API", version="2.0.0")
 
@@ -43,50 +40,6 @@ def serve_index():
 @app.get("/proker-charts.js", include_in_schema=False)
 def serve_charts_js():
     return FileResponse(str(_templates_dir / "proker-charts.js"), media_type="application/javascript")
-
-
-@app.post("/api/plot")
-async def generate_plot(request: Request):
-    """Generate a Bokeh plot from config JSON. Returns json_item for embedding."""
-    try:
-        config = await request.json()
-        plot_type = config.get("type", "")
-        data = config.get("data", [])
-
-        if plot_type == "enrichment":
-            return make_enrichment(
-                data, x_label=config.get("x_label", "Rank"),
-                y_label=config.get("y_label", "Enrichment"),
-            )
-        elif plot_type == "unique":
-            return make_unique(
-                data, color=config.get("color", "#58a6ff"),
-                y_label=config.get("y_label", "Abundance"),
-            )
-        elif plot_type == "volcano":
-            return make_volcano(
-                config.get("ns", []), config.get("up", []), config.get("down", []),
-                up_color=config.get("up_color", "#f85149"),
-                down_color=config.get("down_color", "#58a6ff"),
-                fc_thresh=config.get("fc_thresh", 1.0),
-                fdr_thresh=config.get("fdr_thresh", 0.05),
-            )
-        elif plot_type == "dotplot":
-            return make_dotplot(
-                data, x_label=config.get("x_label", ""),
-                y_label=config.get("y_label", ""),
-            )
-        elif plot_type == "pca":
-            return make_pca(
-                data, x_label=config.get("x_label", "PC1"),
-                y_label=config.get("y_label", "PC2"),
-            )
-        else:
-            raise HTTPException(400, f"Unknown plot type: {plot_type}")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, str(e))
 
 
 # ── API routes ────────────────────────────────────────────────────
