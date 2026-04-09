@@ -162,7 +162,7 @@ Plots on the canvas can be exported as:
 
 See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 
-**Current version: 4.2.0** (April 2026)
+**Current version: 4.2.1** (April 2026)
 
 ## Citation
 
