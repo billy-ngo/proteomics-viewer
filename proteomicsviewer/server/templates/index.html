@@ -124,9 +124,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .canvas-zoom-btn:hover{color:var(--text);border-color:var(--text-sec)}
 .canvas-zoom-level{font-size:10px;color:var(--text-sec);display:flex;align-items:center;padding:0 4px}
 /* Context toolbar above canvas */
-#canvas-toolbar{background:var(--surface);border-bottom:1px solid var(--border);font-size:11px;color:var(--text-sec);flex-shrink:0}
-#canvas-toolbar .tb-row{display:flex;align-items:center;padding:0 10px;gap:6px;height:28px}
-#canvas-toolbar .tb-row-edit{display:flex;align-items:center;padding:0 10px;gap:6px;min-height:28px;border-top:1px solid var(--border);flex-wrap:wrap}
+#canvas-toolbar{background:var(--surface);border-bottom:1px solid var(--border);font-size:11px;color:var(--text-sec);flex-shrink:0;display:flex;align-items:center;padding:0 10px;gap:6px;height:28px}
 #canvas-toolbar .tb-sep{width:1px;height:16px;background:var(--border)}
 #canvas-toolbar button{padding:2px 6px;background:transparent;border:1px solid var(--border);border-radius:3px;color:var(--text-sec);cursor:pointer;font-family:inherit;font-size:11px}
 #canvas-toolbar button:hover{border-color:var(--text-sec);color:var(--text)}
@@ -970,7 +968,7 @@ function openNativeColorPicker(currentColor,onPick){
 }
 
 function tbBase(){
-    return `<div class="tb-row"><button onclick="addCanvasTextBox()" title="Add text box" style="font-size:10px">+ Text</button><button onclick="addCanvasLine()" title="Add line" style="font-size:10px">+ Line</button><button onclick="addCanvasShape()" title="Add shape" style="font-size:10px">+ Shape</button></div>`;
+    return `<button onclick="addCanvasTextBox()" title="Add text box" style="font-size:10px">+ Text</button><button onclick="addCanvasLine()" title="Add line" style="font-size:10px">+ Line</button><button onclick="addCanvasShape()" title="Add shape" style="font-size:10px">+ Shape</button>`;
 }
 
 function updateToolbar(el,pointData){
@@ -978,11 +976,10 @@ function updateToolbar(el,pointData){
     tbSelectedEl=el;
     tbSelectedPoint=pointData||null;
     let html=tbBase();
-    let editHtml='';
 
     if(pointData){
-        editHtml+=`<span style="opacity:0.5">Point:</span>`;
-        editHtml+=`<span class="tb-color-swatch" id="tb-pt-color" style="background:${pointData.color||'#e6edf3'}" onclick="tbOpenPointSwatch(this)" onmouseenter="tbOpenPointSwatch(this)" ondblclick="tbNativePointColor()" title="Hover or click: swatches, Double-click: picker"></span>`;
+        html+=`<div class="tb-sep"></div><span style="opacity:0.5">Point:</span>`;
+        html+=`<span class="tb-color-swatch" id="tb-pt-color" style="background:${pointData.color||'#e6edf3'}" onclick="tbOpenPointSwatch(this)" onmouseenter="tbOpenPointSwatch(this)" ondblclick="tbNativePointColor()" title="Hover or click: swatches, Double-click: picker"></span>`;
     }
 
     if(el&&(el.classList?.contains('canvas-textbox')||el.contentEditable==='true'||el.classList?.contains('axis-title')||el.classList?.contains('chart-title'))){
@@ -992,7 +989,7 @@ function updateToolbar(el,pointData){
         const isUnderline=cs.textDecorationLine?.includes('underline')||el.style.textDecoration?.includes('underline');
         const size=parseInt(cs.fontSize)||13;
         const align=cs.textAlign||'left';
-        editHtml+=`<span style="opacity:0.5">Text:</span>
+        html+=`<div class="tb-sep"></div><span style="opacity:0.5">Text:</span>
             <button class="${isBold?'tb-active':''}" onclick="tbToggleBold()" title="Bold"><b>B</b></button>
             <button class="${isItalic?'tb-active':''}" onclick="tbToggleItalic()" title="Italic"><i>I</i></button>
             <button class="${isUnderline?'tb-active':''}" onclick="tbToggleUnderline()" title="Underline" style="text-decoration:underline">U</button>
@@ -1003,7 +1000,7 @@ function updateToolbar(el,pointData){
             <select onchange="tbFontFamily(this.value)" title="Font" style="max-width:90px">
                 ${['Arial','Georgia','Courier New','Times New Roman','Verdana','Helvetica'].map(f=>`<option value="${f}" ${cs.fontFamily.includes(f)?'selected':''}>${f}</option>`).join('')}
             </select>
-            <select onchange="tbTextAlign(this.value)" title="Alignment" style="width:60px">
+            <select onchange="tbTextAlign(this.value)" title="Alignment" style="width:55px">
                 ${['left','center','right'].map(a=>`<option value="${a}" ${align===a?'selected':''}>${a[0].toUpperCase()+a.slice(1)}</option>`).join('')}
             </select>`;
     } else if(el&&(el.closest?.('.canvas-anno-wrap')&&(el.querySelector?.('line')||el.querySelector?.('svg line')))){
@@ -1012,7 +1009,7 @@ function updateToolbar(el,pointData){
             const sw=line.getAttribute('stroke-width')||'2';
             const dash=line.getAttribute('stroke-dasharray')||'';
             const hasArrow=!!el.querySelector('marker');
-            editHtml+=`<span style="opacity:0.5">Line:</span>
+            html+=`<div class="tb-sep"></div><span style="opacity:0.5">Line:</span>
                 <select onchange="tbLineWidth(this.value)">
                     ${[1,1.5,2,3,4,5].map(w=>`<option value="${w}" ${parseFloat(sw)===w?'selected':''}>${w}px</option>`).join('')}
                 </select>
@@ -1026,7 +1023,7 @@ function updateToolbar(el,pointData){
                 <button class="${hasArrow?'tb-active':''}" onclick="tbToggleArrow()" title="Arrowhead">&#9654;</button>`;
         }
     } else if(el&&el.classList?.contains('canvas-shape')){
-        editHtml+=`<span style="opacity:0.5">Shape:</span>
+        html+=`<div class="tb-sep"></div><span style="opacity:0.5">Shape:</span>
             <span class="tb-color-swatch" id="tb-shape-color" style="background:${el.style.borderColor||el.style.background||'#e6edf3'}" onclick="tbOpenShapeSwatch(this)" onmouseenter="tbOpenShapeSwatch(this)" title="Color"></span>
             <select onchange="tbShapeType(this.value)" title="Shape type">
                 ${['rectangle','circle','ellipse','diamond','triangle'].map(s=>`<option value="${s}" ${(el.dataset.shape||'rectangle')===s?'selected':''}>${s[0].toUpperCase()+s.slice(1)}</option>`).join('')}
@@ -1036,7 +1033,6 @@ function updateToolbar(el,pointData){
             </select>
             <label class="checkbox-row" style="margin:0;font-size:10px"><input type="checkbox" ${el.dataset.filled==='true'?'checked':''} onchange="tbShapeFill(this.checked)"> Fill</label>`;
     }
-    if(editHtml) html+=`<div class="tb-row-edit">${editHtml}</div>`;
     tb.innerHTML=html;
 }
 
