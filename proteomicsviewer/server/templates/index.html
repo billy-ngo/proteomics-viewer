@@ -1857,6 +1857,7 @@ function grpVals(fi,grp,qd,fidx){
 }
 function grpColor(grp){const b=BINS.find(b=>b.label===grp);return b?b.color:DERIVED.find(d=>d.name===grp)?'#bc8cff':'#8b949e'}
 function pLabel(fidx,fi){const p=RAW.proteins[fidx[fi]];const g=p.gene_name||p.majority_id||p.id;return g.length>40?g.slice(0,37)+'...':g}
+function pHoverLabel(fidx,fi){const p=RAW.proteins[fidx[fi]];const pid=p.majority_id||p.id||'';const gene=p.gene_name||'';if(gene&&gene!==pid)return gene+'<br>'+pid;return pid}
 function pFullLabel(fidx,fi){const p=RAW.proteins[fidx[fi]];return (p.majority_id||p.id)+'\n'+(p.gene_name||'')}
 function fmtVal(v){
     // Smart format: plain number for small values (spectral counts), scientific for large
@@ -2304,7 +2305,7 @@ function buildEnrichmentConfig(chart,p,qd,fidx){
         // For enrichment, skip proteins not detected in both groups (unique proteins belong in Unique plot)
         if(mA===0||mB===0)continue;
         const val=isLog2?Math.log2(mA/mB):(mA/mB);
-        let hover=pLabel(fidx,fi)+'<br>'+(isLog2?'log2FC':'Ratio')+': '+(val<100?val.toFixed(3):val.toFixed(1))+'<br>'+gx+': '+fmtVal(mA)+'<br>'+gy+': '+fmtVal(mB);
+        let hover=pHoverLabel(fidx,fi)+'<br>'+(isLog2?'log2FC':'Ratio')+': '+(val<100?val.toFixed(3):val.toFixed(1))+'<br>'+gx+': '+fmtVal(mA)+'<br>'+gy+': '+fmtVal(mB);
         if(isAggSum()) hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);
         data.push({val,label:pLabel(fidx,fi),full:pFullLabel(fidx,fi),hover,pidx:fidx[fi]});
     }
@@ -2327,7 +2328,7 @@ function buildUniqueConfig(chart,p,qd,fidx){
         const fm=mean(grpVals(fi,featured,qd,fidx));if(fm<=0)continue;
         let found=false;for(const eg of excludeGroups){if(eg===featured)continue;if(mean(grpVals(fi,eg,qd,fidx))>0){found=true;break}}
         if(found)continue;
-        items.push({label:pLabel(fidx,fi),abund:fm,full:pFullLabel(fidx,fi),pidx:fidx[fi]});
+        items.push({label:pLabel(fidx,fi),hoverLabel:pHoverLabel(fidx,fi),abund:fm,full:pFullLabel(fidx,fi),pidx:fidx[fi]});
     }
     items.sort((a,b)=>a.abund-b.abund);const shown=items.slice(0,80);
     // Beeswarm: compute collision based on data range
@@ -2350,13 +2351,13 @@ function buildUniqueConfig(chart,p,qd,fidx){
             }
             if(!collides){bestX=tryX;break}
         }
-        const pt={x:bestX,y:d.abund,label:d.label,full:d.full,pidx:d.pidx};
+        const pt={x:bestX,y:d.abund,label:d.label,hoverLabel:d.hoverLabel,full:d.full,pidx:d.pidx};
         placed.push(pt);
         return pt;
     });
     const baseColor=grpColor(featured);
     const mo=applyMarkerOverrides(jittered.map(d=>d.pidx),baseColor,7,'circle');
-    chart.setData([{x:jittered.map(d=>d.x),y:jittered.map(d=>d.y),mode:'markers',marker:{size:mo.size,color:mo.color,symbol:mo.symbol},text:jittered.map(d=>d.label+'<br>Abundance: '+fmtVal(d.y)),customdata:jittered.map(d=>d.full)}]);
+    chart.setData([{x:jittered.map(d=>d.x),y:jittered.map(d=>d.y),mode:'markers',marker:{size:mo.size,color:mo.color,symbol:mo.symbol},text:jittered.map(d=>d.hoverLabel+'<br>Abundance: '+fmtVal(d.y)),customdata:jittered.map(d=>d.full)}]);
     chart.setChartTitle(p.title||'').setXTitle('').setYTitle('Abundance');
     const wrap=chart.container.closest('.canvas-plot');
     if(wrap&&!wrap.dataset.userResized){wrap.style.width='320px';wrap.dataset.userResized=''}
@@ -2367,7 +2368,7 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     if(isAggSum()){chart.setData([]).setXTitle('').setYTitle('Sums mode — no statistics').render();return}
     const gx=p.config.gx,gy=p.config.gy,fcT=p.config.fc||1,fdrT=p.config.fdr||0.05,doImpute=p.config.impute;
     const s0=p.config.s0||0;
-    const fc=[],rawP=[],labels=[],fulls=[],pidxArr=[];
+    const fc=[],rawP=[],labels=[],fulls=[],pidxArr=[],hoverLabels=[];
     for(let fi=0;fi<fidx.length;fi++){
         let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
         const mA=mean(vA),mB=mean(vB);
@@ -2379,6 +2380,7 @@ function buildVolcanoConfig(chart,p,qd,fidx){
         labels.push(pLabel(fidx,fi));
         fulls.push(pFullLabel(fidx,fi));
         pidxArr.push(fidx[fi]);
+        hoverLabels.push(pHoverLabel(fidx,fi));
     }
     const adjP=bhFDR(rawP);const negLog=adjP.map(p=>-Math.log10(Math.max(p,1e-300)));
     const cats=fc.map((f,i)=>adjP[i]<fdrT&&Math.abs(f)>=fcT?(f>0?'up':'down'):'ns');
@@ -2387,7 +2389,7 @@ function buildVolcanoConfig(chart,p,qd,fidx){
         const baseColor=cat==='up'?grpColor(gx):cat==='down'?grpColor(gy):'#6e7681';
         const baseSize=cat==='ns'?4:6;
         const mo=applyMarkerOverrides(idx.map(i=>pidxArr[i]),baseColor,baseSize,'circle');
-        traces.push({x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),mode:'markers',marker:{size:mo.size,color:mo.color,opacity:cat==='ns'?0.5:0.85,symbol:mo.symbol},text:idx.map(i=>labels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),customdata:idx.map(i=>fulls[i])})});
+        traces.push({x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),mode:'markers',marker:{size:mo.size,color:mo.color,opacity:cat==='ns'?0.5:0.85,symbol:mo.symbol},text:idx.map(i=>hoverLabels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),customdata:idx.map(i=>fulls[i])})});
     // Threshold reference lines (dotted)
     const fdrLine=-Math.log10(fdrT);
     chart._refLines=[
@@ -2421,13 +2423,13 @@ function buildDotplotConfig(chart,p,qd,fidx){
             my=grpMean(fi,gy,qd,fidx);
         }
         if(mx===0&&my===0)continue;
-        const label=pLabel(fidx,fi),full=pFullLabel(fidx,fi);
-        let hover=label+'<br>'+gx+': '+fmtVal(mx)+'<br>'+gy+': '+fmtVal(my);
+        const label=pLabel(fidx,fi),full=pFullLabel(fidx,fi),hl=pHoverLabel(fidx,fi);
+        let hover=hl+'<br>'+gx+': '+fmtVal(mx)+'<br>'+gy+': '+fmtVal(my);
         if(!intra&&isAggSum()) hover+='<br>---<br>'+gx+':<br>'+grpSampleBreakdown(fi,gx,qd)+'<br>'+gy+':<br>'+grpSampleBreakdown(fi,gy,qd);
         const pi=fidx[fi];
         if(mx>0&&my>0) both.push({x:txFn(mx),y:txFn(my),label,full,hover,pidx:pi});
-        else if(mx>0) xOnly.push({rawX:mx,x:txFn(mx),label,full,hover:label+'<br>Only in '+gx+'<br>'+gx+': '+fmtVal(mx),pidx:pi});
-        else yOnly.push({rawY:my,y:txFn(my),label,full,hover:label+'<br>Only in '+gy+'<br>'+gy+': '+fmtVal(my),pidx:pi});
+        else if(mx>0) xOnly.push({rawX:mx,x:txFn(mx),label,full,hover:hl+'<br>Only in '+gx+'<br>'+gx+': '+fmtVal(mx),pidx:pi});
+        else yOnly.push({rawY:my,y:txFn(my),label,full,hover:hl+'<br>Only in '+gy+'<br>'+gy+': '+fmtVal(my),pidx:pi});
     }
 
     // Place unique proteins at the axis floor — below the main cloud

@@ -251,6 +251,11 @@ class ProkerChart {
 
                 const isHollow = marker._hollow;
                 const attrs = `class="data-pt" data-ti="${ti}" data-i="${i}" data-x="${vx}" data-y="${vy}" data-hover="${this._esc(hoverText)}" data-custom="${this._esc(customData)}" style="cursor:pointer"`;
+                // Invisible hit area for small points (min 8px radius)
+                const minHit = 8;
+                if (ptSize < minHit) {
+                    svg += `<circle cx="${px}" cy="${py}" r="${minHit}" fill="transparent" stroke="none" ${attrs}/>`;
+                }
                 if (ptSymbol === 'cross') {
                     svg += symFn(px, py, ptSize) + `stroke="${c}" opacity="${opacity}" ${attrs}/>`;
                 } else if (isHollow) {
