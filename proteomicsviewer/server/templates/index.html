@@ -470,7 +470,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">3.7.0</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">3.8.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -507,6 +507,7 @@ async function uploadFile(file,append){
         <details style="margin-bottom:16px">
             <summary style="font-size:14px;font-weight:700;cursor:pointer;padding:4px 0">Version History</summary>
             <div style="font-size:12px;color:var(--text-sec);line-height:1.7;margin-top:8px;max-height:200px;overflow-y:auto">
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">3.8.0</strong> (April 2026)<br>Unified color swatch palette across all pickers, swatch popup toolbar fix, dynamic macOS plist version</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.7.0</strong> (April 2026)<br>Fix canvas text/line annotation glitches, unified default marker size, auto-shutdown lock path fix, merge all pending features</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.6.0</strong> (April 2026)<br>Groups of Interest, species highlight, 2-of-diamonds logo, hover shows protein ID, min click target, toolbar enhancements, color swatch on hover, remove Bokeh</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.5.0</strong> (April 2026)<br>Peptide coverage map (FASTA sequence input, residue-level visualization), desktop icon fix</div>
@@ -773,7 +774,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='3.7.0';
+var PROKER_VERSION='3.8.0';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;

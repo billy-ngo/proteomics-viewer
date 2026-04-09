@@ -2,6 +2,13 @@
 
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 
+## [3.8.0] - 2026-04-09
+
+### Changed
+- **Unified color swatch palette** — All color pickers (bin groups, species highlight, Groups of Interest) now use the BiNgo-style 120-color swatch popup with click for palette and double-click for native picker, replacing native `<input type="color">` elements.
+- **Toolbar swatch fix** — Clicking inside the swatch popup no longer dismisses the toolbar (added `.swatch-popup` class guard).
+- **Dynamic macOS plist version** — `CFBundleVersion` in generated `.app` bundle uses `__version__` dynamically.
+
 ## [3.7.0] - 2026-04-09
 
 ### Fixed
