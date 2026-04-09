@@ -2,6 +2,17 @@
 
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 
+## [3.7.0] - 2026-04-09
+
+### Fixed
+- **Canvas line annotations** — Rewrote `addCanvasLine()` to use a single state object and single set of document-level listeners, preventing listener accumulation on each re-render.
+- **Canvas text annotations** — Fixed text box selection and toolbar interaction glitch.
+- **Auto-shutdown lock path** — Server lock file now uses `~/.proker/` consistently (was `~/.proteomicsviewer/`).
+- **macOS shortcut version** — `CFBundleVersion` in generated `.app` plist now uses the dynamic package version instead of a hardcoded string.
+
+### Changed
+- Merged all pending features from parallel development (v3.4.0–v3.6.1).
+
 ## [3.6.1] - 2026-04-09
 
 ### Changed

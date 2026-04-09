@@ -132,6 +132,7 @@ def _install_macos(target_dir):
         except Exception:
             pass
 
+    from proteomicsviewer import __version__
     plist = contents / "Info.plist"
     icon_entry = "<key>CFBundleIconFile</key>\n    <string>icon</string>" if icon_set else ""
     plist.write_text(textwrap.dedent(f"""\
@@ -147,7 +148,7 @@ def _install_macos(target_dir):
             <key>CFBundleIdentifier</key>
             <string>com.proker.app</string>
             <key>CFBundleVersion</key>
-            <string>3.6.1</string>
+            <string>{__version__}</string>
             <key>CFBundlePackageType</key>
             <string>APPL</string>
             {icon_entry}
