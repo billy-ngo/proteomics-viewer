@@ -2605,50 +2605,52 @@ function addCanvasLine(){
     wrap.className='canvas-anno-wrap';
     wrap.style.cssText='position:absolute;left:50px;top:100px;width:200px;height:40px';
     let x1=0,y1=20,x2=200,y2=20;
-    // Whole-wrap drag state (separate from endpoint drag)
-    let wDrag=false,wSX,wSY,wOL,wOT;
-    function buildSVG(){
+    // Drag states
+    var lineDragState={whole:false,ep:false,epEnd:null,sx:0,sy:0,ol:0,ot:0,ox1:0,oy1:0,ox2:0,oy2:0};
+
+    function renderLine(){
         const minX=Math.min(x1,x2)-10,minY=Math.min(y1,y2)-10;
         const w=Math.abs(x2-x1)+20,h=Math.abs(y2-y1)+20;
         wrap.style.width=w+'px';wrap.style.height=h+'px';
         wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button><svg width="${w}" height="${h}" style="position:absolute;left:0;top:0;overflow:visible;cursor:move"><line x1="${x1-minX}" y1="${y1-minY}" x2="${x2-minX}" y2="${y2-minY}" stroke="var(--text)" stroke-width="2"/></svg><div class="canvas-line-handle" style="left:${x1-minX-5}px;top:${y1-minY-5}px" data-end="1"></div><div class="canvas-line-handle" style="left:${x2-minX-5}px;top:${y2-minY-5}px" data-end="2"></div>`;
-        // Endpoint drag
-        wrap.querySelectorAll('.canvas-line-handle').forEach(h=>{
-            let dr=false,sx,sy,ox1,oy1,ox2,oy2;
-            h.addEventListener('mousedown',e=>{
+        // Endpoint mousedown
+        wrap.querySelectorAll('.canvas-line-handle').forEach(function(handle){
+            handle.addEventListener('mousedown',function(e){
                 e.preventDefault();e.stopPropagation();
-                dr=true;sx=e.clientX;sy=e.clientY;ox1=x1;oy1=y1;ox2=x2;oy2=y2;
+                lineDragState.ep=true;lineDragState.epEnd=handle.dataset.end;
+                lineDragState.sx=e.clientX;lineDragState.sy=e.clientY;
+                lineDragState.ox1=x1;lineDragState.oy1=y1;lineDragState.ox2=x2;lineDragState.oy2=y2;
                 document.body.style.cursor='move';
             });
-            document.addEventListener('mousemove',e=>{
-                if(!dr)return;
-                const dx=e.clientX-sx,dy=e.clientY-sy;
-                if(h.dataset.end==='1'){x1=ox1+dx;y1=oy1+dy}else{x2=ox2+dx;y2=oy2+dy}
-                buildSVG();
-            });
-            document.addEventListener('mouseup',()=>{if(dr){dr=false;document.body.style.cursor=''}});
         });
-        // Whole-line drag via SVG body
-        const svg=wrap.querySelector('svg');
-        svg.addEventListener('mousedown',e=>{
+        // SVG body mousedown (whole-line drag)
+        var svg=wrap.querySelector('svg');
+        svg.addEventListener('mousedown',function(e){
             if(e.target.closest('.canvas-line-handle'))return;
             e.preventDefault();e.stopPropagation();
-            wDrag=true;wSX=e.clientX;wSY=e.clientY;
-            wOL=parseFloat(wrap.style.left)||0;wOT=parseFloat(wrap.style.top)||0;
+            lineDragState.whole=true;lineDragState.sx=e.clientX;lineDragState.sy=e.clientY;
+            lineDragState.ol=parseFloat(wrap.style.left)||0;lineDragState.ot=parseFloat(wrap.style.top)||0;
             document.body.style.cursor='move';
         });
-        // Click SVG to select line for toolbar
-        svg.addEventListener('click',e=>{
-            if(!e.defaultPrevented) updateToolbar(wrap);
-        });
+        svg.addEventListener('click',function(e){if(!e.defaultPrevented)updateToolbar(wrap)});
     }
-    document.addEventListener('mousemove',e=>{
-        if(!wDrag)return;
-        wrap.style.left=(wOL+e.clientX-wSX)+'px';
-        wrap.style.top=(wOT+e.clientY-wSY)+'px';
+    // Single set of document-level listeners (no accumulation)
+    document.addEventListener('mousemove',function(e){
+        if(lineDragState.ep){
+            var dx=e.clientX-lineDragState.sx,dy=e.clientY-lineDragState.sy;
+            if(lineDragState.epEnd==='1'){x1=lineDragState.ox1+dx;y1=lineDragState.oy1+dy}
+            else{x2=lineDragState.ox2+dx;y2=lineDragState.oy2+dy}
+            renderLine();
+        }
+        if(lineDragState.whole){
+            wrap.style.left=(lineDragState.ol+e.clientX-lineDragState.sx)+'px';
+            wrap.style.top=(lineDragState.ot+e.clientY-lineDragState.sy)+'px';
+        }
     });
-    document.addEventListener('mouseup',()=>{if(wDrag){wDrag=false;document.body.style.cursor=''}});
-    buildSVG();
+    document.addEventListener('mouseup',function(){
+        if(lineDragState.ep||lineDragState.whole){lineDragState.ep=false;lineDragState.whole=false;document.body.style.cursor=''}
+    });
+    renderLine();
 }
 
 function doExport(fmt){
