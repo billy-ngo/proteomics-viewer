@@ -115,7 +115,7 @@ def _auto_shutdown_watchdog():
     while True:
         time.sleep(10)
         if _last_heartbeat > 0 and (time.time() - _last_heartbeat) > _HEARTBEAT_TIMEOUT:
-            lock_file = Path.home() / ".proteomicsviewer" / "server.lock"
+            lock_file = Path.home() / ".proker" / "server.lock"
             try:
                 lock_file.unlink(missing_ok=True)
             except Exception:

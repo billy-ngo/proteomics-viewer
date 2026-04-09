@@ -1268,6 +1268,14 @@ document.getElementById('continue-btn').addEventListener('click',()=>{populatePr
 function updateStatus(){if(!RAW)return;const filtered=PROC_FIDX.length;const removed=RAW.total_proteins-filtered;document.getElementById('status-text').textContent=filtered+' proteins'+(removed>0?' ('+removed+' filtered)':'');const a=BINS.reduce((n,b)=>n+b.samples.length,0);document.getElementById('status-groups').textContent=BINS.length+' groups | '+a+'/'+RAW.samples.length+' assigned';document.getElementById('header-subtitle').textContent=RAW.filename+' \u00B7 '+RAW.samples.length+' samples'}
 function startHeartbeat(){setInterval(()=>fetch('/api/heartbeat').catch(()=>{}),10000)}
 
+// Exit guard — warn user before closing tab if data is loaded
+window.addEventListener('beforeunload',e=>{
+    if(RAW||CANVAS_PLOTS.length){
+        e.preventDefault();
+        e.returnValue='';
+    }
+});
+
 // ================================================================
 // PROCESSING
 // ================================================================
