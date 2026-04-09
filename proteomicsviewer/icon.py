@@ -1,9 +1,9 @@
 """
 Pro-ker Proteomics Analysis icon generator.
 
-Renders two overlapping poker cards with a red "2" centred on the front card.
-Simplified design that reads clearly at all icon sizes.
-Pure Python (struct + zlib), no Pillow required.
+Renders two overlapping "2 of diamonds" playing cards with thick dark
+borders, matching the in-app SVG logo.  Pure Python (struct + zlib),
+no Pillow required.
 
 Public API
 ----------
@@ -16,10 +16,11 @@ import struct
 import zlib
 
 _RED = (0xDC, 0x26, 0x26)
-_DARK = (0x0D, 0x11, 0x17)
-_CARD_BACK = (0xD0, 0xD2, 0xD3)
-_CARD_FRONT = (0xFF, 0xFF, 0xFF)
-_BORDER = (0xBB, 0xBB, 0xBB)
+_DARK = (0x22, 0x22, 0x22)
+_APP_BG = (0x0D, 0x11, 0x17)
+_CARD_EDGE = (0xF5, 0xF5, 0xF5)
+_CARD_FACE = (0xFF, 0xFF, 0xFF)
+_INNER_BORDER = (0xDD, 0xDD, 0xDD)
 
 
 def _make_png(width, height, rows):
@@ -66,9 +67,25 @@ def _in_rotated_rounded_rect(px, py, cx, cy, hw, hh, r, angle):
     return True
 
 
-def _on_rotated_rect_border(px, py, cx, cy, hw, hh, r, angle, thickness=1.0):
-    return (_in_rotated_rounded_rect(px, py, cx, cy, hw, hh, r, angle) and
-            not _in_rotated_rounded_rect(px, py, cx, cy, hw - thickness, hh - thickness, max(0, r - thickness * 0.5), angle))
+def _draw_card(pixels, s, cx, cy, angle, hw, hh, r, border_w):
+    """Draw a card with thick dark border, gray edge, and white face."""
+    outer_hw = hw + border_w
+    outer_hh = hh + border_w
+    outer_r = r + border_w * 0.6
+    edge_hw = hw
+    edge_hh = hh
+    face_hw = hw - max(1, s * 0.025)
+    face_hh = hh - max(1, s * 0.025)
+    face_r = max(1, r - 1)
+    for y in range(s):
+        for x in range(s):
+            if _in_rotated_rounded_rect(x, y, cx, cy, outer_hw, outer_hh, outer_r, angle):
+                if _in_rotated_rounded_rect(x, y, cx, cy, face_hw, face_hh, face_r, angle):
+                    pixels[y][x] = _CARD_FACE
+                elif _in_rotated_rounded_rect(x, y, cx, cy, edge_hw, edge_hh, r, angle):
+                    pixels[y][x] = _CARD_EDGE
+                else:
+                    pixels[y][x] = _DARK
 
 
 # "2" glyph on a 5x7 grid
@@ -82,9 +99,17 @@ _GLYPH_2 = [
     [1, 1, 1, 1, 1],
 ]
 
+# Diamond suit as a simple 5x7 grid
+_GLYPH_DIAMOND = [
+    [0, 0, 1, 0, 0],
+    [0, 1, 1, 1, 0],
+    [1, 1, 1, 1, 1],
+    [0, 1, 1, 1, 0],
+    [0, 0, 1, 0, 0],
+]
+
 
 def _draw_glyph(pixels, glyph, ox, oy, scale, color, size):
-    """Draw a block-letter glyph (no rotation)."""
     for ri, row in enumerate(glyph):
         for ci, val in enumerate(row):
             if not val:
@@ -97,9 +122,24 @@ def _draw_glyph(pixels, glyph, ox, oy, scale, color, size):
                         pixels[ly][lx] = color
 
 
+def _draw_glyph_rotated(pixels, glyph, ox, oy, scale, color, size, angle, rcx, rcy):
+    for ri, row in enumerate(glyph):
+        for ci, val in enumerate(row):
+            if not val:
+                continue
+            for dy in range(scale):
+                for dx in range(scale):
+                    lx = ox + ci * scale + dx
+                    ly = oy + ri * scale + dy
+                    rx, ry = _rot(lx, ly, rcx, rcy, angle)
+                    rx, ry = round(rx), round(ry)
+                    if 0 <= rx < size and 0 <= ry < size:
+                        pixels[ry][rx] = color
+
+
 def generate_png(size=48):
-    """Return PNG bytes for two overlapping cards with a red '2' on the front."""
-    pixels = [[_DARK for _ in range(size)] for _ in range(size)]
+    """Return PNG bytes for two overlapping '2 of diamonds' cards."""
+    pixels = [[_APP_BG for _ in range(size)] for _ in range(size)]
     s = size
 
     # Rounded dark background
@@ -110,47 +150,38 @@ def generate_png(size=48):
                 pixels[y][x] = (0, 0, 0, 0)
 
     # Card dimensions
-    card_w = s * 0.50
-    card_h = s * 0.68
+    card_w = s * 0.44
+    card_h = s * 0.64
     hw, hh = card_w / 2, card_h / 2
-    corner_r = max(2, s * 0.05)
-    border_t = max(0.8, s * 0.015)
+    corner_r = max(2, s * 0.06)
+    border_w = max(1.5, s * 0.04)
 
-    # Back card: offset left, tilted -12°
+    # Back card: offset left, tilted -12
     back_cx = s * 0.36
     back_cy = s * 0.50
     back_angle = -12
+    _draw_card(pixels, s, back_cx, back_cy, back_angle, hw, hh, corner_r, border_w)
 
-    # Front card: offset right, tilted 6°
-    front_cx = s * 0.56
+    # Front card: offset right, tilted 4
+    front_cx = s * 0.58
     front_cy = s * 0.50
-    front_angle = 6
+    front_angle = 4
+    _draw_card(pixels, s, front_cx, front_cy, front_angle, hw, hh, corner_r, border_w)
 
-    # Draw back card
-    for y in range(s):
-        for x in range(s):
-            if _on_rotated_rect_border(x, y, back_cx, back_cy, hw, hh, corner_r, back_angle, border_t):
-                pixels[y][x] = _BORDER
-            elif _in_rotated_rounded_rect(x, y, back_cx, back_cy, hw, hh, corner_r, back_angle):
-                pixels[y][x] = _CARD_BACK
-
-    # Draw front card
-    for y in range(s):
-        for x in range(s):
-            if _on_rotated_rect_border(x, y, front_cx, front_cy, hw, hh, corner_r, front_angle, border_t):
-                pixels[y][x] = _BORDER
-            elif _in_rotated_rounded_rect(x, y, front_cx, front_cy, hw, hh, corner_r, front_angle):
-                pixels[y][x] = _CARD_FRONT
-
-    # Draw a single red "2" centred on the front card
-    glyph_w = 5
-    glyph_h = 7
-    sc = max(1, round(s / 20))  # scale so "2" fills ~25% of card width
-    total_w = glyph_w * sc
-    total_h = glyph_h * sc
-    ox = round(front_cx - total_w / 2)
-    oy = round(front_cy - total_h / 2)
+    # Draw "2" centered on front card
+    sc = max(1, round(s / 22))
+    gw = 5 * sc
+    gh = 7 * sc
+    ox = round(front_cx - gw / 2)
+    oy = round(front_cy - gh / 2)
     _draw_glyph(pixels, _GLYPH_2, ox, oy, sc, _RED, s)
+
+    # Small diamond below the "2" on front card
+    dsc = max(1, round(s / 48))
+    if dsc >= 1:
+        dox = round(front_cx - 2.5 * dsc)
+        doy = oy + gh + max(1, round(s * 0.02))
+        _draw_glyph(pixels, _GLYPH_DIAMOND, dox, doy, dsc, _RED, s)
 
     # Build rows
     rows = []
