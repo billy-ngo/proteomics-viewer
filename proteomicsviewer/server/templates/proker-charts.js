@@ -311,6 +311,7 @@ class ProkerChart {
         // Reference lines (threshold lines, etc.) — hidden when _showRefLines === false
         if (this._refLines && this._refLines.length && this._showRefLines !== false) {
             this._refLines.forEach(rl => {
+                if (rl._hidden) return;
                 const c = rl.color || T.textSec;
                 const dash = rl.dash || '5,4';
                 const w = rl.width || 1;

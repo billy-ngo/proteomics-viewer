@@ -2,6 +2,16 @@
 
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 
+## [4.1.0] - 2026-04-09
+
+### Added
+- **Shape annotations** — New `+Shape` button in canvas toolbar. Add rectangles, circles, ellipses, diamonds, or triangles to the canvas. Shapes are resizable, draggable, with customizable border color (via swatch palette), border width, and optional fill.
+- **Canvas panning** — Click and drag on empty canvas space to pan/scroll the viewport.
+- **Separate volcano threshold controls** — Graph settings for volcano plots now show individual FC and FDR threshold line toggles alongside the main threshold checkbox.
+
+### Changed
+- **Toolbar layout** — Top row is fixed-height with `+Text`, `+Line`, `+Shape` buttons. Editing controls (text formatting, line style, shape properties, point color) appear in a second row that expands downward only when an element is selected.
+
 ## [4.0.0] - 2026-04-09
 
 ### Added

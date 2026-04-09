@@ -124,7 +124,9 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .canvas-zoom-btn:hover{color:var(--text);border-color:var(--text-sec)}
 .canvas-zoom-level{font-size:10px;color:var(--text-sec);display:flex;align-items:center;padding:0 4px}
 /* Context toolbar above canvas */
-#canvas-toolbar{min-height:28px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 10px;gap:6px;font-size:11px;color:var(--text-sec);flex-shrink:0;flex-wrap:wrap}
+#canvas-toolbar{background:var(--surface);border-bottom:1px solid var(--border);font-size:11px;color:var(--text-sec);flex-shrink:0}
+#canvas-toolbar .tb-row{display:flex;align-items:center;padding:0 10px;gap:6px;height:28px}
+#canvas-toolbar .tb-row-edit{display:flex;align-items:center;padding:0 10px;gap:6px;min-height:28px;border-top:1px solid var(--border);flex-wrap:wrap}
 #canvas-toolbar .tb-sep{width:1px;height:16px;background:var(--border)}
 #canvas-toolbar button{padding:2px 6px;background:transparent;border:1px solid var(--border);border-radius:3px;color:var(--text-sec);cursor:pointer;font-family:inherit;font-size:11px}
 #canvas-toolbar button:hover{border-color:var(--text-sec);color:var(--text)}
@@ -373,9 +375,12 @@ async function uploadFile(file,append){
                 <span style="font-size:11px;color:var(--text-sec)">Grid</span>
                 <span class="gs-swatch" id="gs-grid-color-sw" onclick="gsOpenPicker('gs-grid-color')" onmouseenter="gsOpenPicker('gs-grid-color')" ondblclick="gsNative('gs-grid-color')" style="margin-left:auto"></span>
             </div>
-            <div id="gs-threshold-row" style="display:flex;align-items:center;gap:6px">
+            <div id="gs-threshold-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                 <input type="checkbox" id="gs-show-thresholds" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)" title="Show dotted threshold lines (FC and FDR)">
                 <span style="font-size:11px;color:var(--text-sec)">Threshold lines</span>
+                <span id="gs-threshold-sep" style="display:none;margin-left:6px;font-size:10px;color:var(--text-sec)">|</span>
+                <label id="gs-fc-line-label" class="checkbox-row" style="margin:0;display:none;font-size:10px"><input type="checkbox" id="gs-show-fc-lines" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)"> FC</label>
+                <label id="gs-fdr-line-label" class="checkbox-row" style="margin:0;display:none;font-size:10px"><input type="checkbox" id="gs-show-fdr-line" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)"> FDR</label>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
                 <input type="checkbox" id="gs-show-plotbg" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)" title="Show a colored background behind the plot area">
@@ -470,7 +475,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.0.0</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.1.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -511,6 +516,7 @@ async function uploadFile(file,append){
         <details style="margin-bottom:16px">
             <summary style="font-size:14px;font-weight:700;cursor:pointer;padding:4px 0">Version History</summary>
             <div style="font-size:12px;color:var(--text-sec);line-height:1.7;margin-top:8px;max-height:200px;overflow-y:auto">
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">4.1.0</strong> (April 2026)<br>+Shape annotations (rectangle, circle, diamond, triangle with color/fill/border), two-row toolbar with editing controls below, separate volcano FC/FDR threshold line toggles, canvas panning by click-drag on empty space</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">4.0.0</strong> (April 2026)<br>Published imputation methods (Perseus, MinProb, kNN), robust session save/load with graph positions and annotations, searchable protein dropdown with FASTA drag-drop for coverage map, amino acid-level peptide display with boundary markers, context menu color swatch, UI tooltips, upload performance fix</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.9.0</strong> (April 2026)<br>Protein Abundance ranked plot with error bars (SD, SEM, range), volcano tooltip guidance for FC threshold and S0</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.8.0</strong> (April 2026)<br>Unified color swatch palette across all pickers, swatch popup toolbar fix, dynamic macOS plist version</div>
@@ -781,7 +787,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='4.0.0';
+var PROKER_VERSION='4.1.0';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -962,8 +968,7 @@ function openNativeColorPicker(currentColor,onPick){
 }
 
 function tbBase(){
-    // Always-visible annotation buttons
-    return `<button onclick="addCanvasTextBox()" title="Add text box" style="font-size:10px">+ Text</button><button onclick="addCanvasLine()" title="Add line" style="font-size:10px">+ Line</button>`;
+    return `<div class="tb-row"><button onclick="addCanvasTextBox()" title="Add text box" style="font-size:10px">+ Text</button><button onclick="addCanvasLine()" title="Add line" style="font-size:10px">+ Line</button><button onclick="addCanvasShape()" title="Add shape" style="font-size:10px">+ Shape</button></div>`;
 }
 
 function updateToolbar(el,pointData){
@@ -971,11 +976,11 @@ function updateToolbar(el,pointData){
     tbSelectedEl=el;
     tbSelectedPoint=pointData||null;
     let html=tbBase();
+    let editHtml='';
 
     if(pointData){
-        // Point selected — show color swatch
-        html+=`<div class="tb-sep"></div><span style="opacity:0.5">Point:</span>`;
-        html+=`<span class="tb-color-swatch" id="tb-pt-color" style="background:${pointData.color||'#e6edf3'}" onclick="tbOpenPointSwatch(this)" onmouseenter="tbOpenPointSwatch(this)" ondblclick="tbNativePointColor()" title="Hover or click: swatches, Double-click: picker"></span>`;
+        editHtml+=`<span style="opacity:0.5">Point:</span>`;
+        editHtml+=`<span class="tb-color-swatch" id="tb-pt-color" style="background:${pointData.color||'#e6edf3'}" onclick="tbOpenPointSwatch(this)" onmouseenter="tbOpenPointSwatch(this)" ondblclick="tbNativePointColor()" title="Hover or click: swatches, Double-click: picker"></span>`;
     }
 
     if(el&&(el.classList?.contains('canvas-textbox')||el.contentEditable==='true'||el.classList?.contains('axis-title')||el.classList?.contains('chart-title'))){
@@ -985,18 +990,18 @@ function updateToolbar(el,pointData){
         const isUnderline=cs.textDecorationLine?.includes('underline')||el.style.textDecoration?.includes('underline');
         const size=parseInt(cs.fontSize)||13;
         const align=cs.textAlign||'left';
-        html+=`<div class="tb-sep"></div>
+        editHtml+=`<span style="opacity:0.5">Text:</span>
             <button class="${isBold?'tb-active':''}" onclick="tbToggleBold()" title="Bold"><b>B</b></button>
             <button class="${isItalic?'tb-active':''}" onclick="tbToggleItalic()" title="Italic"><i>I</i></button>
             <button class="${isUnderline?'tb-active':''}" onclick="tbToggleUnderline()" title="Underline" style="text-decoration:underline">U</button>
             <select onchange="tbFontSize(this.value)" title="Font size">
                 ${[8,9,10,11,12,13,14,16,18,20,24,28,32,36,48].map(s=>`<option value="${s}" ${s===size?'selected':''}>${s}px</option>`).join('')}
             </select>
-            <span class="tb-color-swatch" id="tb-text-color" style="background:${tbColorToHex(el.style?.color||cs.color)}" onclick="tbOpenTextSwatch(this)" onmouseenter="tbOpenTextSwatch(this)" ondblclick="tbNativeTextColor()" title="Hover or click: swatches, Double-click: picker"></span>
-            <select onchange="tbFontFamily(this.value)" title="Font" style="max-width:100px">
+            <span class="tb-color-swatch" id="tb-text-color" style="background:${tbColorToHex(el.style?.color||cs.color)}" onclick="tbOpenTextSwatch(this)" onmouseenter="tbOpenTextSwatch(this)" ondblclick="tbNativeTextColor()" title="Color"></span>
+            <select onchange="tbFontFamily(this.value)" title="Font" style="max-width:90px">
                 ${['Arial','Georgia','Courier New','Times New Roman','Verdana','Helvetica'].map(f=>`<option value="${f}" ${cs.fontFamily.includes(f)?'selected':''}>${f}</option>`).join('')}
             </select>
-            <select onchange="tbTextAlign(this.value)" title="Alignment">
+            <select onchange="tbTextAlign(this.value)" title="Alignment" style="width:60px">
                 ${['left','center','right'].map(a=>`<option value="${a}" ${align===a?'selected':''}>${a[0].toUpperCase()+a.slice(1)}</option>`).join('')}
             </select>`;
     } else if(el&&(el.closest?.('.canvas-anno-wrap')&&(el.querySelector?.('line')||el.querySelector?.('svg line')))){
@@ -1005,11 +1010,11 @@ function updateToolbar(el,pointData){
             const sw=line.getAttribute('stroke-width')||'2';
             const dash=line.getAttribute('stroke-dasharray')||'';
             const hasArrow=!!el.querySelector('marker');
-            html+=`<div class="tb-sep"></div><span style="opacity:0.5">Line:</span>
+            editHtml+=`<span style="opacity:0.5">Line:</span>
                 <select onchange="tbLineWidth(this.value)">
                     ${[1,1.5,2,3,4,5].map(w=>`<option value="${w}" ${parseFloat(sw)===w?'selected':''}>${w}px</option>`).join('')}
                 </select>
-                <span class="tb-color-swatch" id="tb-line-color" style="background:${tbColorToHex(line.getAttribute('stroke'))}" onclick="tbOpenLineSwatch(this)" onmouseenter="tbOpenLineSwatch(this)" ondblclick="tbNativeLineColor()" title="Hover or click: swatches, Double-click: picker"></span>
+                <span class="tb-color-swatch" id="tb-line-color" style="background:${tbColorToHex(line.getAttribute('stroke'))}" onclick="tbOpenLineSwatch(this)" onmouseenter="tbOpenLineSwatch(this)" ondblclick="tbNativeLineColor()" title="Color"></span>
                 <select onchange="tbLineDash(this.value)">
                     <option value="" ${dash===''?'selected':''}>Solid</option>
                     <option value="6,3" ${dash==='6,3'?'selected':''}>Dashed</option>
@@ -1018,7 +1023,18 @@ function updateToolbar(el,pointData){
                 </select>
                 <button class="${hasArrow?'tb-active':''}" onclick="tbToggleArrow()" title="Arrowhead">&#9654;</button>`;
         }
+    } else if(el&&el.classList?.contains('canvas-shape')){
+        editHtml+=`<span style="opacity:0.5">Shape:</span>
+            <span class="tb-color-swatch" id="tb-shape-color" style="background:${el.style.borderColor||el.style.background||'#e6edf3'}" onclick="tbOpenShapeSwatch(this)" onmouseenter="tbOpenShapeSwatch(this)" title="Color"></span>
+            <select onchange="tbShapeType(this.value)" title="Shape type">
+                ${['rectangle','circle','ellipse','diamond','triangle'].map(s=>`<option value="${s}" ${(el.dataset.shape||'rectangle')===s?'selected':''}>${s[0].toUpperCase()+s.slice(1)}</option>`).join('')}
+            </select>
+            <select onchange="tbShapeBorder(this.value)" title="Border width">
+                ${[1,2,3,4,5].map(w=>`<option value="${w}" ${parseInt(el.style.borderWidth||2)===w?'selected':''}>${w}px</option>`).join('')}
+            </select>
+            <label class="checkbox-row" style="margin:0;font-size:10px"><input type="checkbox" ${el.dataset.filled==='true'?'checked':''} onchange="tbShapeFill(this.checked)"> Fill</label>`;
     }
+    if(editHtml) html+=`<div class="tb-row-edit">${editHtml}</div>`;
     tb.innerHTML=html;
 }
 
@@ -1094,11 +1110,31 @@ setTimeout(()=>updateToolbar(null),100);
 document.addEventListener('DOMContentLoaded',()=>{
     const vp=document.getElementById('canvas-viewport');
     if(vp) vp.addEventListener('wheel',e=>{
-        // Only zoom if hovering over canvas area, not over a graph's data points
         if(e.target.closest('.data-pt'))return;
         e.preventDefault();
         canvasZoom(e.deltaY>0?-0.05:0.05);
     },{passive:false});
+    // Canvas panning: click+drag on empty canvas space scrolls the viewport
+    if(vp){
+        let panning=false,panSX=0,panSY=0,panSL=0,panST=0;
+        vp.addEventListener('mousedown',e=>{
+            // Only pan on empty canvas area (not plots, annotations, etc.)
+            if(e.button!==0)return;
+            const t=e.target;
+            if(t.closest('.canvas-plot')||t.closest('.canvas-anno-wrap')||t.closest('.canvas-zoom-controls')||t.closest('.canvas-textbox'))return;
+            if(t.id==='canvas'||t.id==='canvas-viewport'||t.closest('#canvas')){
+                panning=true;panSX=e.clientX;panSY=e.clientY;
+                panSL=vp.scrollLeft;panST=vp.scrollTop;
+                vp.style.cursor='grabbing';e.preventDefault();
+            }
+        });
+        document.addEventListener('mousemove',e=>{
+            if(!panning)return;
+            vp.scrollLeft=panSL-(e.clientX-panSX);
+            vp.scrollTop=panST-(e.clientY-panSY);
+        });
+        document.addEventListener('mouseup',()=>{if(panning){panning=false;vp.style.cursor=''}});
+    }
 });
 
 function canvasZoom(delta){
@@ -2905,6 +2941,52 @@ function addCanvasLine(){
     renderLine();
 }
 
+function addCanvasShape(shapeType){
+    const canvas=document.getElementById('canvas');if(!canvas)return;
+    canvas.style.position='relative';
+    const wrap=document.createElement('div');
+    wrap.className='canvas-anno-wrap';
+    wrap.style.cssText='position:absolute;left:80px;top:80px';
+    const shape=document.createElement('div');
+    shape.className='canvas-shape';
+    shape.dataset.shape=shapeType||'rectangle';
+    shape.dataset.filled='false';
+    shape.style.cssText='width:60px;height:60px;border:2px solid var(--text);background:transparent;cursor:move';
+    _applyShapeStyle(shape);
+    wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button>`;
+    wrap.appendChild(shape);
+    canvas.appendChild(wrap);
+    _makeDraggable(wrap,shape);
+    // Resize handles
+    const rh=document.createElement('div');
+    rh.style.cssText='position:absolute;right:-4px;bottom:-4px;width:8px;height:8px;background:var(--accent);cursor:nwse-resize;border-radius:2px';
+    wrap.appendChild(rh);
+    let resizing=false,rsx,rsy,rw,rh2;
+    rh.addEventListener('mousedown',e=>{e.preventDefault();e.stopPropagation();resizing=true;rsx=e.clientX;rsy=e.clientY;rw=shape.offsetWidth;rh2=shape.offsetHeight;document.body.style.cursor='nwse-resize'});
+    document.addEventListener('mousemove',e=>{if(!resizing)return;shape.style.width=Math.max(20,rw+e.clientX-rsx)+'px';shape.style.height=Math.max(20,rh2+e.clientY-rsy)+'px'});
+    document.addEventListener('mouseup',()=>{if(resizing){resizing=false;document.body.style.cursor=''}});
+    shape.addEventListener('click',e=>{e.stopPropagation();updateToolbar(shape)});
+}
+function _applyShapeStyle(el){
+    const s=el.dataset.shape||'rectangle';
+    el.style.borderRadius=s==='circle'?'50%':s==='ellipse'?'50%':'0';
+    if(s==='diamond'){el.style.transform='rotate(45deg)';el.style.borderRadius='2px'}
+    else if(s==='triangle'){el.style.borderRadius='0';el.style.transform='';el.style.clipPath='polygon(50% 0%, 0% 100%, 100% 100%)'}
+    else{el.style.transform='';el.style.clipPath=''}
+}
+function tbOpenShapeSwatch(el){
+    const shape=tbSelectedEl;if(!shape)return;
+    const c=shape.style.borderColor||shape.style.background||'#e6edf3';
+    showColorSwatch(el,tbColorToHex(c),color=>{
+        shape.style.borderColor=color;
+        if(shape.dataset.filled==='true')shape.style.background=color;
+        el.style.background=color;
+    });
+}
+function tbShapeType(v){if(!tbSelectedEl)return;tbSelectedEl.dataset.shape=v;_applyShapeStyle(tbSelectedEl);updateToolbar(tbSelectedEl)}
+function tbShapeBorder(v){if(!tbSelectedEl)return;tbSelectedEl.style.borderWidth=v+'px'}
+function tbShapeFill(checked){if(!tbSelectedEl)return;tbSelectedEl.dataset.filled=checked?'true':'false';tbSelectedEl.style.background=checked?tbSelectedEl.style.borderColor:'transparent'}
+
 function doExport(fmt){
     if(fmt==='svg')exportAllSVG();else exportAllPNG();
     document.getElementById('export-panel')?.classList.add('hidden');
@@ -3091,13 +3173,21 @@ function applyGraphSettings(){
     const showPlotBg=document.getElementById('gs-show-plotbg').checked;
     const showPaperBg=document.getElementById('gs-show-paperbg').checked;
     const showThresholds=document.getElementById('gs-show-thresholds').checked;
+    const showFClines=document.getElementById('gs-show-fc-lines')?.checked!==false;
+    const showFDRline=document.getElementById('gs-show-fdr-line')?.checked!==false;
     gsTargetPlots.forEach(plotId=>{
         const chart=CHARTS[plotId];if(!chart)return;
         chart.restyle({size,symbol:shape,color,opacity,hollow});
+        // Filter threshold lines if individual controls are set
+        if(chart._refLines&&showThresholds){
+            chart._refLines.forEach(rl=>{
+                if(rl.axis==='x') rl._hidden=!showFClines;
+                if(rl.axis==='y') rl._hidden=!showFDRline;
+            });
+        }
         chart.relayout({plotBg:showPlotBg?plotBg:null,paperBg:showPaperBg?paperBg:null,gridColor,showGrid,showRefLines:showThresholds,transparentBg:!showPaperBg&&!showPlotBg,fontSize});
-        // Persist threshold visibility to canvas plot config
         const cp=CANVAS_PLOTS.find(c=>c.plotId===plotId);
-        if(cp&&cp.config) cp.config.showThresholds=showThresholds;
+        if(cp&&cp.config){cp.config.showThresholds=showThresholds;cp.config.showFClines=showFClines;cp.config.showFDRline=showFDRline}
     });
 }
 
@@ -3673,8 +3763,18 @@ function openGraphSettingsForPlot(plotId){
     // Show/hide threshold toggle based on plot type
     const chart=CHARTS[plotId];
     const hasRefLines=chart&&chart._refLines&&chart._refLines.length>0;
+    const cp=CANVAS_PLOTS.find(c=>c.plotId===plotId);
+    const isVolcano=cp&&cp.type==='volcano';
     document.getElementById('gs-threshold-row').style.display=hasRefLines?'flex':'none';
     if(hasRefLines) document.getElementById('gs-show-thresholds').checked=chart._showRefLines!==false;
+    // Show separate FC/FDR controls for volcano plots
+    document.getElementById('gs-threshold-sep').style.display=isVolcano?'':'none';
+    document.getElementById('gs-fc-line-label').style.display=isVolcano?'flex':'none';
+    document.getElementById('gs-fdr-line-label').style.display=isVolcano?'flex':'none';
+    if(isVolcano&&cp.config){
+        document.getElementById('gs-show-fc-lines').checked=cp.config.showFClines!==false;
+        document.getElementById('gs-show-fdr-line').checked=cp.config.showFDRline!==false;
+    }
     closePanels();
     document.getElementById('graph-settings-panel').classList.remove('hidden');
     gsUpdateSwatches();
