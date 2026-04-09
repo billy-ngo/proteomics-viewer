@@ -470,7 +470,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">3.6.0</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">3.6.1</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -772,7 +772,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='3.6.0';
+var PROKER_VERSION='3.6.1';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -2357,7 +2357,7 @@ function buildUniqueConfig(chart,p,qd,fidx){
         return pt;
     });
     const baseColor=grpColor(featured);
-    const mo=applyMarkerOverrides(jittered.map(d=>d.pidx),baseColor,7,'circle');
+    const mo=applyMarkerOverrides(jittered.map(d=>d.pidx),baseColor,5,'circle');
     chart.setData([{x:jittered.map(d=>d.x),y:jittered.map(d=>d.y),mode:'markers',marker:{size:mo.size,color:mo.color,symbol:mo.symbol},text:jittered.map(d=>d.hoverLabel+'<br>Abundance: '+fmtVal(d.y)),customdata:jittered.map(d=>d.full)}]);
     chart.setChartTitle(p.title||'').setXTitle('').setYTitle('Abundance');
     const wrap=chart.container.closest('.canvas-plot');
@@ -2388,7 +2388,7 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     const traces=[];
     ['ns','up','down'].forEach(cat=>{const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);if(!idx.length)return;
         const baseColor=cat==='up'?grpColor(gx):cat==='down'?grpColor(gy):'#6e7681';
-        const baseSize=cat==='ns'?4:6;
+        const baseSize=5;
         const mo=applyMarkerOverrides(idx.map(i=>pidxArr[i]),baseColor,baseSize,'circle');
         traces.push({x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),mode:'markers',marker:{size:mo.size,color:mo.color,opacity:cat==='ns'?0.5:0.85,symbol:mo.symbol},text:idx.map(i=>hoverLabels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),customdata:idx.map(i=>fulls[i])})});
     // Threshold reference lines (dotted)
@@ -2464,11 +2464,11 @@ function buildDotplotConfig(chart,p,qd,fidx){
         traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',
         marker:{size:mo.size,color:mo.color,opacity:0.6,symbol:mo.symbol},
         text:both.map(d=>d.hover),customdata:both.map(d=>d.full)})}
-    if(xOnly.length){const mo=applyMarkerOverrides(xOnly.map(d=>d.pidx),'#8b949e',4,'circle');
+    if(xOnly.length){const mo=applyMarkerOverrides(xOnly.map(d=>d.pidx),'#8b949e',5,'circle');
         traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(()=>yBand),mode:'markers',
         marker:{size:mo.size,color:mo.color,opacity:0.5,symbol:mo.symbol},
         text:xOnly.map(d=>d.hover),customdata:xOnly.map(d=>d.full)})}
-    if(yOnly.length){const mo=applyMarkerOverrides(yOnly.map(d=>d.pidx),'#8b949e',4,'circle');
+    if(yOnly.length){const mo=applyMarkerOverrides(yOnly.map(d=>d.pidx),'#8b949e',5,'circle');
         traces.push({x:yOnly.map(()=>xBand),y:yOnly.map(d=>d.y),mode:'markers',
         marker:{size:mo.size,color:mo.color,opacity:0.5,symbol:mo.symbol},
         text:yOnly.map(d=>d.hover),customdata:yOnly.map(d=>d.full)})}
@@ -2488,7 +2488,7 @@ function buildPCAConfig(chart,p,qd,fidx){
     groups.forEach(g=>{const bin=BINS.find(b=>b.label===g);if(bin)bin.samples.forEach(s=>{sampleNames.push(s);sampleGroups.push(g)})});
     if(sampleNames.length<3){chart.setData([]).setXTitle('').setYTitle('Need ≥3 samples').render();return}
     const pca=computePCA(sampleNames,qd,fidx);
-    const traces=groups.map(g=>{const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),mode:'markers',marker:{size:10,color:grpColor(g),symbol:'circle'},text:idx.map(i=>pca.scores[i].name),customdata:idx.map(i=>g+': '+pca.scores[i].name)}});
+    const traces=groups.map(g=>{const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),mode:'markers',marker:{size:5,color:grpColor(g),symbol:'circle'},text:idx.map(i=>pca.scores[i].name),customdata:idx.map(i=>g+': '+pca.scores[i].name)}});
     chart.setChartTitle(p.title||'').setData(traces).setXTitle('PC1 ('+pca.varExpl[0].toFixed(1)+'%)').setYTitle('PC2 ('+pca.varExpl[1].toFixed(1)+'%)').render();
 }
 

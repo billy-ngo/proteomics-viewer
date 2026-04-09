@@ -2,6 +2,11 @@
 
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 
+## [3.6.1] - 2026-04-09
+
+### Changed
+- All graph types now default to the same marker format: size 5, circle symbol. Previously volcano NS was 4, up/down was 6, unique was 7, PCA was 10, dot plot edges were 4. Now consistent across enrichment, volcano, dot plot, unique, and PCA.
+
 ## [3.6.0] - 2026-04-09
 
 ### Added
