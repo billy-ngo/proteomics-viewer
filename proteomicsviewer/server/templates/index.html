@@ -658,6 +658,20 @@ async function uploadFile(file,append){
         </div>
     </div>
     <div class="collapse-sec" style="border-top:1px solid var(--border)">
+        <div class="collapse-hdr" onclick="this.parentElement.classList.toggle('open')">Groups of Interest <span class="chev">&#9656;</span></div>
+        <div class="collapse-body">
+            <div style="font-size:11px;color:var(--text-sec);margin-bottom:8px">Select proteins by locus tag range to highlight with custom color, shape, and size on all graphs.</div>
+            <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+                <select id="goi-prefix" style="flex:1;min-width:80px;font-size:11px;font-family:monospace"></select>
+                <input type="text" id="goi-start" placeholder="Start #" style="width:60px;font-size:11px;padding:3px 6px;font-family:monospace;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:3px">
+                <span style="font-size:11px;color:var(--text-sec)">-</span>
+                <input type="text" id="goi-end" placeholder="End #" style="width:60px;font-size:11px;padding:3px 6px;font-family:monospace;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:3px">
+                <button class="btn-sm" onclick="addGroupOfInterest()">Add</button>
+            </div>
+            <div id="goi-list" style="max-height:200px;overflow-y:auto"></div>
+        </div>
+    </div>
+    <div class="collapse-sec" style="border-top:1px solid var(--border)">
         <div class="collapse-hdr" onclick="this.parentElement.classList.toggle('open')">Peptide Coverage Map <span class="chev">&#9656;</span></div>
         <div class="collapse-body">
             <div style="font-size:11px;color:var(--text-sec);margin-bottom:8px">Paste a FASTA protein sequence to visualize which peptides were identified by mass spectrometry.</div>
@@ -1199,10 +1213,11 @@ function initGrouping(){
     buildProcessedData();
     populateCovProteins();
     populateSpeciesHighlights();
+    populateGOIPrefixes();
     renderAll();startHeartbeat();
 }
 
-function renderAll(){renderUnassigned();renderBins();updateStatus();updateContinueBtn();buildProcessedData();populateCovProteins();populateSpeciesHighlights();refreshAllPlots();autoSaveSession()}
+function renderAll(){renderUnassigned();renderBins();updateStatus();updateContinueBtn();buildProcessedData();populateCovProteins();populateSpeciesHighlights();populateGOIPrefixes();refreshAllPlots();autoSaveSession()}
 
 function createChip(sample){
     const c=document.createElement('div');c.className='sample-chip'+(SELECTED.has(sample)?' selected':'');c.dataset.sample=sample;c.draggable=true;
@@ -1553,6 +1568,9 @@ function sphColor(i,color){
     if(SPECIES_HIGHLIGHTS[i].enabled) refreshAllPlots();
 }
 function getHighlightColor(proteinIdx){
+    // GOI overrides take priority
+    const goi=getGOIOverride(proteinIdx);
+    if(goi)return goi.color;
     if(!SPECIES_HIGHLIGHTS.length)return null;
     const pid=RAW.proteins[proteinIdx].majority_id||RAW.proteins[proteinIdx].id||'';
     for(const h of SPECIES_HIGHLIGHTS){
@@ -1560,7 +1578,136 @@ function getHighlightColor(proteinIdx){
     }
     return null;
 }
-function hasActiveHighlights(){return SPECIES_HIGHLIGHTS.some(h=>h.enabled)}
+function hasActiveHighlights(){return SPECIES_HIGHLIGHTS.some(h=>h.enabled)||hasGOI()}
+
+// ================================================================
+// MARKER OVERRIDE HELPER — applies GOI + species highlights to traces
+// ================================================================
+function applyMarkerOverrides(pidxArr,defaultColor,defaultSize,defaultSymbol){
+    // Returns {color, size, symbol} where each is a single value or array
+    const goiActive=hasGOI();
+    const hlActive=hasActiveHighlights();
+    if(!goiActive&&!hlActive) return{color:defaultColor,size:defaultSize,symbol:defaultSymbol};
+    const n=pidxArr.length;
+    const colors=new Array(n);
+    const sizes=goiActive?new Array(n):null;
+    const symbols=goiActive?new Array(n):null;
+    for(let i=0;i<n;i++){
+        const pi=pidxArr[i];
+        const goi=goiActive?getGOIOverride(pi):null;
+        if(goi){
+            colors[i]=goi.color;
+            if(sizes)sizes[i]=goi.size;
+            if(symbols)symbols[i]=goi.symbol;
+        } else {
+            colors[i]=getHighlightColor(pi)||defaultColor;
+            if(sizes)sizes[i]=defaultSize;
+            if(symbols)symbols[i]=defaultSymbol;
+        }
+    }
+    return{color:colors,size:sizes||defaultSize,symbol:symbols||defaultSymbol};
+}
+
+// ================================================================
+// GROUPS OF INTEREST
+// ================================================================
+var GROUPS_OF_INTEREST=[]; // [{prefix,start,end,color,symbol,size,proteins:[pidx,...]}]
+const GOI_COLORS=['#f85149','#3fb950','#58a6ff','#d29922','#bc8cff','#ff7b72','#db61a2','#ffa657','#7ee787','#79c0ff'];
+let _goiNextId=1;
+
+function populateGOIPrefixes(){
+    const sel=document.getElementById('goi-prefix');if(!sel||!RAW)return;
+    const prefixes=new Set();
+    RAW.proteins.forEach(p=>{if(p.potential_contaminant||p.reverse)return;const m=(p.majority_id||p.id||'').match(/^([A-Za-z][A-Za-z0-9]*_)/);if(m)prefixes.add(m[1])});
+    const sorted=[...prefixes].sort();
+    const prev=sel.value;
+    sel.innerHTML=sorted.map(px=>`<option value="${px}">${px}</option>`).join('');
+    if(prev&&sorted.includes(prev)) sel.value=prev;
+}
+
+function _extractLocusNum(pid,prefix){
+    // Extract the numeric part after the prefix, e.g. "BSU_12345" → 12345
+    if(!pid.startsWith(prefix))return null;
+    const rest=pid.slice(prefix.length);
+    const m=rest.match(/^(\d+)/);
+    return m?parseInt(m[1],10):null;
+}
+
+function addGroupOfInterest(){
+    if(!RAW)return;
+    const prefix=document.getElementById('goi-prefix')?.value;
+    const startStr=document.getElementById('goi-start')?.value.trim();
+    const endStr=document.getElementById('goi-end')?.value.trim();
+    if(!prefix){alert('Select a locus tag prefix.');return}
+    const start=parseInt(startStr,10);
+    const end=parseInt(endStr,10);
+    if(isNaN(start)||isNaN(end)||start>end){alert('Enter a valid numeric range (start ≤ end).');return}
+    // Find matching proteins
+    const proteins=[];
+    for(let pi=0;pi<RAW.proteins.length;pi++){
+        const p=RAW.proteins[pi];
+        if(p.potential_contaminant||p.reverse||p.only_identified_by_site)continue;
+        const pid=p.majority_id||p.id||'';
+        const num=_extractLocusNum(pid,prefix);
+        if(num!==null&&num>=start&&num<=end) proteins.push(pi);
+    }
+    if(!proteins.length){alert('No proteins found in range '+prefix+start+' - '+prefix+end);return}
+    const ci=(GROUPS_OF_INTEREST.length)%GOI_COLORS.length;
+    GROUPS_OF_INTEREST.push({id:_goiNextId++,prefix,start,end,color:GOI_COLORS[ci],symbol:'circle',size:8,proteins});
+    document.getElementById('goi-start').value='';
+    document.getElementById('goi-end').value='';
+    renderGOIList();
+    refreshAllPlots();
+}
+
+function removeGOI(id){
+    GROUPS_OF_INTEREST=GROUPS_OF_INTEREST.filter(g=>g.id!==id);
+    renderGOIList();
+    refreshAllPlots();
+}
+
+function goiColor(id,color){
+    const g=GROUPS_OF_INTEREST.find(g=>g.id===id);if(g){g.color=color;renderGOIList();refreshAllPlots()}
+}
+function goiSymbol(id,sym){
+    const g=GROUPS_OF_INTEREST.find(g=>g.id===id);if(g){g.symbol=sym;renderGOIList();refreshAllPlots()}
+}
+function goiSize(id,sz){
+    const g=GROUPS_OF_INTEREST.find(g=>g.id===id);if(g){g.size=+sz;refreshAllPlots()}
+}
+
+function renderGOIList(){
+    const c=document.getElementById('goi-list');if(!c)return;
+    if(!GROUPS_OF_INTEREST.length){c.innerHTML='';return}
+    c.innerHTML=GROUPS_OF_INTEREST.map(g=>{
+        const label=g.prefix+g.start+' - '+g.prefix+g.end;
+        const shapes=['circle','square','diamond','triangle-up','star','cross'].map(s=>
+            `<option value="${s}" ${g.symbol===s?'selected':''}>${s==='triangle-up'?'triangle':s}</option>`).join('');
+        return `<div style="display:flex;align-items:center;gap:5px;padding:4px;border-bottom:1px solid var(--border);flex-wrap:wrap">
+            <input type="color" value="${g.color}" onchange="goiColor(${g.id},this.value)" style="width:22px;height:22px;border:none;padding:0;cursor:pointer;background:none;flex-shrink:0" title="Color">
+            <span style="font-size:11px;font-family:monospace;color:${g.color};flex:1;min-width:100px" title="${g.proteins.length} proteins">${label} <span style="color:var(--text-sec)">(${g.proteins.length})</span></span>
+            <select onchange="goiSymbol(${g.id},this.value)" style="font-size:10px;padding:1px 2px;width:70px">${shapes}</select>
+            <input type="number" value="${g.size}" min="2" max="20" step="1" onchange="goiSize(${g.id},this.value)" style="width:38px;font-size:10px;padding:1px 3px;text-align:center" title="Size">
+            <button onclick="removeGOI(${g.id})" style="background:none;border:none;color:var(--text-sec);cursor:pointer;font-size:14px;padding:0 2px" title="Remove">&times;</button>
+        </div>`;
+    }).join('');
+}
+
+function getGOIOverride(proteinIdx){
+    for(const g of GROUPS_OF_INTEREST){
+        if(g.proteins.includes(proteinIdx)) return{color:g.color,symbol:g.symbol,size:g.size};
+    }
+    return null;
+}
+
+function hasGOI(){return GROUPS_OF_INTEREST.length>0}
+
+// Build a fast lookup set for GOI membership
+function _goiSet(){
+    const s=new Set();
+    GROUPS_OF_INTEREST.forEach(g=>g.proteins.forEach(pi=>s.add(pi)));
+    return s;
+}
 
 // ================================================================
 // CENTRAL DATA PIPELINE — reads all upstream tab settings
@@ -2163,8 +2310,8 @@ function buildEnrichmentConfig(chart,p,qd,fidx){
     }
     data.sort((a,b)=>a.val-b.val);
     const total=data.length;
-    const colors=hasActiveHighlights()?data.map(d=>getHighlightColor(d.pidx)||'#e6edf3'):'#e6edf3';
-    chart.setData([{x:data.map((_,i)=>i+1),y:data.map(d=>d.val),mode:'markers',marker:{size:5,color:colors,symbol:'circle'},text:data.map((d,i)=>d.hover+'<br>Rank: #'+(i+1)+'/'+total),customdata:data.map(d=>d.full)}]);
+    const mo=applyMarkerOverrides(data.map(d=>d.pidx),'#e6edf3',5,'circle');
+    chart.setData([{x:data.map((_,i)=>i+1),y:data.map(d=>d.val),mode:'markers',marker:{size:mo.size,color:mo.color,symbol:mo.symbol},text:data.map((d,i)=>d.hover+'<br>Rank: #'+(i+1)+'/'+total),customdata:data.map(d=>d.full)}]);
     chart.setChartTitle(p.title||'').setXTitle('Rank').setYTitle(isLog2?'log2('+gx+'/'+gy+')':'Enrichment ('+gx+'/'+gy+')').render();
 }
 
@@ -2208,8 +2355,8 @@ function buildUniqueConfig(chart,p,qd,fidx){
         return pt;
     });
     const baseColor=grpColor(featured);
-    const uColors=hasActiveHighlights()?jittered.map(d=>getHighlightColor(d.pidx)||baseColor):baseColor;
-    chart.setData([{x:jittered.map(d=>d.x),y:jittered.map(d=>d.y),mode:'markers',marker:{size:7,color:uColors,symbol:'circle'},text:jittered.map(d=>d.label+'<br>Abundance: '+fmtVal(d.y)),customdata:jittered.map(d=>d.full)}]);
+    const mo=applyMarkerOverrides(jittered.map(d=>d.pidx),baseColor,7,'circle');
+    chart.setData([{x:jittered.map(d=>d.x),y:jittered.map(d=>d.y),mode:'markers',marker:{size:mo.size,color:mo.color,symbol:mo.symbol},text:jittered.map(d=>d.label+'<br>Abundance: '+fmtVal(d.y)),customdata:jittered.map(d=>d.full)}]);
     chart.setChartTitle(p.title||'').setXTitle('').setYTitle('Abundance');
     const wrap=chart.container.closest('.canvas-plot');
     if(wrap&&!wrap.dataset.userResized){wrap.style.width='320px';wrap.dataset.userResized=''}
@@ -2235,12 +2382,12 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     }
     const adjP=bhFDR(rawP);const negLog=adjP.map(p=>-Math.log10(Math.max(p,1e-300)));
     const cats=fc.map((f,i)=>adjP[i]<fdrT&&Math.abs(f)>=fcT?(f>0?'up':'down'):'ns');
-    const doHL=hasActiveHighlights();
     const traces=[];
     ['ns','up','down'].forEach(cat=>{const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);if(!idx.length)return;
         const baseColor=cat==='up'?grpColor(gx):cat==='down'?grpColor(gy):'#6e7681';
-        const mColor=doHL?idx.map(i=>getHighlightColor(pidxArr[i])||baseColor):baseColor;
-        traces.push({x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),mode:'markers',marker:{size:cat==='ns'?4:6,color:mColor,opacity:cat==='ns'?0.5:0.85,symbol:'circle'},text:idx.map(i=>labels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),customdata:idx.map(i=>fulls[i])})});
+        const baseSize=cat==='ns'?4:6;
+        const mo=applyMarkerOverrides(idx.map(i=>pidxArr[i]),baseColor,baseSize,'circle');
+        traces.push({x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),mode:'markers',marker:{size:mo.size,color:mo.color,opacity:cat==='ns'?0.5:0.85,symbol:mo.symbol},text:idx.map(i=>labels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),customdata:idx.map(i=>fulls[i])})});
     // Threshold reference lines (dotted)
     const fdrLine=-Math.log10(fdrT);
     chart._refLines=[
@@ -2309,17 +2456,19 @@ function buildDotplotConfig(chart,p,qd,fidx){
     const yBreak=cloudMinY-rangeY*gapFrac/2;
     const xBreak=cloudMinX-rangeX*gapFrac/2;
 
-    const doHL=hasActiveHighlights();
     const traces=[];
-    if(both.length) traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',
-        marker:{size:5,color:doHL?both.map(d=>getHighlightColor(d.pidx)||'#8b949e'):'#8b949e',opacity:0.6,symbol:'circle'},
-        text:both.map(d=>d.hover),customdata:both.map(d=>d.full)});
-    if(xOnly.length) traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(()=>yBand),mode:'markers',
-        marker:{size:4,color:doHL?xOnly.map(d=>getHighlightColor(d.pidx)||'#8b949e'):'#8b949e',opacity:0.5,symbol:'circle'},
-        text:xOnly.map(d=>d.hover),customdata:xOnly.map(d=>d.full)});
-    if(yOnly.length) traces.push({x:yOnly.map(()=>xBand),y:yOnly.map(d=>d.y),mode:'markers',
-        marker:{size:4,color:doHL?yOnly.map(d=>getHighlightColor(d.pidx)||'#8b949e'):'#8b949e',opacity:0.5,symbol:'circle'},
-        text:yOnly.map(d=>d.hover),customdata:yOnly.map(d=>d.full)});
+    if(both.length){const mo=applyMarkerOverrides(both.map(d=>d.pidx),'#8b949e',5,'circle');
+        traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',
+        marker:{size:mo.size,color:mo.color,opacity:0.6,symbol:mo.symbol},
+        text:both.map(d=>d.hover),customdata:both.map(d=>d.full)})}
+    if(xOnly.length){const mo=applyMarkerOverrides(xOnly.map(d=>d.pidx),'#8b949e',4,'circle');
+        traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(()=>yBand),mode:'markers',
+        marker:{size:mo.size,color:mo.color,opacity:0.5,symbol:mo.symbol},
+        text:xOnly.map(d=>d.hover),customdata:xOnly.map(d=>d.full)})}
+    if(yOnly.length){const mo=applyMarkerOverrides(yOnly.map(d=>d.pidx),'#8b949e',4,'circle');
+        traces.push({x:yOnly.map(()=>xBand),y:yOnly.map(d=>d.y),mode:'markers',
+        marker:{size:mo.size,color:mo.color,opacity:0.5,symbol:mo.symbol},
+        text:yOnly.map(d=>d.hover),customdata:yOnly.map(d=>d.full)})}
 
     // Axis breaks for visual separation
     const breaks=[];

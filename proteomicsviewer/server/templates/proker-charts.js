@@ -214,11 +214,13 @@ class ProkerChart {
             if (!trace.x || !trace.y) return;
             const n = Math.min(trace.x.length, trace.y.length);
             const marker = trace.marker || {};
-            const size = marker.size || 5;
-            const symbol = marker.symbol || 'circle';
+            const baseSize = marker.size || 5;
+            const baseSymbol = marker.symbol || 'circle';
             const opacity = marker.opacity != null ? marker.opacity : 0.8;
             const colors = Array.isArray(marker.color) ? marker.color : null;
             const singleColor = !colors ? (marker.color || T.text) : null;
+            const sizes = Array.isArray(marker.size) ? marker.size : null;
+            const symbols = Array.isArray(marker.symbol) ? marker.symbol : null;
 
             // For colorscale mapping
             let colorFn = null;
@@ -241,18 +243,20 @@ class ProkerChart {
                     const ovr = this._colorOverrides.find(o => o.ti === ti && o.i === i);
                     if (ovr) c = ovr.color;
                 }
-                const symFn = this._symbols[symbol] || this._symbols.circle;
+                const ptSize = sizes ? sizes[i] : baseSize;
+                const ptSymbol = symbols ? symbols[i] : baseSymbol;
+                const symFn = this._symbols[ptSymbol] || this._symbols.circle;
                 const hoverText = trace.text ? trace.text[i] || '' : '';
                 const customData = trace.customdata ? trace.customdata[i] || '' : '';
 
                 const isHollow = marker._hollow;
                 const attrs = `class="data-pt" data-ti="${ti}" data-i="${i}" data-x="${vx}" data-y="${vy}" data-hover="${this._esc(hoverText)}" data-custom="${this._esc(customData)}" style="cursor:pointer"`;
-                if (symbol === 'cross') {
-                    svg += symFn(px, py, size) + `stroke="${c}" opacity="${opacity}" ${attrs}/>`;
+                if (ptSymbol === 'cross') {
+                    svg += symFn(px, py, ptSize) + `stroke="${c}" opacity="${opacity}" ${attrs}/>`;
                 } else if (isHollow) {
-                    svg += symFn(px, py, size) + `fill="none" stroke="${c}" stroke-width="1.5" opacity="${opacity}" ${attrs}/>`;
+                    svg += symFn(px, py, ptSize) + `fill="none" stroke="${c}" stroke-width="1.5" opacity="${opacity}" ${attrs}/>`;
                 } else {
-                    svg += symFn(px, py, size) + `fill="${c}" fill-opacity="${opacity}" stroke="${T.plot}" stroke-width="1" ${attrs}/>`;
+                    svg += symFn(px, py, ptSize) + `fill="${c}" fill-opacity="${opacity}" stroke="${T.plot}" stroke-width="1" ${attrs}/>`;
                 }
             }
         });
