@@ -18,9 +18,7 @@ import zlib
 _RED = (0xDC, 0x26, 0x26)
 _DARK = (0x22, 0x22, 0x22)
 _APP_BG = (0x0D, 0x11, 0x17)
-_CARD_EDGE = (0xF5, 0xF5, 0xF5)
 _CARD_FACE = (0xFF, 0xFF, 0xFF)
-_INNER_BORDER = (0xDD, 0xDD, 0xDD)
 
 
 def _make_png(width, height, rows):
@@ -39,102 +37,132 @@ def _rot(x, y, cx, cy, angle_deg):
     return cx + dx * math.cos(a) - dy * math.sin(a), cy + dx * math.sin(a) + dy * math.cos(a)
 
 
-def _in_rounded_rect(px, py, x0, y0, x1, y1, r):
-    if px < x0 or px > x1 or py < y0 or py > y1:
-        return False
-    hw = (x1 - x0) / 2
-    hh = (y1 - y0) / 2
-    cx = (x0 + x1) / 2
-    cy = (y0 + y1) / 2
-    lx = abs(px - cx)
-    ly = abs(py - cy)
-    if lx > hw - r and ly > hh - r:
-        return math.sqrt((lx - (hw - r)) ** 2 + (ly - (hh - r)) ** 2) <= r
-    return True
+def _blend(bg, fg, alpha):
+    """Alpha-blend fg over bg.  alpha in [0,1]."""
+    r = int(bg[0] * (1 - alpha) + fg[0] * alpha)
+    g = int(bg[1] * (1 - alpha) + fg[1] * alpha)
+    b = int(bg[2] * (1 - alpha) + fg[2] * alpha)
+    return (r, g, b)
 
 
-def _in_rotated_rounded_rect(px, py, cx, cy, hw, hh, r, angle):
+def _aa_dist(px, py, cx, cy, hw, hh, r, angle):
+    """Return 0..1 coverage for a pixel against a rotated rounded rect.
+
+    1 = fully inside, 0 = fully outside, fractional = edge (anti-alias).
+    """
     lx, ly = _rot(px, py, cx, cy, -angle)
     lx -= cx
     ly -= cy
-    if abs(lx) > hw or abs(ly) > hh:
-        return False
+    # Signed distance from rounded rect edge (negative = inside)
+    dx = abs(lx) - hw
+    dy = abs(ly) - hh
+    if dx > 1 or dy > 1:
+        return 0.0
+    if dx <= -1 and dy <= -1:
+        # Well inside — but check corners
+        if abs(lx) > hw - r and abs(ly) > hh - r:
+            corner_x = (hw - r) * (1 if lx > 0 else -1)
+            corner_y = (hh - r) * (1 if ly > 0 else -1)
+            d = math.sqrt((lx - corner_x) ** 2 + (ly - corner_y) ** 2) - r
+            if d > 1:
+                return 0.0
+            if d < -1:
+                return 1.0
+            return max(0.0, min(1.0, 0.5 - d * 0.5))
+        return 1.0
+    # Near straight edge
     if abs(lx) > hw - r and abs(ly) > hh - r:
         corner_x = (hw - r) * (1 if lx > 0 else -1)
         corner_y = (hh - r) * (1 if ly > 0 else -1)
-        if math.sqrt((lx - corner_x) ** 2 + (ly - corner_y) ** 2) > r:
-            return False
-    return True
+        d = math.sqrt((lx - corner_x) ** 2 + (ly - corner_y) ** 2) - r
+    else:
+        d = max(dx, dy)
+    if d > 1:
+        return 0.0
+    if d < -1:
+        return 1.0
+    return max(0.0, min(1.0, 0.5 - d * 0.5))
 
 
 def _draw_card(pixels, s, cx, cy, angle, hw, hh, r, border_w):
-    """Draw a card with thick dark border, gray edge, and white face."""
+    """Draw a card with anti-aliased thick dark border and white face."""
     outer_hw = hw + border_w
     outer_hh = hh + border_w
     outer_r = r + border_w * 0.6
-    edge_hw = hw
-    edge_hh = hh
-    face_hw = hw - max(1, s * 0.025)
-    face_hh = hh - max(1, s * 0.025)
-    face_r = max(1, r - 1)
+    face_hw = hw - max(1, s * 0.02)
+    face_hh = hh - max(1, s * 0.02)
+    face_r = max(1, r * 0.7)
     for y in range(s):
         for x in range(s):
-            if _in_rotated_rounded_rect(x, y, cx, cy, outer_hw, outer_hh, outer_r, angle):
-                if _in_rotated_rounded_rect(x, y, cx, cy, face_hw, face_hh, face_r, angle):
-                    pixels[y][x] = _CARD_FACE
-                elif _in_rotated_rounded_rect(x, y, cx, cy, edge_hw, edge_hh, r, angle):
-                    pixels[y][x] = _CARD_EDGE
-                else:
-                    pixels[y][x] = _DARK
-
-
-# "2" glyph on a 5x7 grid
-_GLYPH_2 = [
-    [0, 1, 1, 1, 0],
-    [1, 0, 0, 0, 1],
-    [0, 0, 0, 0, 1],
-    [0, 0, 0, 1, 0],
-    [0, 0, 1, 0, 0],
-    [0, 1, 0, 0, 0],
-    [1, 1, 1, 1, 1],
-]
-
-# Diamond suit as a simple 5x7 grid
-_GLYPH_DIAMOND = [
-    [0, 0, 1, 0, 0],
-    [0, 1, 1, 1, 0],
-    [1, 1, 1, 1, 1],
-    [0, 1, 1, 1, 0],
-    [0, 0, 1, 0, 0],
-]
-
-
-def _draw_glyph(pixels, glyph, ox, oy, scale, color, size):
-    for ri, row in enumerate(glyph):
-        for ci, val in enumerate(row):
-            if not val:
+            outer_a = _aa_dist(x, y, cx, cy, outer_hw, outer_hh, outer_r, angle)
+            if outer_a <= 0:
                 continue
-            for dy in range(scale):
-                for dx in range(scale):
-                    lx = ox + ci * scale + dx
-                    ly = oy + ri * scale + dy
-                    if 0 <= lx < size and 0 <= ly < size:
-                        pixels[ly][lx] = color
+            face_a = _aa_dist(x, y, cx, cy, face_hw, face_hh, face_r, angle)
+            if face_a >= 1.0:
+                pixels[y][x] = _blend(pixels[y][x], _CARD_FACE, outer_a)
+            elif face_a > 0:
+                # Partly on face edge
+                pixels[y][x] = _blend(pixels[y][x], _DARK, outer_a)
+                pixels[y][x] = _blend(pixels[y][x], _CARD_FACE, face_a)
+            else:
+                pixels[y][x] = _blend(pixels[y][x], _DARK, outer_a)
+
+
+# High-resolution "2" glyph — 8x12 grid for smoother rendering
+_GLYPH_2 = [
+    [0, 0, 1, 1, 1, 1, 0, 0],
+    [0, 1, 1, 0, 0, 1, 1, 0],
+    [1, 1, 0, 0, 0, 0, 1, 1],
+    [0, 0, 0, 0, 0, 0, 1, 1],
+    [0, 0, 0, 0, 0, 1, 1, 0],
+    [0, 0, 0, 0, 1, 1, 0, 0],
+    [0, 0, 0, 1, 1, 0, 0, 0],
+    [0, 0, 1, 1, 0, 0, 0, 0],
+    [0, 1, 1, 0, 0, 0, 0, 0],
+    [1, 1, 0, 0, 0, 0, 0, 0],
+    [1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1],
+]
+
+# Diamond suit — 7x9 grid
+_GLYPH_DIAMOND = [
+    [0, 0, 0, 1, 0, 0, 0],
+    [0, 0, 1, 1, 1, 0, 0],
+    [0, 1, 1, 1, 1, 1, 0],
+    [1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1],
+    [0, 1, 1, 1, 1, 1, 0],
+    [0, 0, 1, 1, 1, 0, 0],
+    [0, 0, 0, 1, 0, 0, 0],
+]
 
 
 def _draw_glyph_rotated(pixels, glyph, ox, oy, scale, color, size, angle, rcx, rcy):
-    for ri, row in enumerate(glyph):
-        for ci, val in enumerate(row):
-            if not val:
+    """Draw a bitmap glyph rotated around (rcx, rcy), with AA."""
+    rows = len(glyph)
+    cols = len(glyph[0]) if rows else 0
+    gw = cols * scale
+    gh = rows * scale
+    # Scan the bounding box of the rotated glyph
+    corners = [(ox, oy), (ox + gw, oy), (ox, oy + gh), (ox + gw, oy + gh)]
+    rot_corners = [_rot(cx, cy, rcx, rcy, angle) for cx, cy in corners]
+    min_rx = max(0, int(min(c[0] for c in rot_corners)) - 1)
+    max_rx = min(size - 1, int(max(c[0] for c in rot_corners)) + 2)
+    min_ry = max(0, int(min(c[1] for c in rot_corners)) - 1)
+    max_ry = min(size - 1, int(max(c[1] for c in rot_corners)) + 2)
+    for sy in range(min_ry, max_ry + 1):
+        for sx in range(min_rx, max_rx + 1):
+            # Inverse-rotate to glyph space
+            lx, ly = _rot(sx, sy, rcx, rcy, -angle)
+            gx = lx - ox
+            gy = ly - oy
+            if gx < -0.5 or gx >= gw + 0.5 or gy < -0.5 or gy >= gh + 0.5:
                 continue
-            for dy in range(scale):
-                for dx in range(scale):
-                    lx = ox + ci * scale + dx
-                    ly = oy + ri * scale + dy
-                    rx, ry = _rot(lx, ly, rcx, rcy, angle)
-                    rx, ry = round(rx), round(ry)
-                    if 0 <= rx < size and 0 <= ry < size:
-                        pixels[ry][rx] = color
+            gi = int(gy / scale)
+            gj = int(gx / scale)
+            if 0 <= gi < rows and 0 <= gj < cols and glyph[gi][gj]:
+                pixels[sy][sx] = color
 
 
 def generate_png(size=48):
@@ -142,46 +170,71 @@ def generate_png(size=48):
     pixels = [[_APP_BG for _ in range(size)] for _ in range(size)]
     s = size
 
-    # Rounded dark background
+    # Rounded dark background with AA
     bg_r = max(2, round(s * 0.1875))
     for y in range(s):
         for x in range(s):
-            if not _in_rounded_rect(x, y, 0, 0, s - 1, s - 1, bg_r):
+            # Signed distance from rounded rect
+            dx = abs(x - (s - 1) / 2) - (s - 1) / 2
+            dy = abs(y - (s - 1) / 2) - (s - 1) / 2
+            if dx > 0 and dy > 0:
+                d = math.sqrt(max(0, dx + bg_r) ** 2 + max(0, dy + bg_r) ** 2) - bg_r
+            else:
+                d = max(dx, dy)
+            if d > 0.5:
                 pixels[y][x] = (0, 0, 0, 0)
+            elif d > -0.5:
+                a = max(0.0, min(1.0, 0.5 - d))
+                pixels[y][x] = (
+                    int(_APP_BG[0] * a), int(_APP_BG[1] * a), int(_APP_BG[2] * a),
+                    int(255 * a),
+                )
 
     # Card dimensions
-    card_w = s * 0.44
-    card_h = s * 0.64
+    card_w = s * 0.42
+    card_h = s * 0.62
     hw, hh = card_w / 2, card_h / 2
     corner_r = max(2, s * 0.06)
-    border_w = max(1.5, s * 0.04)
+    border_w = max(1.5, s * 0.035)
 
-    # Back card: offset left, tilted -12
-    back_cx = s * 0.36
+    # Back card: offset left, tilted -12°
+    back_cx = s * 0.38
     back_cy = s * 0.50
     back_angle = -12
     _draw_card(pixels, s, back_cx, back_cy, back_angle, hw, hh, corner_r, border_w)
 
-    # Front card: offset right, tilted 4
+    # Front card: offset right, tilted 4°
     front_cx = s * 0.58
     front_cy = s * 0.50
     front_angle = 4
     _draw_card(pixels, s, front_cx, front_cy, front_angle, hw, hh, corner_r, border_w)
 
-    # Draw "2" centered on front card
-    sc = max(1, round(s / 22))
-    gw = 5 * sc
-    gh = 7 * sc
-    ox = round(front_cx - gw / 2)
-    oy = round(front_cy - gh / 2)
-    _draw_glyph(pixels, _GLYPH_2, ox, oy, sc, _RED, s)
+    # Glyph scale
+    sc = max(1, round(s / 32))
 
-    # Small diamond below the "2" on front card
-    dsc = max(1, round(s / 48))
+    # -- Front card glyphs (rotated 4°) --
+    gw2 = 8 * sc
+    gh2 = 12 * sc
+    # Large centered "2"
+    ox = round(front_cx - gw2 / 2)
+    oy = round(front_cy - gh2 / 2)
+    _draw_glyph_rotated(pixels, _GLYPH_2, ox, oy, sc, _RED, s, front_angle, front_cx, front_cy)
+
+    # Small diamond below centered "2"
+    dsc = max(1, round(s / 64))
     if dsc >= 1:
-        dox = round(front_cx - 2.5 * dsc)
-        doy = oy + gh + max(1, round(s * 0.02))
-        _draw_glyph(pixels, _GLYPH_DIAMOND, dox, doy, dsc, _RED, s)
+        dw = 7 * dsc
+        dox = round(front_cx - dw / 2)
+        doy = oy + gh2 + max(1, round(s * 0.015))
+        _draw_glyph_rotated(pixels, _GLYPH_DIAMOND, dox, doy, dsc, _RED, s,
+                            front_angle, front_cx, front_cy)
+
+    # -- Back card glyphs (rotated -12°) -- only if large enough to see
+    if s >= 32:
+        ox_b = round(back_cx - gw2 / 2)
+        oy_b = round(back_cy - gh2 / 2)
+        _draw_glyph_rotated(pixels, _GLYPH_2, ox_b, oy_b, sc, _RED, s,
+                            back_angle, back_cx, back_cy)
 
     # Build rows
     rows = []
@@ -201,7 +254,7 @@ def generate_png(size=48):
 def generate_ico(sizes=None):
     """Return ICO bytes containing PNG data for each requested size."""
     if sizes is None:
-        sizes = [48, 32, 16]
+        sizes = [256, 48, 32, 16]
     png_blobs = [generate_png(s) for s in sizes]
     num = len(sizes)
     header = struct.pack("<HHH", 0, 1, num)
