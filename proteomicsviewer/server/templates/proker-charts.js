@@ -77,7 +77,21 @@ class ProkerChart {
         let allX = [], allY = [];
         this.traces.forEach(t => {
             if (t.x) allX.push(...t.x.filter(v => isFinite(v)));
-            if (t.y) allY.push(...t.y.filter(v => isFinite(v)));
+            if (t.y) {
+                for (let i = 0; i < t.y.length; i++) {
+                    const vy = t.y[i];
+                    if (!isFinite(vy)) continue;
+                    // Expand Y range to include error bar extents
+                    if (t.error && t.error.y) {
+                        const lo = t.error.ymin ? t.error.ymin[i] : vy - (t.error.y[i] || 0);
+                        const hi = t.error.ymax ? t.error.ymax[i] : vy + (t.error.y[i] || 0);
+                        if (isFinite(lo)) allY.push(lo);
+                        if (isFinite(hi)) allY.push(hi);
+                    } else {
+                        allY.push(vy);
+                    }
+                }
+            }
         });
 
         let xMin, xMax, yMin, yMax;
