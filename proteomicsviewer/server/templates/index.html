@@ -425,6 +425,8 @@ async function uploadFile(file,append){
             </button>
         </div>
         <div style="font-size:11px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Options</div>
+        <label class="checkbox-row" style="margin-bottom:8px"><input type="checkbox" id="export-separate" checked style="accent-color:var(--accent)"> Export graphs separately (stacked vertically)</label>
+        <div style="font-size:10px;color:var(--text-sec);margin-bottom:10px;line-height:1.4">Uncheck to export the canvas exactly as displayed, preserving graph positions, text boxes, lines, and shapes.</div>
         <div style="display:flex;gap:10px;margin-bottom:14px">
             <div style="flex:1"><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Width (px)</div><input type="number" id="export-width" value="1200" min="400" max="4000" style="width:100%"></div>
             <div style="flex:1"><div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Height (px)</div><input type="number" id="export-height" value="700" min="300" max="3000" style="width:100%"></div>
@@ -2831,6 +2833,113 @@ function exportAllPNG(){
     img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(combined);
 }
 // ================================================================
+// CANVAS-AS-IS EXPORT (preserves layout, positions, annotations)
+// ================================================================
+function _buildCanvasCompositeSVG(){
+    const canvas=document.getElementById('canvas');if(!canvas)return null;
+    const canvasRect=canvas.getBoundingClientRect();
+    // Measure full content bounds
+    let minX=Infinity,minY=Infinity,maxX=0,maxY=0;
+    const items=[];
+    // Collect plots
+    canvas.querySelectorAll('.canvas-plot').forEach(pw=>{
+        const r=pw.getBoundingClientRect();
+        const x=r.left-canvasRect.left, y=r.top-canvasRect.top;
+        const svg=pw.querySelector('.proker-svg');
+        if(svg){items.push({type:'svg',x,y,w:r.width,h:r.height,content:svg.outerHTML})}
+        minX=Math.min(minX,x);minY=Math.min(minY,y);
+        maxX=Math.max(maxX,x+r.width);maxY=Math.max(maxY,y+r.height);
+    });
+    // Collect text boxes
+    canvas.querySelectorAll('.canvas-anno-wrap').forEach(wrap=>{
+        const r=wrap.getBoundingClientRect();
+        const x=r.left-canvasRect.left, y=r.top-canvasRect.top;
+        const tb=wrap.querySelector('.canvas-textbox');
+        if(tb){
+            const cs=getComputedStyle(tb);
+            const text=tb.innerText||tb.textContent||'';
+            items.push({type:'text',x,y,text,
+                color:cs.color||'#e6edf3',fontSize:cs.fontSize||'13px',
+                fontWeight:cs.fontWeight||'400',fontStyle:cs.fontStyle||'normal',
+                fontFamily:cs.fontFamily||'Arial',textAlign:cs.textAlign||'left'});
+            maxX=Math.max(maxX,x+r.width);maxY=Math.max(maxY,y+r.height);
+            minX=Math.min(minX,x);minY=Math.min(minY,y);
+            return;
+        }
+        const line=wrap.querySelector('svg line');
+        if(line){
+            const svgEl=wrap.querySelector('svg');
+            if(svgEl){items.push({type:'svg',x,y,w:r.width,h:r.height,content:svgEl.outerHTML})}
+            maxX=Math.max(maxX,x+r.width);maxY=Math.max(maxY,y+r.height);
+            minX=Math.min(minX,x);minY=Math.min(minY,y);
+            return;
+        }
+        const shape=wrap.querySelector('.canvas-shape');
+        if(shape){
+            const cs=getComputedStyle(shape);
+            const sw=shape.offsetWidth,sh=shape.offsetHeight;
+            const bc=cs.borderColor||'#e6edf3',bw=parseInt(cs.borderWidth)||2;
+            const fill=shape.dataset.filled==='true'?bc:'none';
+            const st=shape.dataset.shape||'rectangle';
+            let svgInner='';
+            if(st==='circle'||st==='ellipse'){
+                svgInner=`<ellipse cx="${sw/2}" cy="${sh/2}" rx="${sw/2-bw}" ry="${sh/2-bw}" fill="${fill}" stroke="${bc}" stroke-width="${bw}"/>`;
+            } else if(st==='diamond'){
+                svgInner=`<polygon points="${sw/2},${bw} ${sw-bw},${sh/2} ${sw/2},${sh-bw} ${bw},${sh/2}" fill="${fill}" stroke="${bc}" stroke-width="${bw}"/>`;
+            } else if(st==='triangle'){
+                svgInner=`<polygon points="${sw/2},${bw} ${sw-bw},${sh-bw} ${bw},${sh-bw}" fill="${fill}" stroke="${bc}" stroke-width="${bw}"/>`;
+            } else {
+                svgInner=`<rect x="${bw/2}" y="${bw/2}" width="${sw-bw}" height="${sh-bw}" fill="${fill}" stroke="${bc}" stroke-width="${bw}"/>`;
+            }
+            items.push({type:'rawsvg',x,y,w:sw,h:sh,content:svgInner});
+            maxX=Math.max(maxX,x+sw);maxY=Math.max(maxY,y+sh);
+            minX=Math.min(minX,x);minY=Math.min(minY,y);
+        }
+    });
+    if(!items.length)return null;
+    // Add padding
+    const pad=10;
+    minX=Math.max(0,minX-pad);minY=Math.max(0,minY-pad);
+    const totalW=maxX-minX+pad*2, totalH=maxY-minY+pad*2;
+    // Build composite SVG
+    let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" style="font-family:Arial,Helvetica,sans-serif">`;
+    items.forEach(item=>{
+        const ox=item.x-minX+pad, oy=item.y-minY+pad;
+        if(item.type==='svg'){
+            // Embed the chart SVG using foreignObject for full fidelity, or inline the SVG content
+            const inner=item.content.replace(/<svg[^>]*>/,'').replace(/<\/svg>/,'');
+            svg+=`<g transform="translate(${ox},${oy})">${inner}</g>`;
+        } else if(item.type==='rawsvg'){
+            svg+=`<g transform="translate(${ox},${oy})"><svg width="${item.w}" height="${item.h}">${item.content}</svg></g>`;
+        } else if(item.type==='text'){
+            const lines=(item.text||'').split('\n');
+            const fs=parseInt(item.fontSize)||13;
+            lines.forEach((line,li)=>{
+                svg+=`<text x="${ox}" y="${oy+fs+li*fs*1.4}" fill="${item.color}" font-size="${fs}" font-weight="${item.fontWeight}" font-style="${item.fontStyle}" font-family="${item.fontFamily}">${line.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</text>`;
+            });
+        }
+    });
+    svg+=`</svg>`;
+    return{svg,w:totalW,h:totalH};
+}
+function exportCanvasAsSVG(){
+    const result=_buildCanvasCompositeSVG();
+    if(!result){alert('Nothing to export');return}
+    const blob=new Blob([result.svg],{type:'image/svg+xml'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='proker_canvas_layout.svg';a.click();
+}
+function exportCanvasAsPNG(){
+    const result=_buildCanvasCompositeSVG();
+    if(!result){alert('Nothing to export');return}
+    const scale=2;
+    const cvs=document.createElement('canvas');cvs.width=result.w*scale;cvs.height=result.h*scale;
+    const ctx=cvs.getContext('2d');const img=new Image();
+    img.onload=()=>{ctx.drawImage(img,0,0,cvs.width,cvs.height);cvs.toBlob(blob=>{
+        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='proker_canvas_layout.png';a.click()})};
+    img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(result.svg);
+}
+
+// ================================================================
 // CANVAS ANNOTATIONS (text boxes, lines)
 // ================================================================
 var canvasAnnoId=0;
@@ -2987,7 +3096,12 @@ function tbShapeBorder(v){if(!tbSelectedEl)return;tbSelectedEl.style.borderWidth
 function tbShapeFill(checked){if(!tbSelectedEl)return;tbSelectedEl.dataset.filled=checked?'true':'false';tbSelectedEl.style.background=checked?tbSelectedEl.style.borderColor:'transparent'}
 
 function doExport(fmt){
-    if(fmt==='svg')exportAllSVG();else exportAllPNG();
+    const separate=document.getElementById('export-separate')?.checked;
+    if(separate){
+        if(fmt==='svg')exportAllSVG();else exportAllPNG();
+    } else {
+        if(fmt==='svg')exportCanvasAsSVG();else exportCanvasAsPNG();
+    }
     document.getElementById('export-panel')?.classList.add('hidden');
 }
 function exportCSV(){
