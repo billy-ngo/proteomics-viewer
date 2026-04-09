@@ -2,6 +2,29 @@
 
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 
+## [3.6.0] - 2026-04-09
+
+### Added
+- **Groups of Interest** — New section in the Analysis tab to select proteins by locus tag numeric range and assign custom color, shape (circle/square/diamond/triangle/star/cross), and size. Overrides propagate to all protein-level plots (volcano, enrichment, dot, unique), taking priority over species highlights and default styles.
+- **Species Highlight** — Color proteins from a species/organism on all graphs by locus tag prefix with checkbox and color swatch per species.
+- **2-of-diamonds logo** — New SVG logo matching the provided card design: thick dark borders, red "2" with diamond suit symbols. Applied to favicon, header, info panel, and desktop icon.
+- **Hover tooltips show protein ID** — Hovering a point now shows both the gene name and the full protein ID / locus tag on separate lines.
+- **Minimum click target** — Invisible 8px hit area behind small dots so tiny points (2-4px) remain easy to click and hover.
+- **Canvas toolbar enhancements** — Text: underline toggle, text alignment, Helvetica font, sizes up to 48px. Lines: arrowhead toggle, dash-dot style. Text boxes and lines show toolbar on single click.
+- **Color swatch on hover** — All color selector boxes now show the swatch popup on mouseenter in addition to click.
+
+### Changed
+- ProkerChart SVG engine extended to support per-point size and symbol arrays (in addition to existing per-point color arrays).
+- Unified `applyMarkerOverrides()` helper used by all plot builders for consistent GOI + species highlight + default fallback styling.
+
+### Fixed
+- **`wDrag is not defined` crash** when using +Line feature — removed dangling reference, rewrote line drag handling.
+- Desktop icon simplified to two offset cards with centered red "2" (no overlapping BN text).
+- CLI startup message after shortcut prompt to prevent apparent hang.
+
+### Removed
+- Dead Bokeh dependency: deleted `plots.py` and `/api/plot` endpoint (unused since v3.0.0).
+
 ## [3.5.0] - 2026-04-08
 
 ### Added
