@@ -230,6 +230,35 @@ class ProkerChart {
                 colorFn = v => this._colorscale(v, cmin, cmax, marker.colorscale);
             }
 
+            // Error bars (rendered before markers so they appear underneath)
+            if (trace.error && trace.error.y) {
+                const errWidth = trace.error.width || 1;
+                const capW = trace.error.capWidth || 3;
+                const errOp = trace.error.opacity != null ? trace.error.opacity : 0.5;
+                const errHasColor = !!trace.error.color;
+                const errStaticColor = trace.error.color || singleColor || T.text;
+                for (let i = 0; i < n; i++) {
+                    const vx = trace.x[i], vy = trace.y[i];
+                    if (!isFinite(vx) || !isFinite(vy)) continue;
+                    const epx = m.left + xScale(vx);
+                    if (epx < m.left || epx > m.left + pw) continue;
+                    const lo = trace.error.ymin ? trace.error.ymin[i] : vy - trace.error.y[i];
+                    const hi = trace.error.ymax ? trace.error.ymax[i] : vy + trace.error.y[i];
+                    if (!isFinite(lo) || !isFinite(hi)) continue;
+                    const epy1 = m.top + yScale(lo);
+                    const epy2 = m.top + yScale(hi);
+                    const cy1 = Math.max(m.top, Math.min(m.top + ph, epy1));
+                    const cy2 = Math.max(m.top, Math.min(m.top + ph, epy2));
+                    // Per-point color fallback
+                    const ec = errHasColor ? errStaticColor : (colors ? colors[i] : errStaticColor);
+                    svg += `<line x1="${epx}" y1="${cy1}" x2="${epx}" y2="${cy2}" stroke="${ec}" stroke-width="${errWidth}" opacity="${errOp}"/>`;
+                    if (epy2 >= m.top && epy2 <= m.top + ph)
+                        svg += `<line x1="${epx-capW}" y1="${cy2}" x2="${epx+capW}" y2="${cy2}" stroke="${ec}" stroke-width="${errWidth}" opacity="${errOp}"/>`;
+                    if (epy1 >= m.top && epy1 <= m.top + ph)
+                        svg += `<line x1="${epx-capW}" y1="${cy1}" x2="${epx+capW}" y2="${cy1}" stroke="${ec}" stroke-width="${errWidth}" opacity="${errOp}"/>`;
+                }
+            }
+
             for (let i = 0; i < n; i++) {
                 const vx = trace.x[i], vy = trace.y[i];
                 if (!isFinite(vx) || !isFinite(vy)) continue;

@@ -470,7 +470,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">3.8.0</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">3.9.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -507,6 +507,7 @@ async function uploadFile(file,append){
         <details style="margin-bottom:16px">
             <summary style="font-size:14px;font-weight:700;cursor:pointer;padding:4px 0">Version History</summary>
             <div style="font-size:12px;color:var(--text-sec);line-height:1.7;margin-top:8px;max-height:200px;overflow-y:auto">
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">3.9.0</strong> (April 2026)<br>Protein Abundance ranked plot with error bars (SD, SEM, range), volcano tooltip guidance for FC threshold and S0</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.8.0</strong> (April 2026)<br>Unified color swatch palette across all pickers, swatch popup toolbar fix, dynamic macOS plist version</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.7.0</strong> (April 2026)<br>Fix canvas text/line annotation glitches, unified default marker size, auto-shutdown lock path fix, merge all pending features</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.6.0</strong> (April 2026)<br>Groups of Interest, species highlight, 2-of-diamonds logo, hover shows protein ID, min click target, toolbar enhancements, color swatch on hover, remove Bokeh</div>
@@ -728,6 +729,7 @@ async function uploadFile(file,append){
             <div class="viz-card" draggable="true" data-vtype="volcano" onclick="showVizConfig('volcano')"><div class="vc-icon">&#9651;</div><div><div class="vc-name">Volcano Plot</div><div class="vc-desc">Fold-change vs FDR-adjusted P-value</div></div></div>
             <div class="viz-card" draggable="true" data-vtype="dotplot" onclick="showVizConfig('dotplot')"><div class="vc-icon">&#8226;&#8226;</div><div><div class="vc-name">Dot Plot</div><div class="vc-desc">Abundance in group X vs group Y</div></div></div>
             <div class="viz-card" draggable="true" data-vtype="pca" onclick="showVizConfig('pca')"><div class="vc-icon">&#10038;</div><div><div class="vc-name">PCA</div><div class="vc-desc">Principal component analysis of samples</div></div></div>
+            <div class="viz-card" draggable="true" data-vtype="abundance" onclick="showVizConfig('abundance')"><div class="vc-icon">&#9604;</div><div><div class="vc-name">Protein Abundance</div><div class="vc-desc">Ranked abundance in a group or sample</div></div></div>
         </div>
         <div id="viz-config-area"></div>
     </div>
@@ -774,7 +776,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='3.8.0';
+var PROKER_VERSION='3.9.0';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -2006,6 +2008,15 @@ function showVizConfig(type){
     let html=`<div class="viz-config"><div class="vc-title">Configure ${type}</div>`;
     if(type==='pca'){
         html+=`<div class="af-row"><span class="af-lbl">Samples from groups</span><div id="pca-grp-checks">${names.map(n=>`<label class="checkbox-row"><input type="checkbox" value="${n}" checked>${n}</label>`).join('')}</div></div>`;
+    } else if(type==='abundance'){
+        // Build sample options from RAW.samples
+        const sampleOpts=RAW?RAW.samples.map(s=>`<option value="${s}">${s}</option>`).join(''):'';
+        html+=`<div class="af-row"><span class="af-lbl">Source</span><select id="vc-ab-source" onchange="toggleAbSource()"><option value="group">Group (mean)</option><option value="sample">Single sample</option></select></div>`;
+        html+=`<div class="af-row" id="vc-ab-grp-row"><span class="af-lbl">Group</span><select id="vc-ab-group">${opts}</select></div>`;
+        html+=`<div class="af-row hidden" id="vc-ab-samp-row"><span class="af-lbl">Sample</span><select id="vc-ab-sample">${sampleOpts}</select></div>`;
+        html+=`<div id="vc-ab-err-section"><label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-ab-errbars"> Show error bars</label>`;
+        html+=`<div class="af-row"><span class="af-lbl">Error bar type</span><select id="vc-ab-errtype"><option value="sd">Standard deviation (SD)</option><option value="sem">Standard error (SEM)</option><option value="range">Range (min–max)</option></select></div></div>`;
+        html+=`<div class="af-row"><span class="af-lbl">Sort order</span><select id="vc-ab-sort"><option value="asc">Ascending (low → high)</option><option value="desc">Descending (high → low)</option></select></div>`;
     } else if(type==='unique'){
         // Unique has its own single-group selector + exclusion logic
         html+=`<div class="af-row"><span class="af-lbl">Featured group (unique to)</span><select id="vc-uniq-grp">${opts}</select></div>`;
@@ -2042,9 +2053,10 @@ function showVizConfig(type){
     if(type==='volcano'){
         html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-impute" checked> Impute missing values</label>`;
         html+=`<div class="af-row"><span class="af-lbl">FDR threshold</span><select id="vc-fdr"><option value="0.05">0.05</option><option value="0.01">0.01</option><option value="0.001">0.001</option></select></div>`;
-        html+=`<div class="af-row"><span class="af-lbl">|Log2 FC| threshold</span><input type="number" id="vc-fc" value="1" min="0" step="0.25" style="width:80px"></div>`;
-        html+=`<div class="af-row"><span class="af-lbl">S0 (low-abundance correction)</span><input type="number" id="vc-s0" value="0" min="0" max="10" step="0.1" style="width:80px" title="Fudge factor added to the t-test denominator to penalize noisy fold changes at low abundance. 0 = off, typical values 0.1–2.0 (Perseus default: 0.1)"></div>`;
-        html+=`<div style="font-size:10px;color:var(--text-sec);margin-top:2px;line-height:1.4">S0 dampens extreme fold changes from low-abundance proteins by adding a constant to the t-test denominator. Higher values = stronger dampening.</div>`;
+        html+=`<div class="af-row"><span class="af-lbl">|Log2 FC| threshold</span><input type="number" id="vc-fc" value="1" min="0" step="0.25" style="width:80px" title="Minimum absolute log2 fold change to classify a protein as significantly regulated. Common values: 0.5 (lenient, 1.4-fold), 1.0 (standard, 2-fold), 1.5 (stringent, 2.8-fold), 2.0 (very stringent, 4-fold)."></div>`;
+        html+=`<div style="font-size:10px;color:var(--text-sec);margin-top:2px;line-height:1.4">1.0 = 2-fold change, 0.58 = 1.5-fold, 1.58 = 3-fold, 2.0 = 4-fold.</div>`;
+        html+=`<div class="af-row"><span class="af-lbl">S0 (low-abundance correction)</span><input type="number" id="vc-s0" value="0" min="0" max="10" step="0.1" style="width:80px" title="Fudge factor added to the t-test denominator to penalize noisy fold changes at low abundance. 0 = standard Welch's t-test (off). 0.1 = Perseus default. 0.5–2.0 = aggressive dampening. Typical range: 0.1–2.0."></div>`;
+        html+=`<div style="font-size:10px;color:var(--text-sec);margin-top:2px;line-height:1.4">0 = standard Welch's t-test, 0.1 = Perseus default, 0.5–2.0 = aggressive dampening. Start with 0.1 if many low-abundance proteins appear significant.</div>`;
     }
     html+=`<button class="btn-primary" onclick="addPlotToCanvas('${type}')" style="margin-top:10px">Add to Canvas</button></div>`;
     c.innerHTML=html;
@@ -2073,6 +2085,14 @@ function populateDotIntraSamples(){
     // Default Y to second sample if available
     if(samples.length>=2) sySel.value=samples[1];
 }
+function toggleAbSource(){
+    const src=document.getElementById('vc-ab-source')?.value||'group';
+    document.getElementById('vc-ab-grp-row')?.classList.toggle('hidden',src!=='group');
+    document.getElementById('vc-ab-samp-row')?.classList.toggle('hidden',src!=='sample');
+    // Error bars only available for groups (need multiple samples to compute SD/SEM/range)
+    const errSec=document.getElementById('vc-ab-err-section');
+    if(errSec) errSec.style.display=src==='group'?'':'none';
+}
 function toggleUniqExclude(){
     const mode=document.getElementById('vc-uniq-mode')?.value;
     document.getElementById('vc-uniq-ctrl-row').classList.toggle('hidden',mode!=='not_control');
@@ -2093,7 +2113,7 @@ document.querySelectorAll('.viz-card[draggable]').forEach(card=>{
     const canvas=document.getElementById('canvas');
     canvas.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';document.getElementById('canvas-drop')?.classList.add('drag-over')});
     canvas.addEventListener('dragleave',e=>{if(!canvas.contains(e.relatedTarget))document.getElementById('canvas-drop')?.classList.remove('drag-over')});
-    canvas.addEventListener('drop',e=>{e.preventDefault();document.getElementById('canvas-drop')?.classList.remove('drag-over');const vtype=e.dataTransfer.getData('text/plain');if(['enrichment','unique','volcano','dotplot','pca'].includes(vtype))showVizConfig(vtype)});
+    canvas.addEventListener('drop',e=>{e.preventDefault();document.getElementById('canvas-drop')?.classList.remove('drag-over');const vtype=e.dataTransfer.getData('text/plain');if(['enrichment','unique','volcano','dotplot','pca','abundance'].includes(vtype))showVizConfig(vtype)});
 })();
 
 function addPlotToCanvas(type){
@@ -2106,6 +2126,8 @@ function addPlotToCanvas(type){
         if(checks.length<2){alert('Select at least 2 groups');return}
         title='PCA: '+checks.join(', ');
         gx=checks.join(',');gy='';
+    } else if(type==='abundance'){
+        gx='';gy='';
     } else {
         gx=document.getElementById('vc-gx')?.value||'';gy=document.getElementById('vc-gy')?.value||'';
         title={enrichment:'Ranked Enrichment - '+gx+'/'+gy,unique:'Unique Proteins',volcano:'Volcano: '+gx+' vs '+gy,dotplot:gx+' vs '+gy}[type];
@@ -2135,6 +2157,17 @@ function addPlotToCanvas(type){
             gx=config.intraSampleX;gy=config.intraSampleY;
             title=config.intraSampleX+' vs '+config.intraSampleY;
         }
+    }
+    if(type==='abundance'){
+        config.source=document.getElementById('vc-ab-source')?.value||'group';
+        config.group=document.getElementById('vc-ab-group')?.value||'';
+        config.sample=document.getElementById('vc-ab-sample')?.value||'';
+        config.errorBars=document.getElementById('vc-ab-errbars')?.checked||false;
+        config.errorType=document.getElementById('vc-ab-errtype')?.value||'sd';
+        config.sortDir=document.getElementById('vc-ab-sort')?.value||'asc';
+        gx=config.source==='group'?config.group:config.sample;
+        gy='';
+        title='Abundance: '+gx;
     }
     CANVAS_PLOTS.push({id:nextPlotId-1,type,config,plotId,title});
     updateStatsMethodsPanel();
@@ -2258,6 +2291,7 @@ function renderPlot(p,qd,fidx){
     else if(p.type==='volcano') buildVolcanoConfig(chart,p,qd,fidx);
     else if(p.type==='dotplot') buildDotplotConfig(chart,p,qd,fidx);
     else if(p.type==='pca') buildPCAConfig(chart,p,qd,fidx);
+    else if(p.type==='abundance') buildAbundanceConfig(chart,p,qd,fidx);
 
     chart.on('dblclick',()=>openGraphSettingsForPlot(p.plotId));
     chart.on('resetcolors',()=>{p._forceUpdate=true;const{data:q}=getQData();renderPlot(p,q,getFilteredIdx())});
@@ -2514,6 +2548,74 @@ function buildPCAConfig(chart,p,qd,fidx){
     const pca=computePCA(sampleNames,qd,fidx);
     const traces=groups.map(g=>{const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),mode:'markers',marker:{size:5,color:grpColor(g),symbol:'circle'},text:idx.map(i=>pca.scores[i].name),customdata:idx.map(i=>g+': '+pca.scores[i].name)}});
     chart.setChartTitle(p.title||'').setData(traces).setXTitle('PC1 ('+pca.varExpl[0].toFixed(1)+'%)').setYTitle('PC2 ('+pca.varExpl[1].toFixed(1)+'%)').render();
+}
+
+function buildAbundanceConfig(chart,p,qd,fidx){
+    const src=p.config.source||'group';
+    const grp=p.config.group||'';
+    const samp=p.config.sample||'';
+    const showErr=p.config.errorBars||false;
+    const errType=p.config.errorType||'sd';
+    const sortDir=p.config.sortDir||'asc';
+    const isGroup=src==='group';
+    const label=isGroup?grp:samp;
+
+    const data=[];
+    for(let fi=0;fi<fidx.length;fi++){
+        let val=0,errVal=0,errLo=null,errHi=null,vals=[];
+        if(isGroup){
+            vals=grpVals(fi,grp,qd,fidx);
+            val=mean(vals);
+            if(showErr&&vals.length>=2){
+                if(errType==='sd'){errVal=sd(vals)}
+                else if(errType==='sem'){errVal=sem(vals)}
+                else if(errType==='range'){errLo=Math.min(...vals);errHi=Math.max(...vals)}
+            }
+        } else {
+            val=qd[samp]?qd[samp][fi]:0;
+        }
+        if(val<=0)continue;
+        let hover=pHoverLabel(fidx,fi)+'<br>Abundance: '+fmtVal(val);
+        if(isGroup&&vals.length>=2){
+            hover+='<br>SD: '+fmtVal(sd(vals))+'<br>SEM: '+fmtVal(sem(vals));
+            hover+='<br>Range: '+fmtVal(Math.min(...vals))+' – '+fmtVal(Math.max(...vals));
+            if(!isAggSum()) hover+='<br>---<br>'+grpSampleBreakdown(fi,grp,qd);
+        }
+        data.push({val,label:pLabel(fidx,fi),full:pFullLabel(fidx,fi),hover,pidx:fidx[fi],
+            errVal,errLo,errHi});
+    }
+    if(sortDir==='asc') data.sort((a,b)=>a.val-b.val);
+    else data.sort((a,b)=>b.val-a.val);
+
+    const total=data.length;
+    const mo=applyMarkerOverrides(data.map(d=>d.pidx),'#e6edf3',5,'circle');
+    const trace={
+        x:data.map((_,i)=>i+1),
+        y:data.map(d=>d.val),
+        mode:'markers',
+        marker:{size:mo.size,color:mo.color,symbol:mo.symbol},
+        text:data.map((d,i)=>d.hover+'<br>Rank: #'+(i+1)+'/'+total),
+        customdata:data.map(d=>d.full)
+    };
+    // Add error bars if enabled
+    if(isGroup&&showErr&&data.length>0){
+        if(errType==='range'){
+            trace.error={
+                y:data.map(d=>0), // placeholder (using ymin/ymax)
+                ymin:data.map(d=>d.errLo!=null?d.errLo:d.val),
+                ymax:data.map(d=>d.errHi!=null?d.errHi:d.val),
+                width:1,capWidth:3,opacity:0.45
+            };
+        } else {
+            trace.error={
+                y:data.map(d=>d.errVal),
+                width:1,capWidth:3,opacity:0.45
+            };
+        }
+    }
+    chart.setData([trace]);
+    const yLabel=isGroup?'Mean Abundance ('+label+')':'Abundance ('+label+')';
+    chart.setChartTitle(p.title||'').setXTitle('Rank').setYTitle(yLabel).render();
 }
 
 // ================================================================

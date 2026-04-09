@@ -2,6 +2,13 @@
 
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 
+## [3.9.0] - 2026-04-09
+
+### Added
+- **Protein Abundance plot** — New visualization type in the palette: ranked protein abundance in a single group (mean) or individual sample. Supports optional error bars with three types: standard deviation (SD), standard error of the mean (SEM), or range (min–max). Hover shows full statistics including SD, SEM, range, and per-sample breakdown.
+- **Error bar rendering in ProkerChart** — SVG charting engine now supports `trace.error` with symmetric (`y`) or asymmetric (`ymin`/`ymax`) error bars. Rendered as vertical lines with caps underneath data markers, respecting per-point colors and plot clipping.
+- **Volcano plot tooltip guidance** — Log2 FC threshold and S0 inputs now show detailed hover tooltips with typical values and interpretations (e.g., "1.0 = 2-fold change", "0.1 = Perseus default"). Helper text below each input provides quick reference.
+
 ## [3.8.0] - 2026-04-09
 
 ### Changed
