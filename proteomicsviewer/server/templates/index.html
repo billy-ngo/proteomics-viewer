@@ -2161,9 +2161,9 @@ function showVizConfig(type){
         html+=`<div class="af-row"><span class="af-lbl">Source</span><select id="vc-ab-source" onchange="toggleAbSource()"><option value="group">Group (mean)</option><option value="sample">Single sample</option></select></div>`;
         html+=`<div class="af-row" id="vc-ab-grp-row"><span class="af-lbl">Group</span><select id="vc-ab-group">${opts}</select></div>`;
         html+=`<div class="af-row hidden" id="vc-ab-samp-row"><span class="af-lbl">Sample</span><select id="vc-ab-sample">${sampleOpts}</select></div>`;
-        html+=`<div id="vc-ab-err-section"><label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-ab-errbars"> Show error bars</label>`;
-        html+=`<div class="af-row"><span class="af-lbl">Error bar type</span><select id="vc-ab-errtype"><option value="sd">Standard deviation (SD)</option><option value="sem">Standard error (SEM)</option><option value="range">Range (min–max)</option></select></div></div>`;
         html+=`<div class="af-row"><span class="af-lbl">Sort order</span><select id="vc-ab-sort"><option value="asc">Ascending (low → high)</option><option value="desc">Descending (high → low)</option></select></div>`;
+        html+=`<div id="vc-ab-err-section"><label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-ab-errbars" onchange="document.getElementById('vc-ab-errtype-row').style.display=this.checked?'':'none'"> Show error bars</label>`;
+        html+=`<div class="af-row" id="vc-ab-errtype-row" style="display:none"><span class="af-lbl">Error bar type</span><select id="vc-ab-errtype"><option value="sd">Standard deviation (SD)</option><option value="sem">Standard error (SEM)</option><option value="range">Range (min–max)</option></select></div></div>`;
     } else if(type==='unique'){
         // Unique has its own single-group selector + exclusion logic
         html+=`<div class="af-row"><span class="af-lbl">Featured group (unique to)</span><select id="vc-uniq-grp">${opts}</select></div>`;
@@ -2773,12 +2773,12 @@ function buildAbundanceConfig(chart,p,qd,fidx){
                 y:data.map(d=>0), // placeholder (using ymin/ymax)
                 ymin:data.map(d=>d.errLo!=null?d.errLo:d.val),
                 ymax:data.map(d=>d.errHi!=null?d.errHi:d.val),
-                width:1,capWidth:3,opacity:0.45
+                width:1.2,capWidth:4,opacity:0.6
             };
         } else {
             trace.error={
                 y:data.map(d=>d.errVal),
-                width:1,capWidth:3,opacity:0.45
+                width:1.2,capWidth:4,opacity:0.6
             };
         }
     }
