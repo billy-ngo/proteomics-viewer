@@ -295,10 +295,10 @@ async function uploadFile(file,append){
     </div>
     <!-- Center: tabs -->
     <div class="tab-buttons">
-        <button class="tab-btn active" data-tab="upload" onclick="switchTab('upload')">Data Upload</button>
-        <button class="tab-btn" data-tab="processing" onclick="switchTab('processing')" disabled id="tab-processing">Processing</button>
-        <button class="tab-btn" data-tab="analysis" onclick="switchTab('analysis')" disabled id="tab-analysis">Analysis</button>
-        <button class="tab-btn" data-tab="visualization" onclick="switchTab('visualization')" disabled id="tab-viz">Visualization</button>
+        <button class="tab-btn active" data-tab="upload" onclick="switchTab('upload')" title="Upload proteinGroups.txt and assign samples to groups">Data Upload</button>
+        <button class="tab-btn" data-tab="processing" onclick="switchTab('processing')" disabled id="tab-processing" title="Configure normalization, filtering, and aggregation">Processing</button>
+        <button class="tab-btn" data-tab="analysis" onclick="switchTab('analysis')" disabled id="tab-analysis" title="Saved analyses, derived groups, species highlights">Analysis</button>
+        <button class="tab-btn" data-tab="visualization" onclick="switchTab('visualization')" disabled id="tab-viz" title="Add graphs to the canvas">Visualization</button>
     </div>
     <!-- Right: action buttons (BiNgo layout) -->
     <div style="display:flex;align-items:center;gap:8px" data-tour="header-btns">
@@ -356,34 +356,34 @@ async function uploadFile(file,append){
         <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Markers</div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
             <span class="gs-swatch" id="gs-dot-color-sw" onclick="gsOpenPicker('gs-dot-color')" onmouseenter="gsOpenPicker('gs-dot-color')" ondblclick="gsNative('gs-dot-color')" title="Click or hover: swatches, Double-click: picker"></span>
-            <select id="gs-dot-shape" style="width:auto;font-size:11px;padding:2px 18px 2px 4px"><option value="circle">&#9679;</option><option value="square">&#9632;</option><option value="diamond">&#9670;</option><option value="cross">+</option><option value="triangle-up">&#9650;</option><option value="star">&#9733;</option></select>
-            <label class="checkbox-row" style="margin:0"><input type="checkbox" id="gs-hollow" onchange="applyGraphSettings()"> Hollow</label>
+            <select id="gs-dot-shape" style="width:auto;font-size:11px;padding:2px 18px 2px 4px" title="Marker shape for data points"><option value="circle">&#9679;</option><option value="square">&#9632;</option><option value="diamond">&#9670;</option><option value="cross">+</option><option value="triangle-up">&#9650;</option><option value="star">&#9733;</option></select>
+            <label class="checkbox-row" style="margin:0"><input type="checkbox" id="gs-hollow" onchange="applyGraphSettings()" title="Render markers as outlines only"> Hollow</label>
         </div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:11px;color:var(--text-sec)">
-            Size <input type="range" id="gs-dot-size" min="2" max="16" value="5" style="flex:1"> <input type="number" id="gs-dot-size-num" min="1" max="30" value="5" style="width:40px;font-size:11px;padding:2px;text-align:center">
+            Size <input type="range" id="gs-dot-size" min="2" max="16" value="5" style="flex:1" title="Marker diameter in pixels"> <input type="number" id="gs-dot-size-num" min="1" max="30" value="5" style="width:40px;font-size:11px;padding:2px;text-align:center">
         </div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;font-size:11px;color:var(--text-sec)">
-            Opacity <input type="range" id="gs-dot-opacity" min="10" max="100" value="70" style="flex:1"> <input type="number" id="gs-dot-opacity-num" min="0" max="100" value="70" step="5" style="width:40px;font-size:11px;padding:2px;text-align:center">
+            Opacity <input type="range" id="gs-dot-opacity" min="10" max="100" value="70" style="flex:1" title="Marker transparency (0-100%)"> <input type="number" id="gs-dot-opacity-num" min="0" max="100" value="70" step="5" style="width:40px;font-size:11px;padding:2px;text-align:center">
         </div>
         <!-- Display -->
         <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Display</div>
         <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">
             <div style="display:flex;align-items:center;gap:6px">
-                <input type="checkbox" id="gs-show-grid" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)">
+                <input type="checkbox" id="gs-show-grid" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)" title="Show grid lines on the plot area">
                 <span style="font-size:11px;color:var(--text-sec)">Grid</span>
                 <span class="gs-swatch" id="gs-grid-color-sw" onclick="gsOpenPicker('gs-grid-color')" onmouseenter="gsOpenPicker('gs-grid-color')" ondblclick="gsNative('gs-grid-color')" style="margin-left:auto"></span>
             </div>
             <div id="gs-threshold-row" style="display:flex;align-items:center;gap:6px">
-                <input type="checkbox" id="gs-show-thresholds" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)">
+                <input type="checkbox" id="gs-show-thresholds" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)" title="Show dotted threshold lines (FC and FDR)">
                 <span style="font-size:11px;color:var(--text-sec)">Threshold lines</span>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
-                <input type="checkbox" id="gs-show-plotbg" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)">
+                <input type="checkbox" id="gs-show-plotbg" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)" title="Show a colored background behind the plot area">
                 <span style="font-size:11px;color:var(--text-sec)">Plot background</span>
                 <span class="gs-swatch" id="gs-plot-bg-sw" onclick="gsOpenPicker('gs-plot-bg')" onmouseenter="gsOpenPicker('gs-plot-bg')" ondblclick="gsNative('gs-plot-bg')" style="margin-left:auto"></span>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
-                <input type="checkbox" id="gs-show-paperbg" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)">
+                <input type="checkbox" id="gs-show-paperbg" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)" title="Show a colored background behind the full chart">
                 <span style="font-size:11px;color:var(--text-sec)">Paper background</span>
                 <span class="gs-swatch" id="gs-paper-bg-sw" onclick="gsOpenPicker('gs-paper-bg')" onmouseenter="gsOpenPicker('gs-paper-bg')" ondblclick="gsNative('gs-paper-bg')" style="margin-left:auto"></span>
             </div>
@@ -391,7 +391,7 @@ async function uploadFile(file,append){
         <!-- Text -->
         <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Text</div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;font-size:11px;color:var(--text-sec)">
-            Font size <input type="range" id="gs-font-size" min="8" max="20" value="12" style="flex:1"> <input type="number" id="gs-font-size-num" min="6" max="36" value="12" style="width:40px;font-size:11px;padding:2px;text-align:center">
+            Font size <input type="range" id="gs-font-size" min="8" max="20" value="12" style="flex:1" title="Axis and title font size"> <input type="number" id="gs-font-size-num" min="6" max="36" value="12" style="width:40px;font-size:11px;padding:2px;text-align:center">
         </div>
         <button class="btn-primary" onclick="document.getElementById('graph-settings-panel').classList.add('hidden')" style="width:100%">Done</button>
     </div>
@@ -470,7 +470,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">3.9.0</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.0.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -497,7 +497,11 @@ async function uploadFile(file,append){
                 <div style="margin-bottom:4px"><em>Welch&rsquo;s t-test</em> &mdash; Two-sample unequal-variance t-test comparing group means. Degrees of freedom estimated via the Welch&ndash;Satterthwaite equation. P-values are computed from the regularized incomplete beta function.</div>
                 <div style="margin-bottom:4px"><em>Benjamini&ndash;Hochberg FDR</em> &mdash; Multiple-testing correction controlling the false discovery rate. Adjusted p-values (q-values) are computed by ranking raw p-values and scaling by n/rank.</div>
                 <div style="margin-bottom:4px"><em>S0 correction</em> &mdash; A fudge factor added to the t-test denominator (SE + S0) to penalize fold changes driven by low-abundance noise (Tusher et al., 2001). At S0 = 0 this is a standard t-test. Typical values range from 0.1&ndash;2.0.</div>
-                <div style="margin-bottom:4px"><em>Missing value imputation</em> &mdash; Zero/missing intensities are replaced with half the minimum detected non-zero value for that protein, a simple down-shift imputation approach.</div>
+                <div style="margin-bottom:4px"><em>Missing value imputation</em> &mdash; Four methods available:<br>
+                &bull; <b>Perseus-style Gaussian</b> (default): draws from a down-shifted normal distribution in log2 space (shift=1.8 SD, width=0.3 SD). Ref: Tyanova et al. (2016) <em>Nature Protocols</em> 11:2301.<br>
+                &bull; <b>MinProb</b>: draws from a Gaussian centered at the 1st percentile of the log2 distribution. Ref: Lazar et al. (2016) <em>J. Proteome Res.</em> 15:1116.<br>
+                &bull; <b>kNN</b>: imputes from k=10 nearest neighbor proteins by Euclidean distance. Ref: Troyanskaya et al. (2001) <em>Bioinformatics</em> 17:520.<br>
+                &bull; <b>Min/2</b>: replaces with half the minimum non-zero value (simple deterministic baseline).</div>
                 <div style="margin-bottom:4px"><em>Log2 Fold Change</em> &mdash; Calculated as log2(mean_X / mean_Y). Positive values indicate higher abundance in Group X; negative values indicate higher abundance in Group Y.</div>
                 <div style="margin-top:10px;margin-bottom:8px"><strong style="color:var(--text)">PCA &mdash; Principal Component Analysis</strong></div>
                 <div style="margin-bottom:4px"><em>Algorithm</em> &mdash; Dual-space PCA (kernel method) optimized for datasets where the number of samples is much smaller than the number of features. Computes the n&times;n kernel matrix K = X&middot;X<sup>T</sup> from the mean-centered data matrix, then performs Jacobi eigendecomposition.</div>
@@ -507,6 +511,7 @@ async function uploadFile(file,append){
         <details style="margin-bottom:16px">
             <summary style="font-size:14px;font-weight:700;cursor:pointer;padding:4px 0">Version History</summary>
             <div style="font-size:12px;color:var(--text-sec);line-height:1.7;margin-top:8px;max-height:200px;overflow-y:auto">
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">4.0.0</strong> (April 2026)<br>Published imputation methods (Perseus, MinProb, kNN), robust session save/load with graph positions and annotations, searchable protein dropdown with FASTA drag-drop for coverage map, amino acid-level peptide display with boundary markers, context menu color swatch, UI tooltips, upload performance fix</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.9.0</strong> (April 2026)<br>Protein Abundance ranked plot with error bars (SD, SEM, range), volcano tooltip guidance for FC threshold and S0</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.8.0</strong> (April 2026)<br>Unified color swatch palette across all pickers, swatch popup toolbar fix, dynamic macOS plist version</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.7.0</strong> (April 2026)<br>Fix canvas text/line annotation glitches, unified default marker size, auto-shutdown lock path fix, merge all pending features</div>
@@ -581,9 +586,9 @@ async function uploadFile(file,append){
     <div class="panel-section">
         <div class="section-label">Data Processing Options</div>
         <div class="proc-option">
-            <label class="proc-option-header"><input type="checkbox" id="proc-intensity" checked onchange="toggleIntensityOpts();updateProcPreview()"><div><div class="proc-option-label">Intensity Analysis</div><div class="proc-option-desc">Use intensity values (uncheck to use raw spectral counts)</div></div></label>
+            <label class="proc-option-header"><input type="checkbox" id="proc-intensity" checked onchange="toggleIntensityOpts();updateProcPreview()" title="Use intensity-based quantification (uncheck for spectral count mode)"><div><div class="proc-option-label">Intensity Analysis</div><div class="proc-option-desc">Use intensity values (uncheck to use raw spectral counts)</div></div></label>
             <div class="proc-option-body" id="intensity-opts">
-                <label class="checkbox-row"><input type="checkbox" id="proc-lfq" checked onchange="updateProcPreview()"> LFQ (label-free quantification)</label>
+                <label class="checkbox-row"><input type="checkbox" id="proc-lfq" checked onchange="updateProcPreview()" title="Use MaxQuant label-free quantification values"> LFQ (label-free quantification)</label>
             </div>
         </div>
         <div class="proc-option">
@@ -596,36 +601,36 @@ async function uploadFile(file,append){
             </div>
             <div style="padding:0 12px 12px 37px">
                 <div style="display:flex;gap:12px">
-                    <label class="checkbox-row"><input type="radio" name="proc-agg" value="average" checked onchange="updateProcPreview()" style="accent-color:var(--accent)"> Averages</label>
-                    <label class="checkbox-row"><input type="radio" name="proc-agg" value="sum" onchange="updateProcPreview()" style="accent-color:var(--accent)"> Sums</label>
+                    <label class="checkbox-row"><input type="radio" name="proc-agg" value="average" checked onchange="updateProcPreview()" style="accent-color:var(--accent)" title="Average replicate values within each group"> Averages</label>
+                    <label class="checkbox-row"><input type="radio" name="proc-agg" value="sum" onchange="updateProcPreview()" style="accent-color:var(--accent)" title="Sum replicate values within each group (disables statistics)"> Sums</label>
                 </div>
                 <div id="agg-warn" class="hidden" style="margin-top:6px;font-size:11px;color:var(--warning)">Note: Statistical tests (t-test, p-values, volcano plots) cannot be performed when using sums, as individual replicate variance is lost.</div>
             </div>
         </div>
         <div class="proc-option">
-            <label class="proc-option-header"><input type="checkbox" id="proc-norm" onchange="toggleNorm();updateProcPreview()"><div><div class="proc-option-label">Normalization</div><div class="proc-option-desc">Normalize values across samples</div></div></label>
+            <label class="proc-option-header"><input type="checkbox" id="proc-norm" onchange="toggleNorm();updateProcPreview()" title="Normalize intensities to equalize sample loading"><div><div class="proc-option-label">Normalization</div><div class="proc-option-desc">Normalize values across samples</div></div></label>
             <div class="proc-option-body hidden" id="norm-opts">
                 <div class="proc-sub"><div class="proc-sub-label">Normalization scope</div>
-                    <select id="norm-scope" onchange="toggleNormOrg();updateProcPreview()"><option value="all">Across all detected peptides</option><option value="organism">Within a given organism</option></select>
+                    <select id="norm-scope" onchange="toggleNormOrg();updateProcPreview()" title="Normalize across all peptides or within a specific organism"><option value="all">Across all detected peptides</option><option value="organism">Within a given organism</option></select>
                 </div>
                 <div class="proc-sub hidden" id="norm-org-panel">
                     <div class="proc-sub-label">Select organism(s) by locus tag prefix</div>
                     <div id="norm-org-list" style="max-height:160px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:4px;margin-top:4px"></div>
                 </div>
                 <div class="proc-sub" style="margin-top:10px">
-                    <label class="proc-option-header" style="padding:6px 0"><input type="checkbox" id="norm-rm-contam" onchange="updateProcPreview()"><div><div class="proc-option-label" style="font-size:12px">Remove contaminants before normalizing</div></div></label>
+                    <label class="proc-option-header" style="padding:6px 0"><input type="checkbox" id="norm-rm-contam" onchange="updateProcPreview()" title="Exclude potential contaminants from the normalization calculation"><div><div class="proc-option-label" style="font-size:12px">Remove contaminants before normalizing</div></div></label>
                 </div>
             </div>
         </div>
         <div class="proc-option">
-            <label class="proc-option-header"><input type="checkbox" id="proc-prune" onchange="togglePrune();updateProcPreview()"><div><div class="proc-option-label">Prune Peptides Below Threshold</div><div class="proc-option-desc">Filter out low-abundance proteins</div></div></label>
+            <label class="proc-option-header"><input type="checkbox" id="proc-prune" onchange="togglePrune();updateProcPreview()" title="Remove low-confidence proteins below a peptide count threshold"><div><div class="proc-option-label">Prune Peptides Below Threshold</div><div class="proc-option-desc">Filter out low-abundance proteins</div></div></label>
             <div class="proc-option-body hidden" id="prune-opts">
                 <div class="sentence-builder">
                     <span>Peptides will not be analyzed if their</span>
-                    <select id="prune-metric" onchange="updateProcPreview()"><option value="spectral">spectral counts</option><option value="intensity">minimum intensity</option></select>
-                    <span>is below</span><input type="number" id="prune-value" value="2" min="0" step="1" onchange="updateProcPreview()">
-                    <select id="prune-agg" onchange="updateProcPreview()"><option value="total">in total</option><option value="average">on average</option><option value="any">in any sample</option></select>
-                    <select id="prune-scope" onchange="togglePruneGrp();updateProcPreview()"><option value="all">across all groups</option><option value="any">across any group</option><option value="specified">across a specified group</option></select>
+                    <select id="prune-metric" onchange="updateProcPreview()" title="Metric to evaluate peptide abundance"><option value="spectral">spectral counts</option><option value="intensity">minimum intensity</option></select>
+                    <span>is below</span><input type="number" id="prune-value" value="2" min="0" step="1" onchange="updateProcPreview()" title="Minimum threshold value">
+                    <select id="prune-agg" onchange="updateProcPreview()" title="How to aggregate the metric across samples"><option value="total">in total</option><option value="average">on average</option><option value="any">in any sample</option></select>
+                    <select id="prune-scope" onchange="togglePruneGrp();updateProcPreview()" title="Scope of the threshold: all groups, any single group, or a specific group"><option value="all">across all groups</option><option value="any">across any group</option><option value="specified">across a specified group</option></select>
                     <select id="prune-group" class="hidden" onchange="updateProcPreview()"></select>
                 </div>
             </div>
@@ -678,16 +683,16 @@ async function uploadFile(file,append){
     <div class="collapse-sec" style="border-top:1px solid var(--border)">
         <div class="collapse-hdr" onclick="this.parentElement.classList.toggle('open')">Peptide Coverage Map <span class="chev">&#9656;</span></div>
         <div class="collapse-body">
-            <div style="font-size:11px;color:var(--text-sec);margin-bottom:8px">Paste a FASTA protein sequence to visualize which peptides were identified by mass spectrometry.</div>
-            <div class="af-row" style="margin-bottom:6px">
+            <div style="font-size:11px;color:var(--text-sec);margin-bottom:8px">Visualize peptide coverage on a protein sequence. Select a protein and optionally provide a FASTA sequence.</div>
+            <div class="af-row" style="margin-bottom:6px;position:relative">
                 <span class="af-lbl">Protein</span>
-                <select id="cov-protein" onchange="covProteinChanged()" style="flex:1">
-                    <option value="">-- Select a protein --</option>
-                </select>
+                <input type="text" id="cov-search" placeholder="Search by locus tag or annotation..." autocomplete="off" style="width:100%;font-size:11px" onfocus="covSearchFocus()" oninput="covSearchFilter()">
+                <input type="hidden" id="cov-protein" value="">
+                <div id="cov-dropdown" class="hidden" style="position:absolute;top:100%;left:0;right:0;z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:0 0 var(--radius) var(--radius);max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.4)"></div>
             </div>
             <div style="margin-bottom:6px">
-                <div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">FASTA sequence (paste header + sequence, or sequence only)</div>
-                <textarea id="cov-fasta" rows="4" placeholder=">sp|P12345|PROTEIN_NAME\nMKWVTFISLLFLFSSAYSRGVFRR..." style="width:100%;font-family:monospace;font-size:11px;resize:vertical;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px"></textarea>
+                <div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">FASTA sequence (paste or drag-and-drop a .fasta file)</div>
+                <textarea id="cov-fasta" rows="4" placeholder=">sp|P12345|PROTEIN_NAME\nMKWVTFISLLFLFSSAYSRGVFRR..." style="width:100%;font-family:monospace;font-size:11px;resize:vertical;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px" ondragover="event.preventDefault();this.style.borderColor='var(--accent)'" ondragleave="this.style.borderColor=''" ondrop="covFastaDrop(event)"></textarea>
             </div>
             <button class="btn-primary" onclick="showCoverageMap()" style="width:100%">Show Coverage</button>
             <div id="cov-result" style="margin-top:10px"></div>
@@ -701,7 +706,7 @@ async function uploadFile(file,append){
                 <div><strong>Test:</strong> Welch&rsquo;s t-test (two-sample, unequal variance). Degrees of freedom via Welch&ndash;Satterthwaite approximation.</div>
                 <div><strong>Multiple testing:</strong> Benjamini&ndash;Hochberg FDR correction. Adjusted p-values = raw_p &times; n / rank.</div>
                 <div><strong>S0 correction:</strong> When enabled, a fudge factor S0 is added to the standard error denominator (SE + S0) to penalize noisy fold changes at low abundance (Tusher et al., 2001; Perseus).</div>
-                <div><strong>Imputation:</strong> Missing/zero values replaced with min(non-zero) / 2.</div>
+                <div><strong>Imputation:</strong> Four methods available &mdash; Perseus-style Gaussian (Tyanova et al. 2016), MinProb (Lazar et al. 2016), kNN (Troyanskaya et al. 2001), or Min/2 (simple). Default: Perseus-style.</div>
                 <div><strong>Fold change:</strong> log2(mean_GroupX / mean_GroupY).</div>
             </div>
             <div id="stats-pca-info" class="hidden">
@@ -776,7 +781,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='3.9.0';
+var PROKER_VERSION='4.0.0';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -1215,10 +1220,6 @@ function initGrouping(){
     document.getElementById('grouping-section').classList.remove('hidden');
     document.getElementById('compact-upload').classList.remove('hidden');
     document.getElementById('cu-filename').textContent=RAW.filename;
-    buildProcessedData();
-    populateCovProteins();
-    populateSpeciesHighlights();
-    populateGOIPrefixes();
     renderAll();startHeartbeat();
 }
 
@@ -1358,30 +1359,67 @@ function renderDerived(){const c=document.getElementById('dg-list');c.innerHTML=
 // ================================================================
 // PEPTIDE COVERAGE MAP
 // ================================================================
+var _covProteinList=[];// cached [{pi, pid, gene, searchStr}]
 function populateCovProteins(){
-    const sel=document.getElementById('cov-protein');if(!sel||!RAW)return;
-    const prev=sel.value;
-    sel.innerHTML='<option value="">-- Select a protein --</option>';
+    if(!RAW)return;
+    _covProteinList=[];
     for(let pi=0;pi<RAW.proteins.length;pi++){
         const p=RAW.proteins[pi];
         if(p.potential_contaminant||p.reverse||p.only_identified_by_site)continue;
-        const label=(p.gene_name||p.majority_id||p.id).slice(0,50);
-        sel.innerHTML+=`<option value="${pi}">${label}</option>`;
+        const pid=p.majority_id||p.id||'';
+        const gene=p.gene_name||'';
+        _covProteinList.push({pi,pid,gene,searchStr:(pid+' '+gene).toLowerCase()});
     }
-    if(prev) sel.value=prev;
 }
+function covSearchFocus(){covSearchFilter()}
+function covSearchFilter(){
+    const input=document.getElementById('cov-search');
+    const dd=document.getElementById('cov-dropdown');
+    if(!input||!dd||!_covProteinList.length)return;
+    const q=input.value.toLowerCase().trim();
+    const matches=q?_covProteinList.filter(p=>p.searchStr.includes(q)).slice(0,80):_covProteinList.slice(0,80);
+    if(!matches.length){dd.innerHTML='<div style="padding:6px 10px;font-size:11px;color:var(--text-sec)">No matches</div>';dd.classList.remove('hidden');return}
+    dd.innerHTML=matches.map(m=>{
+        const tag=m.pid.length>30?m.pid.slice(0,28)+'...':m.pid;
+        const ann=m.gene.length>30?m.gene.slice(0,28)+'...':m.gene;
+        return`<div class="cov-dd-item" data-pi="${m.pi}" style="padding:4px 10px;font-size:11px;cursor:pointer;display:flex;gap:6px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background='var(--card)'" onmouseleave="this.style.background=''"><span style="font-family:monospace;color:var(--accent);min-width:120px">${tag}</span><span style="color:var(--text-sec);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ann}</span></div>`;
+    }).join('');
+    dd.classList.remove('hidden');
+    dd.querySelectorAll('.cov-dd-item').forEach(item=>{
+        item.addEventListener('click',()=>{
+            const pi=+item.dataset.pi;
+            document.getElementById('cov-protein').value=pi;
+            const m=_covProteinList.find(x=>x.pi===pi);
+            input.value=m?(m.pid+(m.gene?' \u2014 '+m.gene:'')):'';
+            dd.classList.add('hidden');
+            covProteinChanged();
+        });
+    });
+}
+// Close dropdown on outside click
+document.addEventListener('click',e=>{
+    if(!e.target.closest('#cov-search')&&!e.target.closest('#cov-dropdown')){
+        document.getElementById('cov-dropdown')?.classList.add('hidden');
+    }
+});
 function covProteinChanged(){
-    const sel=document.getElementById('cov-protein');
-    const pi=+sel.value;
+    const pi=+document.getElementById('cov-protein').value;
     if(isNaN(pi)||!RAW)return;
     const p=RAW.proteins[pi];
-    // Auto-populate info
     const res=document.getElementById('cov-result');
     if(!p.peptide_sequences){
         res.innerHTML='<div style="font-size:11px;color:var(--warning)">No peptide sequences found for this protein in the data file. The proteinGroups.txt must contain a "Peptide sequences" column.</div>';
     } else {
         res.innerHTML='';
     }
+}
+function covFastaDrop(e){
+    e.preventDefault();e.target.style.borderColor='';
+    const file=e.dataTransfer?.files?.[0];
+    if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{document.getElementById('cov-fasta').value=ev.target.result};
+    reader.readAsText(file);
 }
 function parseFasta(text){
     const lines=text.trim().split(/\r?\n/);
@@ -1425,20 +1463,20 @@ function showCoverageMap(){
     // Build coverage array
     const seqLen=fullSeq.length;
     const coverage=new Uint8Array(seqLen); // 0=not covered, 1=covered
+    const pepOwner=new Int16Array(seqLen).fill(-1); // which peptide index covers each position
     const pepPositions=[];
     let mappedCount=0;
     const isPlaceholder=fullSeq[0]==='X'&&fullSeq[fullSeq.length-1]==='X';
 
-    peptides.forEach(pep=>{
+    peptides.forEach((pep,pepIdx)=>{
         if(isPlaceholder){
-            // Can't map onto placeholder — just note them
             pepPositions.push({seq:pep,start:-1,end:-1});
             return;
         }
         let idx=fullSeq.indexOf(pep);
         while(idx!==-1){
             mappedCount++;
-            for(let i=idx;i<idx+pep.length&&i<seqLen;i++) coverage[i]=1;
+            for(let i=idx;i<idx+pep.length&&i<seqLen;i++){coverage[i]=1;pepOwner[i]=pepIdx}
             pepPositions.push({seq:pep,start:idx,end:idx+pep.length-1});
             idx=fullSeq.indexOf(pep,idx+1);
         }
@@ -1483,21 +1521,23 @@ function showCoverageMap(){
         });
         html+=`</div>`;
 
-        // Residue-level map (colored sequence) — show for sequences up to 1000 aa
-        if(seqLen<=1000){
-            html+=`<div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Sequence detail</div>`;
-            html+=`<div style="font-family:monospace;font-size:10px;line-height:1.5;word-break:break-all;max-height:150px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:6px">`;
-            // Render 60 residues per line with position markers
+        // Residue-level map with peptide boundary markers
+        if(seqLen<=2000){
+            html+=`<div style="font-size:11px;color:var(--text-sec);margin-bottom:3px">Sequence detail &mdash; <span style="color:var(--success)">green</span> = covered, <span style="color:var(--warning)">|</span> = peptide boundary</div>`;
+            html+=`<div style="font-family:monospace;font-size:10px;line-height:1.6;word-break:break-all;max-height:200px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:6px">`;
             for(let i=0;i<seqLen;i+=60){
                 const lineEnd=Math.min(i+60,seqLen);
-                // Position label
                 html+=`<span style="color:var(--text-sec);user-select:none">${String(i+1).padStart(5)}</span> `;
                 for(let j=i;j<lineEnd;j++){
+                    // Insert | at peptide boundaries: where owner changes between two covered positions
+                    if(j>0&&coverage[j]&&coverage[j-1]&&pepOwner[j]!==-1&&pepOwner[j-1]!==-1&&pepOwner[j]!==pepOwner[j-1]){
+                        html+=`<span style="color:var(--warning);font-weight:700">|</span>`;
+                    }
                     const aa=fullSeq[j];
                     if(coverage[j]){
                         html+=`<span style="color:var(--success);font-weight:700">${aa}</span>`;
                     } else {
-                        html+=`<span style="color:var(--text-sec);opacity:0.5">${aa}</span>`;
+                        html+=`<span style="color:var(--text-sec);opacity:0.4">${aa}</span>`;
                     }
                     if((j-i+1)%10===0&&j<lineEnd-1) html+=' ';
                 }
@@ -1912,6 +1952,77 @@ function betainc(x,a,b){if(x<=0)return 0;if(x>=1)return 1;const f=Math.exp(lnGam
 function ttest(a1,a2,s0){if(a1.length<2||a2.length<2)return 1;const m1=mean(a1),m2=mean(a2),v1=variance(a1),v2=variance(a2),n1=a1.length,n2=a2.length,se=Math.sqrt(v1/n1+v2/n2);const denom=s0?se+s0:se;if(denom===0)return 1;const t=Math.abs(m1-m2)/denom,df=(v1/n1+v2/n2)**2/((v1/n1)**2/(n1-1)+(v2/n2)**2/(n2-1));if(isNaN(df)||df<1)return 1;return betainc(df/(df+t*t),df/2,.5)}
 function bhFDR(pvals){const n=pvals.length;const idx=pvals.map((p,i)=>({p,i})).sort((a,b)=>a.p-b.p);const adj=new Array(n);let prev=1;for(let r=n;r>=1;r--){const j=idx[r-1].i;adj[j]=Math.min(prev,idx[r-1].p*n/r);prev=adj[j]}return adj}
 function imputeZeros(vals){const nz=vals.filter(v=>v>0);const minV=nz.length?Math.min(...nz)/2:1;return vals.map(v=>v>0?v:minV)}
+// Box-Muller normal random
+function _randn(){let u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
+// Perseus-style: draw from N(mu - shift*sigma, width*sigma) in log2 space
+// Ref: Tyanova et al. (2016) Nature Protocols 11:2301
+function imputePerseus(vals,allVals,width,shift){
+    width=width||0.3;shift=shift||1.8;
+    // Collect all non-zero values across both groups for distribution estimation
+    const nz=(allVals||vals).filter(v=>v>0).map(v=>Math.log2(v));
+    if(!nz.length)return imputeZeros(vals);
+    const mu=mean(nz),sigma=sd(nz)||1;
+    const impMu=mu-shift*sigma,impSd=width*sigma;
+    return vals.map(v=>v>0?v:Math.pow(2,impMu+impSd*_randn()));
+}
+// MinProb: draw from Gaussian centered at q-th quantile of log2 distribution
+// Ref: Lazar et al. (2016) J. Proteome Res. 15:1116
+function imputeMinProb(vals,q){
+    q=q||0.01;
+    const nz=vals.filter(v=>v>0).map(v=>Math.log2(v));
+    if(!nz.length)return imputeZeros(vals);
+    nz.sort((a,b)=>a-b);
+    const qIdx=Math.max(0,Math.floor(q*nz.length));
+    const qVal=nz[qIdx];
+    const sigma=sd(nz)*0.3||0.5;
+    return vals.map(v=>v>0?v:Math.pow(2,qVal+sigma*_randn()));
+}
+// kNN imputation: for each missing value, find k nearest proteins by Euclidean distance
+// Ref: Troyanskaya et al. (2001) Bioinformatics 17:520
+function imputeKNN_volcano(vA,vB,allSamples,qd,fidx,fi,k){
+    k=k||10;
+    // Build feature vector for this protein across all samples
+    const target=allSamples.map(s=>qd[s]?qd[s][fi]:0);
+    const missIdx=[];target.forEach((v,i)=>{if(v<=0)missIdx.push(i)});
+    if(!missIdx.length)return{a:vA,b:vB};
+    // Find k nearest neighbors (other proteins with values at the missing positions)
+    const dists=[];
+    for(let fj=0;fj<fidx.length;fj++){
+        if(fj===fi)continue;
+        const row=allSamples.map(s=>qd[s]?qd[s][fj]:0);
+        // Need non-zero at missing positions
+        let hasAll=true;for(const mi of missIdx){if(row[mi]<=0){hasAll=false;break}}
+        if(!hasAll)continue;
+        // Euclidean distance on shared non-zero positions
+        let d2=0,cnt=0;
+        for(let i=0;i<target.length;i++){
+            if(target[i]>0&&row[i]>0){d2+=(target[i]-row[i])**2;cnt++}
+        }
+        if(cnt<2)continue;
+        dists.push({fj,d:Math.sqrt(d2/cnt),row});
+    }
+    dists.sort((a,b)=>a.d-b.d);
+    const neighbors=dists.slice(0,k);
+    if(!neighbors.length)return{a:imputeZeros(vA),b:imputeZeros(vB)};
+    // Impute each missing position as weighted mean of neighbors
+    const imputed=[...target];
+    missIdx.forEach(mi=>{
+        let wSum=0,wTot=0;
+        neighbors.forEach(nb=>{const w=nb.d>0?1/nb.d:1e6;wSum+=nb.row[mi]*w;wTot+=w});
+        imputed[mi]=wTot>0?wSum/wTot:0;
+    });
+    // Split back into vA and vB arrays
+    const aLen=vA.length;
+    return{a:imputed.slice(0,aLen),b:imputed.slice(aLen)};
+}
+// Dispatcher
+function imputeValues(vA,vB,method,allVals,allSamples,qd,fidx,fi){
+    if(method==='min2'){return{a:imputeZeros(vA),b:imputeZeros(vB)}}
+    if(method==='perseus'){return{a:imputePerseus(vA,allVals),b:imputePerseus(vB,allVals)}}
+    if(method==='minprob'){return{a:imputeMinProb(vA),b:imputeMinProb(vB)}}
+    if(method==='knn'){return imputeKNN_volcano(vA,vB,allSamples,qd,fidx,fi)}
+    return{a:imputeZeros(vA),b:imputeZeros(vB)};
+}
 
 // PCA (dual method for n_samples << n_features)
 function computePCA(sampleNames,qd,fidx){
@@ -2051,7 +2162,14 @@ function showVizConfig(type){
         html+=`</div>`;
     }
     if(type==='volcano'){
-        html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-impute" checked> Impute missing values</label>`;
+        html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-impute" checked onchange="document.getElementById('vc-impute-method-row').style.display=this.checked?'':'none'"> Impute missing values</label>`;
+        html+=`<div class="af-row" id="vc-impute-method-row"><span class="af-lbl">Imputation method</span><select id="vc-impute-method" title="Method used to replace missing/zero intensity values before statistical testing">
+            <option value="perseus">Perseus-style Gaussian (recommended)</option>
+            <option value="minprob">MinProb (left-censored)</option>
+            <option value="knn">kNN (k-nearest neighbors)</option>
+            <option value="min2">Min/2 (simple)</option>
+        </select></div>`;
+        html+=`<div style="font-size:10px;color:var(--text-sec);margin-top:2px;margin-bottom:4px;line-height:1.4"><b>Perseus</b>: draw from down-shifted normal (Tyanova et al. 2016). <b>MinProb</b>: draw near 1st percentile (Lazar et al. 2016). <b>kNN</b>: weighted mean of similar proteins (Troyanskaya et al. 2001). <b>Min/2</b>: half of minimum non-zero value.</div>`;
         html+=`<div class="af-row"><span class="af-lbl">FDR threshold</span><select id="vc-fdr"><option value="0.05">0.05</option><option value="0.01">0.01</option><option value="0.001">0.001</option></select></div>`;
         html+=`<div class="af-row"><span class="af-lbl">|Log2 FC| threshold</span><input type="number" id="vc-fc" value="1" min="0" step="0.25" style="width:80px" title="Minimum absolute log2 fold change to classify a protein as significantly regulated. Common values: 0.5 (lenient, 1.4-fold), 1.0 (standard, 2-fold), 1.5 (stringent, 2.8-fold), 2.0 (very stringent, 4-fold)."></div>`;
         html+=`<div style="font-size:10px;color:var(--text-sec);margin-top:2px;line-height:1.4">1.0 = 2-fold change, 0.58 = 1.5-fold, 1.58 = 3-fold, 2.0 = 4-fold.</div>`;
@@ -2137,7 +2255,7 @@ function addPlotToCanvas(type){
         config.style=document.getElementById('vc-enr-style')?.value||'dot';
         config.log2=document.getElementById('vc-enr-log2')?.checked||false;
     }
-    if(type==='volcano'){config.impute=document.getElementById('vc-impute')?.checked;config.fdr=+(document.getElementById('vc-fdr')?.value||.05);config.fc=+(document.getElementById('vc-fc')?.value||1);config.s0=+(document.getElementById('vc-s0')?.value||0)}
+    if(type==='volcano'){config.impute=document.getElementById('vc-impute')?.checked;config.fdr=+(document.getElementById('vc-fdr')?.value||.05);config.fc=+(document.getElementById('vc-fc')?.value||1);config.s0=+(document.getElementById('vc-s0')?.value||0);config.imputeMethod=document.getElementById('vc-impute-method')?.value||'perseus'}
     if(type==='unique'){
         config.featuredGroup=document.getElementById('vc-uniq-grp')?.value||'';
         config.mode=document.getElementById('vc-uniq-mode')?.value||'not_control';
@@ -2427,13 +2545,29 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     if(isAggSum()){chart.setData([]).setXTitle('').setYTitle('Sums mode — no statistics').render();return}
     const gx=p.config.gx,gy=p.config.gy,fcT=p.config.fc||1,fdrT=p.config.fdr||0.05,doImpute=p.config.impute;
     const s0=p.config.s0||0;
+    const impMethod=p.config.imputeMethod||'perseus';
+    // For kNN: build sample list for both groups
+    const _binGx=BINS.find(b=>b.label===gx),_binGy=BINS.find(b=>b.label===gy);
+    const _allSamples=(_binGx?_binGx.samples:[]).concat(_binGy?_binGy.samples:[]);
+    // For Perseus: collect all non-zero values across both groups
+    let _allValsForPerseus=null;
+    if(impMethod==='perseus'&&doImpute){
+        _allValsForPerseus=[];
+        for(let fi=0;fi<fidx.length;fi++){
+            const vals=grpVals(fi,gx,qd,fidx).concat(grpVals(fi,gy,qd,fidx));
+            vals.forEach(v=>{if(v>0)_allValsForPerseus.push(v)});
+        }
+    }
     const fc=[],rawP=[],labels=[],fulls=[],pidxArr=[],hoverLabels=[];
     for(let fi=0;fi<fidx.length;fi++){
         let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
         const mA=mean(vA),mB=mean(vB);
         // Skip proteins not detected in both groups (infinite FC, not meaningful)
         if(mA===0||mB===0)continue;
-        if(doImpute){vA=imputeZeros(vA);vB=imputeZeros(vB)}
+        if(doImpute){
+            const imp=imputeValues(vA,vB,impMethod,_allValsForPerseus,_allSamples,qd,fidx,fi);
+            vA=imp.a;vB=imp.b;
+        }
         fc.push(Math.log2(mA/mB));
         rawP.push(ttest(vA,vB,s0));
         labels.push(pLabel(fidx,fi));
@@ -2886,15 +3020,16 @@ function exportCSV(){
     volcanoPlots.forEach(vp=>{
         const gx=vp.config.gx,gy=vp.config.gy,fcT=vp.config.fc||1,fdrT=vp.config.fdr||0.05;
         const doImpute=vp.config.impute,s0=vp.config.s0||0;
+        const csvImpMethod=vp.config.imputeMethod||'perseus';
         csv+='=== VOLCANO: '+gx+' vs '+gy+' ===\n';
-        csv+='Settings,"FDR threshold='+fdrT+', |Log2 FC| threshold='+fcT+', Impute='+(doImpute?'Yes':'No')+', S0='+s0+'"\n';
+        csv+='Settings,"FDR threshold='+fdrT+', |Log2 FC| threshold='+fcT+', Impute='+(doImpute?'Yes ('+csvImpMethod+')':'No')+', S0='+s0+'"\n';
         csv+='Protein ID,Gene Name,Mean '+gx+',Mean '+gy+',Log2 Fold Change,P-value,FDR adj. P-value,Significant\n';
         const rows=[];
         for(let fi=0;fi<fidx.length;fi++){
             let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
             const mA=mean(vA),mB=mean(vB);
             if(mA===0||mB===0)continue;
-            if(doImpute){vA=imputeZeros(vA);vB=imputeZeros(vB)}
+            if(doImpute){const imp=imputeValues(vA,vB,csvImpMethod);vA=imp.a;vB=imp.b}
             const fcVal=Math.log2(mA/mB);
             const pVal=ttest(vA,vB,s0);
             const pi=fidx[fi];const pr=RAW.proteins[pi];
@@ -3115,15 +3250,48 @@ function restoreAutoSave(){
         document.getElementById('session-panel').classList.add('hidden');
     }catch(e){alert('Error restoring: '+e.message)}
 }
+function _serializeCanvasAnnotations(){
+    const canvas=document.getElementById('canvas');if(!canvas)return[];
+    const annos=[];
+    canvas.querySelectorAll('.canvas-anno-wrap').forEach(wrap=>{
+        const tb=wrap.querySelector('.canvas-textbox');
+        if(tb){
+            const cs=getComputedStyle(tb);
+            annos.push({type:'text',left:wrap.style.left,top:wrap.style.top,
+                text:tb.innerText||tb.textContent||'',
+                style:{color:tb.style.color||'',fontSize:tb.style.fontSize||'',fontWeight:tb.style.fontWeight||'',
+                    fontStyle:tb.style.fontStyle||'',fontFamily:tb.style.fontFamily||'',
+                    textDecoration:tb.style.textDecoration||'',textAlign:tb.style.textAlign||''}});
+            return;
+        }
+        const line=wrap.querySelector('svg line');
+        if(line){
+            annos.push({type:'line',left:wrap.style.left,top:wrap.style.top,
+                width:wrap.style.width,height:wrap.style.height,
+                stroke:line.getAttribute('stroke')||'',strokeWidth:line.getAttribute('stroke-width')||'2',
+                strokeDasharray:line.getAttribute('stroke-dasharray')||'',
+                hasArrow:!!wrap.querySelector('marker')});
+        }
+    });
+    return annos;
+}
 function buildSessionObject(){
     return{
-        version:1,savedAt:new Date().toISOString(),app:'Pro-ker Proteomics Analysis',
+        version:2,savedAt:new Date().toISOString(),app:'Pro-ker Proteomics Analysis',
         filename:RAW?.filename||'',
         bins:BINS.map(b=>({label:b.label,color:b.color,samples:[...b.samples]})),
         unassigned:[...UNASSIGNED],
         analyses:ANALYSES.map(a=>({name:a.name,groupX:a.groupX,groupY:a.groupY})),
         derived:DERIVED.map(d=>({name:d.name,op:d.op,left:d.left,right:d.right})),
-        canvasPlots:CANVAS_PLOTS.map(p=>({type:p.type,config:p.config,title:p.title})),
+        canvasPlots:CANVAS_PLOTS.map(p=>{
+            const card=document.getElementById('card-'+p.plotId);
+            const chart=CHARTS[p.plotId];
+            return{type:p.type,config:p.config,title:p.title,
+                frozen:p.frozen||false,
+                position:card?{left:card.style.left,top:card.style.top,width:card.style.width,height:card.style.height}:null,
+                colorOverrides:chart?._colorOverrides||[],
+                annotations:chart?.annotations||[]};
+        }),
         processing:{
             intensity:document.getElementById('proc-intensity')?.checked!==false,
             lfq:document.getElementById('proc-lfq')?.checked!==false,
@@ -3138,6 +3306,10 @@ function buildSessionObject(){
             pruneScope:document.getElementById('prune-scope')?.value||'all',
         },
         theme:currentThemeName,customTheme:customTheme,
+        canvasScale:canvasScale||1,
+        groupsOfInterest:GROUPS_OF_INTEREST.map(g=>({prefix:g.prefix,start:g.start,end:g.end,color:g.color,symbol:g.symbol,size:g.size,proteins:g.proteins})),
+        speciesHighlights:SPECIES_HIGHLIGHTS.map(h=>({prefix:h.prefix,color:h.color,enabled:h.enabled})),
+        canvasAnnotations:_serializeCanvasAnnotations(),
     };
 }
 function saveSession(){
@@ -3154,7 +3326,7 @@ function loadSession(file){
     reader.onload=function(e){
         try{
             const s=JSON.parse(e.target.result);
-            if(!s.version||!s.bins){alert('Invalid session file');return}
+            if((!s.version&&s.version!==0)||!s.bins){alert('Invalid session file');return}
             // Restore processing settings
             if(s.processing){
                 const p=s.processing;
@@ -3183,21 +3355,96 @@ function loadSession(file){
             // Restore analyses & derived
             if(s.analyses){ANALYSES=s.analyses.map(a=>({id:nextAnaId++,...a}));renderAnaList?.()}
             if(s.derived){DERIVED=[...s.derived];renderDerived?.();populateGroupSelects?.()}
-            // Restore canvas plots
+            // Restore GOI and species highlights before plots (they affect rendering)
+            if(s.groupsOfInterest&&s.groupsOfInterest.length){
+                GROUPS_OF_INTEREST=s.groupsOfInterest.map(g=>({id:_goiNextId++,...g}));
+                renderGOIList?.();
+            }
+            if(s.speciesHighlights&&s.speciesHighlights.length){
+                SPECIES_HIGHLIGHTS=s.speciesHighlights;
+                renderSpeciesHighlights?.();
+            }
+            // Restore canvas plots with positions, colors, annotations
             if(s.canvasPlots&&s.canvasPlots.length&&RAW){
                 buildProcessedData();
                 const{data:qd}=getQData();const fidx=getFilteredIdx();
-                s.canvasPlots.forEach(cp=>{
+                document.getElementById('right-welcome')?.classList.add('hidden');
+                const wrap=document.getElementById('canvas-wrap');if(wrap){wrap.classList.remove('hidden');wrap.style.display='flex'}
+                const canvas=document.getElementById('canvas');canvas?.classList.remove('empty-canvas');
+                const hint=document.getElementById('canvas-drop');if(hint)hint.remove();
+                s.canvasPlots.forEach((cp,ci)=>{
                     const plotId='plot-'+(nextPlotId++);
-                    CANVAS_PLOTS.push({id:nextPlotId-1,type:cp.type,config:cp.config,plotId,title:cp.title});
-                    document.getElementById('right-welcome')?.classList.add('hidden');
-                    const wrap=document.getElementById('canvas-wrap');if(wrap){wrap.classList.remove('hidden');wrap.style.display='flex'}
-                    const canvas=document.getElementById('canvas');canvas?.classList.remove('empty-canvas');
-                    const hint=document.getElementById('canvas-drop');if(hint)hint.remove();
-                    const pw=document.createElement('div');pw.className='canvas-plot';pw.id='card-'+plotId;pw.style.height='420px';
+                    const plotEntry={id:nextPlotId-1,type:cp.type,config:cp.config,plotId,title:cp.title,frozen:cp.frozen||false};
+                    CANVAS_PLOTS.push(plotEntry);
+                    const pw=document.createElement('div');pw.className='canvas-plot';pw.id='card-'+plotId;
+                    // Restore position and size
+                    if(cp.position){
+                        if(cp.position.left)pw.style.left=cp.position.left;
+                        if(cp.position.top)pw.style.top=cp.position.top;
+                        if(cp.position.width)pw.style.width=cp.position.width;
+                        if(cp.position.height)pw.style.height=cp.position.height;
+                    } else {
+                        pw.style.height='420px';
+                    }
                     pw.innerHTML=`<button class="cp-close" onclick="removePlot('${plotId}')">&times;</button><div id="${plotId}" style="width:100%;height:100%"></div>`;
                     canvas.appendChild(pw);setupPlotResize(pw,plotId);
-                    setTimeout(()=>renderPlot(CANVAS_PLOTS[CANVAS_PLOTS.length-1],qd,fidx),100);
+                    // Render plot then restore chart-level state
+                    setTimeout(()=>{
+                        renderPlot(plotEntry,qd,fidx);
+                        const chart=CHARTS[plotId];
+                        if(chart){
+                            if(cp.colorOverrides&&cp.colorOverrides.length){
+                                chart._colorOverrides=cp.colorOverrides;
+                                chart.render();
+                            }
+                            if(cp.annotations&&cp.annotations.length){
+                                cp.annotations.forEach(a=>chart.addAnnotation(a.x,a.y,a.text,{ax:a.ax,ay:a.ay,key:a.key}));
+                            }
+                        }
+                    },100+ci*50);
+                });
+            }
+            // Restore canvas zoom
+            if(s.canvasScale&&s.canvasScale!==1){
+                canvasScale=s.canvasScale;
+                const c=document.getElementById('canvas');
+                if(c){c.style.transform='scale('+canvasScale+')';c.style.transformOrigin='0 0'}
+                const lbl=document.getElementById('canvas-zoom-label');
+                if(lbl)lbl.textContent=Math.round(canvasScale*100)+'%';
+            }
+            // Restore canvas annotations (text boxes, lines)
+            if(s.canvasAnnotations&&s.canvasAnnotations.length){
+                s.canvasAnnotations.forEach(a=>{
+                    if(a.type==='text'){
+                        addCanvasTextBox();
+                        const canvas=document.getElementById('canvas');
+                        const wraps=canvas.querySelectorAll('.canvas-anno-wrap');
+                        const last=wraps[wraps.length-1];
+                        if(last){
+                            last.style.left=a.left||'50px';last.style.top=a.top||'50px';
+                            const tb=last.querySelector('.canvas-textbox');
+                            if(tb){
+                                tb.textContent=a.text||'Text';
+                                if(a.style){
+                                    if(a.style.color)tb.style.color=a.style.color;
+                                    if(a.style.fontSize)tb.style.fontSize=a.style.fontSize;
+                                    if(a.style.fontWeight)tb.style.fontWeight=a.style.fontWeight;
+                                    if(a.style.fontStyle)tb.style.fontStyle=a.style.fontStyle;
+                                    if(a.style.fontFamily)tb.style.fontFamily=a.style.fontFamily;
+                                    if(a.style.textDecoration)tb.style.textDecoration=a.style.textDecoration;
+                                    if(a.style.textAlign)tb.style.textAlign=a.style.textAlign;
+                                }
+                            }
+                        }
+                    } else if(a.type==='line'){
+                        addCanvasLine();
+                        const canvas=document.getElementById('canvas');
+                        const wraps=canvas.querySelectorAll('.canvas-anno-wrap');
+                        const last=wraps[wraps.length-1];
+                        if(last){
+                            last.style.left=a.left||'50px';last.style.top=a.top||'100px';
+                        }
+                    }
                 });
             }
             alert('Session restored'+(s.filename?' from: '+s.filename:''));

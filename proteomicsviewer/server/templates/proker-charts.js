@@ -830,7 +830,7 @@ class ProkerChart {
         if (this._selState.hasSelection) {
             items += `<div class="rc-item" data-action="zoom">&#128269; Zoom into selection</div>`;
             items += `<div class="rc-item" data-action="label">&#127991; Label selected points</div>`;
-            items += `<div class="rc-item rc-color-row" data-action="color">&#127912; Color selected <input type="color" value="#ff4444" style="width:24px;height:18px;border:1px solid var(--border);border-radius:3px;cursor:pointer;margin-left:auto;background:var(--card);padding:0"></div>`;
+            items += `<div class="rc-item rc-color-row" data-action="color">&#127912; Color selected <span class="rc-color-swatch" style="width:20px;height:20px;border-radius:3px;background:#ff4444;display:inline-block;margin-left:auto;border:1px solid var(--border);cursor:pointer;vertical-align:middle"></span></div>`;
             items += `<div class="rc-sep"></div>`;
         }
         items += `<div class="rc-item" data-action="settings">&#9881; Graph settings</div>`;
@@ -858,17 +858,21 @@ class ProkerChart {
 
         // Action handlers
         menu.querySelectorAll('.rc-item').forEach(item => {
-            const colorInput = item.querySelector('input[type="color"]');
-            if (colorInput) {
-                colorInput.addEventListener('click', e => e.stopPropagation());
-                colorInput.addEventListener('change', e => {
-                    this._colorSelected(e.target.value);
-                    this._closeContextMenu();
-                    this._clearSelection();
+            const colorSwatch = item.querySelector('.rc-color-swatch');
+            if (colorSwatch) {
+                colorSwatch.addEventListener('click', e => {
+                    e.stopPropagation();
+                    if (typeof showColorSwatch === 'function') {
+                        showColorSwatch(colorSwatch, '#ff4444', color => {
+                            this._colorSelected(color);
+                            this._closeContextMenu();
+                            this._clearSelection();
+                        });
+                    }
                 });
             }
             item.addEventListener('click', e => {
-                if (e.target.tagName === 'INPUT') return;
+                if (e.target.tagName === 'INPUT' || e.target.classList.contains('rc-color-swatch')) return;
                 const action = item.dataset.action;
                 if (action === 'zoom') this._zoomToSelection();
                 else if (action === 'label') this._labelSelected();

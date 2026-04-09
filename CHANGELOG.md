@@ -2,6 +2,20 @@
 
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 
+## [4.0.0] - 2026-04-09
+
+### Added
+- **Published imputation methods** — Four scientifically established methods for missing value imputation in volcano plots: Perseus-style Gaussian (Tyanova et al. 2016, default), MinProb left-censored (Lazar et al. 2016), kNN k-nearest neighbors (Troyanskaya et al. 2001), and the original Min/2 baseline. Selectable via dropdown in volcano config.
+- **Robust session save/load** — Sessions now persist graph positions, sizes, frozen state, point color overrides, pinned annotations, canvas text boxes and lines, canvas zoom level, Groups of Interest, and species highlights. Session format upgraded to version 2.
+- **Searchable protein dropdown** — Peptide coverage map now has a type-to-search dropdown showing both locus tag and annotation name for each protein.
+- **FASTA drag-and-drop** — Drag a .fasta file directly onto the coverage textarea to load it.
+- **Amino acid level coverage display** — Coverage map now shows individual residues with green for detected peptides, gray for uncovered, and `|` boundary markers between adjacent peptides. Increased limit to 2000 aa.
+- **UI tooltips** — Added hover tooltips to all processing tab options, graph settings controls, and tab buttons.
+
+### Changed
+- **Context menu color picker** — Right-click selection "Color selected" now uses the unified 120-color swatch palette instead of the native browser color picker.
+- **Upload performance** — Removed duplicate `buildProcessedData()` call during initial data load. Fixed O(n²) protein dropdown population with single DOM write.
+
 ## [3.9.0] - 2026-04-09
 
 ### Added
