@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "proker"
-version = "4.2.1"
+version = "4.2.2"
 description = "Pro-ker Proteomics Analysis — an interactive browser-based proteomics data visualization tool"
 readme = "README.md"
 license = "LicenseRef-Proprietary"
