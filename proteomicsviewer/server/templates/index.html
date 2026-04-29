@@ -501,7 +501,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.4.1</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.4.2</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -532,7 +532,8 @@ async function uploadFile(file,append){
                 &bull; <b>Perseus-style Gaussian</b> (default): draws from a down-shifted normal distribution in log2 space (shift=1.8 SD, width=0.3 SD). Ref: Tyanova et al. (2016) <em>Nature Protocols</em> 11:2301.<br>
                 &bull; <b>MinProb</b>: draws from a Gaussian centered at the 1st percentile of the log2 distribution. Ref: Lazar et al. (2016) <em>J. Proteome Res.</em> 15:1116.<br>
                 &bull; <b>kNN</b>: imputes from k=10 nearest neighbor proteins by Euclidean distance. Ref: Troyanskaya et al. (2001) <em>Bioinformatics</em> 17:520.<br>
-                &bull; <b>Min/2</b>: replaces with half the minimum non-zero value (simple deterministic baseline).</div>
+                &bull; <b>Min/2</b>: replaces with half the minimum non-zero value (simple deterministic baseline).<br>
+                <em>Reproducibility:</em> Perseus and MinProb draw random values, but each protein gets a deterministic seed derived from the user-supplied <b>Random seed</b> (default 42) and the protein's filtered index, computed as <code>(seed&middot;1000003 + 2&middot;fi + 1or2) mod 2<sup>32</sup></code>. Same seed + same data &rarr; identical imputed values and an identical volcano plot. Change the seed to verify a conclusion is robust to the specific draws &mdash; a result that depends on a single seed is not robust. The seed is recorded on the <em>Volcano Settings</em> sheet of the XLSX export.</div>
                 <div style="margin-bottom:4px"><em>Log2 Fold Change</em> &mdash; Calculated as log2(mean_X / mean_Y). Positive values indicate higher abundance in Group X; negative values indicate higher abundance in Group Y.</div>
                 <div style="margin-top:10px;margin-bottom:8px"><strong style="color:var(--text)">PCA &mdash; Principal Component Analysis</strong></div>
                 <div style="margin-bottom:4px"><em>Algorithm</em> &mdash; Dual-space PCA (kernel method) optimized for datasets where the number of samples is much smaller than the number of features. Computes the n&times;n kernel matrix K = X&middot;X<sup>T</sup> from the mean-centered data matrix, then performs Jacobi eigendecomposition.</div>
@@ -740,7 +741,7 @@ async function uploadFile(file,append){
                 <div><strong>Test:</strong> Welch&rsquo;s t-test (two-sample, unequal variance). Degrees of freedom via Welch&ndash;Satterthwaite approximation.</div>
                 <div><strong>Multiple testing:</strong> Benjamini&ndash;Hochberg FDR correction. Adjusted p-values = raw_p &times; n / rank.</div>
                 <div><strong>S0 correction:</strong> When enabled, a fudge factor S0 is added to the standard error denominator (SE + S0) to penalize noisy fold changes at low abundance (Tusher et al., 2001; Perseus).</div>
-                <div><strong>Imputation:</strong> Four methods available &mdash; Perseus-style Gaussian (Tyanova et al. 2016), MinProb (Lazar et al. 2016), kNN (Troyanskaya et al. 2001), or Min/2 (simple). Default: Perseus-style.</div>
+                <div><strong>Imputation:</strong> Four methods available &mdash; Perseus-style Gaussian (Tyanova et al. 2016), MinProb (Lazar et al. 2016), kNN (Troyanskaya et al. 2001), or Min/2 (simple). Default: Perseus-style. Stochastic methods (Perseus, MinProb) use a per-protein seeded PRNG &mdash; same seed + same data produces identical imputation. Set the seed in the volcano config; the value is recorded in the XLSX Volcano Settings sheet.</div>
                 <div><strong>Fold change:</strong> log2(mean_GroupX / mean_GroupY).</div>
             </div>
             <div id="stats-pca-info" class="hidden">
@@ -819,7 +820,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='4.4.1';
+var PROKER_VERSION='4.4.2';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -2162,11 +2163,13 @@ function imputeKNN_volcano(vA,vB,allSamples,qd,fidx,fi,k){
     return{a:imputed.slice(0,aLen),b:imputed.slice(aLen)};
 }
 // Dispatcher
-function imputeValues(vA,vB,method,allVals,allSamples,qd,fidx,fi){
-    // Stable per-protein seeds so re-renders produce identical imputed values
-    // (toggling a checkbox no longer "shakes" the volcano plot).
-    const seedA=fi!=null?(fi*2+1):null;
-    const seedB=fi!=null?(fi*2+2):null;
+function imputeValues(vA,vB,method,allVals,allSamples,qd,fidx,fi,baseSeed){
+    // Per-protein seeds derived from the user-supplied baseSeed so re-renders
+    // produce identical imputation. Same baseSeed + same data → identical plot.
+    // Different baseSeeds let users verify their conclusions are robust.
+    const bs=(baseSeed==null?42:baseSeed)>>>0;
+    const seedA=fi!=null?((bs*1000003+fi*2+1)>>>0):null;
+    const seedB=fi!=null?((bs*1000003+fi*2+2)>>>0):null;
     if(method==='min2'){return{a:imputeZeros(vA),b:imputeZeros(vB)}}
     if(method==='perseus'){return{a:imputePerseus(vA,allVals,undefined,undefined,seedA),b:imputePerseus(vB,allVals,undefined,undefined,seedB)}}
     if(method==='minprob'){return{a:imputeMinProb(vA,undefined,seedA),b:imputeMinProb(vB,undefined,seedB)}}
@@ -2317,14 +2320,15 @@ function showVizConfig(type){
         html+=`</div>`;
     }
     if(type==='volcano'){
-        html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-impute" checked onchange="document.getElementById('vc-impute-method-row').style.display=this.checked?'':'none'"> Impute missing values</label>`;
-        html+=`<div class="af-row" id="vc-impute-method-row"><span class="af-lbl">Imputation method</span><select id="vc-impute-method" title="Method used to replace missing/zero intensity values before statistical testing">
+        html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-impute" checked onchange="vcImputeToggled()"> Impute missing values</label>`;
+        html+=`<div class="af-row" id="vc-impute-method-row"><span class="af-lbl">Imputation method</span><select id="vc-impute-method" onchange="vcImputeToggled()" title="Method used to replace missing/zero intensity values before statistical testing">
             <option value="perseus">Perseus-style Gaussian (recommended)</option>
             <option value="minprob">MinProb (left-censored)</option>
             <option value="knn">kNN (k-nearest neighbors)</option>
             <option value="min2">Min/2 (simple)</option>
         </select></div>`;
-        html+=`<div style="font-size:10px;color:var(--text-sec);margin-top:2px;margin-bottom:4px;line-height:1.4"><b>Perseus</b>: draw from down-shifted normal (Tyanova et al. 2016). <b>MinProb</b>: draw near 1st percentile (Lazar et al. 2016). <b>kNN</b>: weighted mean of similar proteins (Troyanskaya et al. 2001). <b>Min/2</b>: half of minimum non-zero value.</div>`;
+        html+=`<div class="af-row" id="vc-impute-seed-row"><span class="af-lbl">Random seed</span><input type="number" id="vc-impute-seed" value="42" min="0" max="2147483647" step="1" style="width:100px" title="Seed for the per-protein PRNG. Same seed + same data → identical imputation. Change the seed to verify your results are robust to the random draws (a stable conclusion shouldn't depend on the specific seed)."></div>`;
+        html+=`<div style="font-size:10px;color:var(--text-sec);margin-top:2px;margin-bottom:4px;line-height:1.4"><b>Perseus</b>: draw from down-shifted normal (Tyanova et al. 2016). <b>MinProb</b>: draw near 1st percentile (Lazar et al. 2016). <b>kNN</b>: weighted mean of similar proteins (Troyanskaya et al. 2001). <b>Min/2</b>: half of minimum non-zero value. The first three are stochastic — the seed makes results reproducible per protein. kNN and Min/2 are deterministic and ignore the seed.</div>`;
         html+=`<div class="af-row"><span class="af-lbl">FDR threshold</span><select id="vc-fdr"><option value="0.05">0.05</option><option value="0.01">0.01</option><option value="0.001">0.001</option></select></div>`;
         html+=`<div class="af-row"><span class="af-lbl">|Log2 FC| threshold</span><input type="number" id="vc-fc" value="1" min="0" step="0.25" style="width:80px" title="Minimum absolute log2 fold change to classify a protein as significantly regulated. Common values: 0.5 (lenient, 1.4-fold), 1.0 (standard, 2-fold), 1.5 (stringent, 2.8-fold), 2.0 (very stringent, 4-fold)."></div>`;
         html+=`<div style="font-size:10px;color:var(--text-sec);margin-top:2px;line-height:1.4">1.0 = 2-fold change, 0.58 = 1.5-fold, 1.58 = 3-fold, 2.0 = 4-fold.</div>`;
@@ -2357,6 +2361,17 @@ function populateDotIntraSamples(){
     sxSel.innerHTML=sopts;sySel.innerHTML=sopts;
     // Default Y to second sample if available
     if(samples.length>=2) sySel.value=samples[1];
+}
+function vcImputeToggled(){
+    // Show/hide the method row when Impute is on; show seed row only for stochastic methods
+    const on=document.getElementById('vc-impute')?.checked;
+    const methodRow=document.getElementById('vc-impute-method-row');
+    const seedRow=document.getElementById('vc-impute-seed-row');
+    if(methodRow) methodRow.style.display=on?'':'none';
+    if(!seedRow) return;
+    const method=document.getElementById('vc-impute-method')?.value||'perseus';
+    const stochastic=on&&(method==='perseus'||method==='minprob');
+    seedRow.style.display=stochastic?'':'none';
 }
 function toggleAbSource(){
     const src=document.getElementById('vc-ab-source')?.value||'group';
@@ -2411,7 +2426,7 @@ function addPlotToCanvas(type){
         config.style=document.getElementById('vc-enr-style')?.value||'dot';
         config.log2=document.getElementById('vc-enr-log2')?.checked||false;
     }
-    if(type==='volcano'){config.impute=document.getElementById('vc-impute')?.checked;config.fdr=+(document.getElementById('vc-fdr')?.value||.05);config.fc=+(document.getElementById('vc-fc')?.value||1);config.s0=+(document.getElementById('vc-s0')?.value||0);config.imputeMethod=document.getElementById('vc-impute-method')?.value||'perseus'}
+    if(type==='volcano'){config.impute=document.getElementById('vc-impute')?.checked;config.fdr=+(document.getElementById('vc-fdr')?.value||.05);config.fc=+(document.getElementById('vc-fc')?.value||1);config.s0=+(document.getElementById('vc-s0')?.value||0);config.imputeMethod=document.getElementById('vc-impute-method')?.value||'perseus';config.imputeSeed=Math.max(0,Math.floor(+(document.getElementById('vc-impute-seed')?.value||42)))}
     if(type==='unique'){
         config.featuredGroup=document.getElementById('vc-uniq-grp')?.value||'';
         config.mode=document.getElementById('vc-uniq-mode')?.value||'not_control';
@@ -2743,6 +2758,7 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     const nRepX=binXn?binXn.samples.length:0,nRepY=binYn?binYn.samples.length:0;
     const canTTest=nRepX>=2&&nRepY>=2;
     const impMethod=p.config.imputeMethod||'perseus';
+    const impSeed=p.config.imputeSeed!=null?p.config.imputeSeed:42;
     // For kNN: build sample list for both groups
     const _binGx=BINS.find(b=>b.label===gx),_binGy=BINS.find(b=>b.label===gy);
     const _allSamples=(_binGx?_binGx.samples:[]).concat(_binGy?_binGy.samples:[]);
@@ -2761,7 +2777,7 @@ function buildVolcanoConfig(chart,p,qd,fidx){
         // Skip proteins not detected in both groups (infinite FC, not meaningful)
         if(mean(vA)===0||mean(vB)===0)continue;
         if(doImpute){
-            const imp=imputeValues(vA,vB,impMethod,_allValsForPerseus,_allSamples,qd,fidx,fi);
+            const imp=imputeValues(vA,vB,impMethod,_allValsForPerseus,_allSamples,qd,fidx,fi,impSeed);
             vA=imp.a;vB=imp.b;
         }
         const fcVal=Math.log2(mean(vA)/mean(vB));
@@ -3447,6 +3463,7 @@ function _buildPerProteinRows(){
         const vc=volcanoByPair[vk];if(!vc)return;
         const fcArr=[],rawPArr=[];
         const doImpute=vc.impute,s0=vc.s0||0,impMethod=vc.imputeMethod||'perseus';
+        const impSeed=vc.imputeSeed!=null?vc.imputeSeed:42;
         const fcT=vc.fc||1,fdrT=vc.fdr||0.05;
         const _bx=BINS.find(b=>b.label===pr.gx),_by=BINS.find(b=>b.label===pr.gy);
         const _canT=(_bx?_bx.samples.length:0)>=2&&(_by?_by.samples.length:0)>=2;
@@ -3463,7 +3480,7 @@ function _buildPerProteinRows(){
             const mA=mean(vA),mB=mean(vB);
             if(mA===0||mB===0){fcArr.push(NaN);rawPArr.push(NaN);continue}
             if(doImpute){
-                const imp=imputeValues(vA,vB,impMethod,_allVals,_allSamples,ctx.qd,ctx.fidx,fi);
+                const imp=imputeValues(vA,vB,impMethod,_allVals,_allSamples,ctx.qd,ctx.fidx,fi,impSeed);
                 vA=imp.a;vB=imp.b;
             }
             const fcVal=Math.log2(mean(vA)/mean(vB));
@@ -3510,10 +3527,12 @@ function _buildVolcanoSettingsRows(){
     const{volcanoByPair}=_collectGroupPairs();
     const entries=Object.entries(volcanoByPair);
     if(!entries.length) return null;
-    const rows=[['Group X','Group Y','FDR Threshold','|Log2 FC| Threshold','Imputation','Imputation Method','S0']];
+    const rows=[['Group X','Group Y','FDR Threshold','|Log2 FC| Threshold','Imputation','Imputation Method','Imputation Seed','Stochastic','S0']];
     entries.forEach(([key,vc])=>{
         const[gx,gy]=key.split('|||');
-        rows.push([gx,gy,vc.fdr,vc.fc,vc.impute?'Yes':'No',vc.imputeMethod||'perseus',vc.s0||0]);
+        const m=vc.imputeMethod||'perseus';
+        const stoch=vc.impute&&(m==='perseus'||m==='minprob');
+        rows.push([gx,gy,vc.fdr,vc.fc,vc.impute?'Yes':'No',m,vc.imputeSeed!=null?vc.imputeSeed:42,stoch?'Yes (per-protein deterministic from seed)':'No (deterministic)',vc.s0||0]);
     });
     return rows;
 }
