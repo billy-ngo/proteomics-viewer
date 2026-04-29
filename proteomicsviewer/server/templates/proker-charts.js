@@ -274,7 +274,15 @@ class ProkerChart {
                 }
             }
 
-            for (let i = 0; i < n; i++) {
+            // Per-point render priority: higher priority renders LAST (on top of
+            // lower-priority points). Used by Groups of Interest so the
+            // user-flagged proteins are always click-accessible above the cloud.
+            const priority = Array.isArray(marker.priority) ? marker.priority : null;
+            const renderOrder = priority
+                ? Array.from({length: n}, (_, i) => i).sort((a, b) => (priority[a] || 0) - (priority[b] || 0))
+                : Array.from({length: n}, (_, i) => i);
+
+            for (const i of renderOrder) {
                 const vx = trace.x[i], vy = trace.y[i];
                 if (!isFinite(vx) || !isFinite(vy)) continue;
                 const px = m.left + xScale(vx);
