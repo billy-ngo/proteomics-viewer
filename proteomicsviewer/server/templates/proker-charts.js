@@ -331,7 +331,7 @@ class ProkerChart {
                 const rx = Math.abs(xScale(el.cx + el.rx) - xScale(el.cx));
                 const ry = Math.abs(yScale(el.cy + el.ry) - yScale(el.cy));
                 if (rx > 0 && ry > 0) {
-                    svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" transform="rotate(${-(el.angle||0)},${cx},${cy})" fill="${el.color||T.accent}" fill-opacity="${el.opacity||0.08}" stroke="${el.color||T.accent}" stroke-width="1.5" stroke-opacity="${(el.opacity||0.08)*4}" stroke-dasharray="4,3"/>`;
+                    svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" transform="rotate(${-(el.angle||0)},${cx},${cy})" fill="${el.color||T.accent}" fill-opacity="${el.opacity||0.08}" stroke="${el.color||T.accent}" stroke-width="1.5" stroke-opacity="${(el.opacity||0.08)*4}" stroke-dasharray="4,3" pointer-events="none"/>`;
                 }
             });
         }
