@@ -2606,14 +2606,13 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     const fc=[],rawP=[],labels=[],fulls=[],pidxArr=[],hoverLabels=[];
     for(let fi=0;fi<fidx.length;fi++){
         let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
-        const mA=mean(vA),mB=mean(vB);
         // Skip proteins not detected in both groups (infinite FC, not meaningful)
-        if(mA===0||mB===0)continue;
+        if(mean(vA)===0||mean(vB)===0)continue;
         if(doImpute){
             const imp=imputeValues(vA,vB,impMethod,_allValsForPerseus,_allSamples,qd,fidx,fi);
             vA=imp.a;vB=imp.b;
         }
-        const fcVal=Math.log2(mA/mB);
+        const fcVal=Math.log2(mean(vA)/mean(vB));
         if(!isFinite(fcVal))continue;
         fc.push(fcVal);
         rawP.push(canTTest?ttest(vA,vB,s0):1);
