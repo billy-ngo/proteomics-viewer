@@ -501,7 +501,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.4.0</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.4.1</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -819,7 +819,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='4.4.0';
+var PROKER_VERSION='4.4.1';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -1966,17 +1966,29 @@ function buildProcessedData(){
     });
 
     // 4. Normalization (Processing: normalization settings)
+    // PROC_FIDX already excludes contaminants from analysis. The rmContam
+    // checkbox controls whether contaminant intensities are also kept OUT of
+    // the per-sample normalization denominator (default behaviour). Unchecking
+    // includes contaminants in the sum but still excludes them from analysis.
     const rmContam = document.getElementById('norm-rm-contam')?.checked;
     if(normOn){
-        // Total-sum normalization (most common for proteomics)
-        // Calculate scale factors
         const totals = {};
         RAW.samples.forEach(s => {
+            const sampleVals = rawQd[s] || [];
             let sum = 0;
-            for(let fi = 0; fi < PROC_FIDX.length; fi++){
-                const pi = PROC_FIDX[fi];
-                if(rmContam && RAW.proteins[pi].potential_contaminant) continue;
-                sum += matrix[s][fi];
+            for(let i = 0; i < RAW.proteins.length; i++){
+                const p = RAW.proteins[i];
+                // Always skip reverse / only-by-site / no-peptide hits
+                if(p.reverse || p.only_identified_by_site) continue;
+                if(p.peptides < 1) continue;
+                // Contaminants: included or excluded per checkbox
+                if(rmContam && p.potential_contaminant) continue;
+                // Honour organism filter so denominator matches analysis scope
+                if(filterByOrganism){
+                    const pid = p.majority_id || p.id || '';
+                    if(!selOrgs.some(px => pid.startsWith(px))) continue;
+                }
+                sum += sampleVals[i] || 0;
             }
             totals[s] = sum || 1;
         });
@@ -2068,21 +2080,39 @@ function ttest(a1,a2,s0){if(a1.length<2||a2.length<2)return 1;const m1=mean(a1),
 function bhFDR(pvals){const n=pvals.length;const idx=pvals.map((p,i)=>({p,i})).sort((a,b)=>a.p-b.p);const adj=new Array(n);let prev=1;for(let r=n;r>=1;r--){const j=idx[r-1].i;adj[j]=Math.min(prev,idx[r-1].p*n/r);prev=adj[j]}return adj}
 function imputeZeros(vals){const nz=vals.filter(v=>v>0);const minV=nz.length?Math.min(...nz)/2:1;return vals.map(v=>v>0?v:minV)}
 // Box-Muller normal random
-function _randn(){let u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
+// Mulberry32 — small fast 32-bit PRNG. Seeded for reproducible imputation.
+function _seededRng(seed){
+    let s=(seed>>>0)||1;
+    return function(){
+        s=(s+0x6D2B79F5)>>>0;
+        let t=s;
+        t=Math.imul(t^(t>>>15),t|1);
+        t^=t+Math.imul(t^(t>>>7),t|61);
+        return ((t^(t>>>14))>>>0)/4294967296;
+    };
+}
+// Box-Muller normal random; uses provided rng if given, else Math.random
+function _randn(rng){
+    const r=rng||Math.random;
+    let u=0,v=0;
+    while(u===0)u=r();
+    while(v===0)v=r();
+    return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
 // Perseus-style: draw from N(mu - shift*sigma, width*sigma) in log2 space
 // Ref: Tyanova et al. (2016) Nature Protocols 11:2301
-function imputePerseus(vals,allVals,width,shift){
+function imputePerseus(vals,allVals,width,shift,seed){
     width=width||0.3;shift=shift||1.8;
-    // Collect all non-zero values across both groups for distribution estimation
     const nz=(allVals||vals).filter(v=>v>0).map(v=>Math.log2(v));
     if(!nz.length)return imputeZeros(vals);
     const mu=mean(nz),sigma=sd(nz)||1;
     const impMu=mu-shift*sigma,impSd=width*sigma;
-    return vals.map(v=>v>0?v:Math.pow(2,impMu+impSd*_randn()));
+    const rng=seed!=null?_seededRng(seed):null;
+    return vals.map(v=>v>0?v:Math.pow(2,impMu+impSd*_randn(rng)));
 }
 // MinProb: draw from Gaussian centered at q-th quantile of log2 distribution
 // Ref: Lazar et al. (2016) J. Proteome Res. 15:1116
-function imputeMinProb(vals,q){
+function imputeMinProb(vals,q,seed){
     q=q||0.01;
     const nz=vals.filter(v=>v>0).map(v=>Math.log2(v));
     if(!nz.length)return imputeZeros(vals);
@@ -2090,7 +2120,8 @@ function imputeMinProb(vals,q){
     const qIdx=Math.max(0,Math.floor(q*nz.length));
     const qVal=nz[qIdx];
     const sigma=sd(nz)*0.3||0.5;
-    return vals.map(v=>v>0?v:Math.pow(2,qVal+sigma*_randn()));
+    const rng=seed!=null?_seededRng(seed):null;
+    return vals.map(v=>v>0?v:Math.pow(2,qVal+sigma*_randn(rng)));
 }
 // kNN imputation: for each missing value, find k nearest proteins by Euclidean distance
 // Ref: Troyanskaya et al. (2001) Bioinformatics 17:520
@@ -2132,9 +2163,13 @@ function imputeKNN_volcano(vA,vB,allSamples,qd,fidx,fi,k){
 }
 // Dispatcher
 function imputeValues(vA,vB,method,allVals,allSamples,qd,fidx,fi){
+    // Stable per-protein seeds so re-renders produce identical imputed values
+    // (toggling a checkbox no longer "shakes" the volcano plot).
+    const seedA=fi!=null?(fi*2+1):null;
+    const seedB=fi!=null?(fi*2+2):null;
     if(method==='min2'){return{a:imputeZeros(vA),b:imputeZeros(vB)}}
-    if(method==='perseus'){return{a:imputePerseus(vA,allVals),b:imputePerseus(vB,allVals)}}
-    if(method==='minprob'){return{a:imputeMinProb(vA),b:imputeMinProb(vB)}}
+    if(method==='perseus'){return{a:imputePerseus(vA,allVals,undefined,undefined,seedA),b:imputePerseus(vB,allVals,undefined,undefined,seedB)}}
+    if(method==='minprob'){return{a:imputeMinProb(vA,undefined,seedA),b:imputeMinProb(vB,undefined,seedB)}}
     if(method==='knn'){return imputeKNN_volcano(vA,vB,allSamples,qd,fidx,fi)}
     return{a:imputeZeros(vA),b:imputeZeros(vB)};
 }
