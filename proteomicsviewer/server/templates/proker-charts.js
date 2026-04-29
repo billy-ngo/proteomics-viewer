@@ -1067,10 +1067,13 @@ class ProkerChart {
 
     _niceFormat(domain) {
         const range = Math.abs(domain[1] - domain[0]);
-        // Return a function, not a d3.format string
+        // PCA scores are dimensionless coordinates; show as scientific instead
+        // of SI-suffixed (which reads like file size / currency).
+        const useExp = this._plotType === 'pca';
         return (v) => {
             if (v === 0) return '0';
             const abs = Math.abs(v);
+            if (useExp && abs >= 10000) return d3.format('.2e')(v).replace('e+', 'e');
             if (abs >= 10000) return d3.format('.2s')(v);
             if (Number.isInteger(v) || (range > 10 && abs >= 1)) return d3.format('.0f')(v);
             if (range > 1) return d3.format('.1f')(v);

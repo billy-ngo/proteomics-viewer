@@ -501,7 +501,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.5.1</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.6.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -820,7 +820,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='4.5.1';
+var PROKER_VERSION='4.6.0';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -2771,34 +2771,118 @@ function buildVolcanoConfig(chart,p,qd,fidx){
             vals.forEach(v=>{if(v>0)_allValsForPerseus.push(v)});
         }
     }
-    const fc=[],rawP=[],labels=[],fulls=[],pidxArr=[],hoverLabels=[];
+    // Categorize proteins: detected in both, only in gx, only in gy, neither
+    // When imputation is ON, presence-only proteins are imputed and join the
+    // main cloud. When OFF, they're shown in side-band columns flanking the
+    // main volcano (with axis breaks), so they aren't silently discarded.
+    const both=[];
+    const upOnly=[];   // present in gx only \u2014 would have +inf log2FC
+    const downOnly=[]; // present in gy only \u2014 would have -inf log2FC
     for(let fi=0;fi<fidx.length;fi++){
         let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
-        // Skip proteins not detected in both groups (infinite FC, not meaningful)
-        if(mean(vA)===0||mean(vB)===0)continue;
-        if(doImpute){
+        const mA0=mean(vA),mB0=mean(vB);
+        const inA=mA0>0,inB=mB0>0;
+        if(!inA&&!inB)continue;
+        const pidx=fidx[fi];
+        const meta={fi,pidx,label:pLabel(fidx,fi),full:pFullLabel(fidx,fi),hover:pHoverLabel(fidx,fi)};
+        if(inA&&inB){
+            if(doImpute){
+                const imp=imputeValues(vA,vB,impMethod,_allValsForPerseus,_allSamples,qd,fidx,fi,impSeed);
+                vA=imp.a;vB=imp.b;
+            }
+            const fcVal=Math.log2(mean(vA)/mean(vB));
+            if(!isFinite(fcVal))continue;
+            both.push({...meta,fc:fcVal,p:canTTest?ttest(vA,vB,s0):1,mA:mA0,mB:mB0});
+        } else if(doImpute){
+            // Presence-only \u2014 impute the missing side and treat as a regular point
             const imp=imputeValues(vA,vB,impMethod,_allValsForPerseus,_allSamples,qd,fidx,fi,impSeed);
             vA=imp.a;vB=imp.b;
+            const fcVal=Math.log2(mean(vA)/mean(vB));
+            if(!isFinite(fcVal))continue;
+            both.push({...meta,fc:fcVal,p:canTTest?ttest(vA,vB,s0):1,mA:mA0,mB:mB0,imputed:true});
+        } else if(inA){
+            upOnly.push({...meta,mA:mA0});
+        } else {
+            downOnly.push({...meta,mB:mB0});
         }
-        const fcVal=Math.log2(mean(vA)/mean(vB));
-        if(!isFinite(fcVal))continue;
-        fc.push(fcVal);
-        rawP.push(canTTest?ttest(vA,vB,s0):1);
-        labels.push(pLabel(fidx,fi));
-        fulls.push(pFullLabel(fidx,fi));
-        pidxArr.push(fidx[fi]);
-        hoverLabels.push(pHoverLabel(fidx,fi));
     }
-    if(!fc.length){chart.setData([]).setXTitle('').setYTitle('No proteins detected in both groups').render();return}
-    const adjP=canTTest?bhFDR(rawP):rawP;const negLog=adjP.map(p=>-Math.log10(Math.max(p,1e-300)));
-    const cats=fc.map((f,i)=>adjP[i]<fdrT&&Math.abs(f)>=fcT?(f>0?'up':'down'):'ns');
+    if(!both.length&&!upOnly.length&&!downOnly.length){
+        chart.setData([]).setXTitle('').setYTitle('No proteins detected').render();
+        return;
+    }
+
+    // FDR correction across the both[] subset only \u2014 presence-only have no p-value
+    const rawP=both.map(b=>b.p);
+    const adjP=canTTest&&rawP.length?bhFDR(rawP):rawP;
+    const negLog=adjP.map(pv=>-Math.log10(Math.max(pv,1e-300)));
+
+    // Compute axis ranges from the main cloud + presence-only band positions
+    const fcs=both.map(b=>b.fc);
+    const fcMin=fcs.length?Math.min(...fcs):-1;
+    const fcMax=fcs.length?Math.max(...fcs):1;
+    const fcRange=Math.max(fcMax-fcMin,2*fcT,1);
+    const yMax=negLog.length?Math.max(...negLog,Math.abs(-Math.log10(fdrT))):1;
+
+    // Side-band layout: two narrow columns, one on each side of the main cloud,
+    // separated by a gap (axis break)
+    const gapFrac=0.10,bandFrac=0.06;
+    const xUpBand=fcMax+fcRange*(gapFrac+bandFrac/2);
+    const xDownBand=fcMin-fcRange*(gapFrac+bandFrac/2);
+    const xUpBreak=fcMax+fcRange*gapFrac/2;
+    const xDownBreak=fcMin-fcRange*gapFrac/2;
+
     const traces=[];
-    ['ns','up','down'].forEach(cat=>{const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);if(!idx.length)return;
+
+    // Main cloud \u2014 categorize by significance
+    const cats=both.map((b,i)=>adjP[i]<fdrT&&Math.abs(b.fc)>=fcT?(b.fc>0?'up':'down'):'ns');
+    ['ns','up','down'].forEach(cat=>{
+        const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);
+        if(!idx.length)return;
         const baseColor=cat==='up'?grpColor(gx):cat==='down'?grpColor(gy):'#6e7681';
-        const baseSize=5;
-        const mo=applyMarkerOverrides(idx.map(i=>pidxArr[i]),baseColor,baseSize,'circle');
-        traces.push({x:idx.map(i=>fc[i]),y:idx.map(i=>negLog[i]),mode:'markers',marker:{size:mo.size,color:mo.color,opacity:cat==='ns'?0.5:0.85,symbol:mo.symbol},text:idx.map(i=>hoverLabels[i]+'<br>Log2FC: '+fc[i].toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2)),customdata:idx.map(i=>fulls[i])})});
-    // Threshold reference lines (dotted)
+        const mo=applyMarkerOverrides(idx.map(i=>both[i].pidx),baseColor,5,'circle');
+        traces.push({
+            x:idx.map(i=>both[i].fc),
+            y:idx.map(i=>negLog[i]),
+            mode:'markers',
+            marker:{size:mo.size,color:mo.color,opacity:cat==='ns'?0.5:0.85,symbol:mo.symbol},
+            text:idx.map(i=>{
+                const b=both[i];
+                let h=b.hover+'<br>Log2FC: '+b.fc.toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2);
+                if(b.imputed) h+='<br><em>(missing values imputed)</em>';
+                return h;
+            }),
+            customdata:idx.map(i=>both[i].full)
+        });
+    });
+
+    // Helper to build a vertical jittered band of presence-only proteins
+    function _bandTrace(items,bandX,labelGroup,otherGroup,signColor){
+        if(!items.length)return null;
+        // Distribute Y values across plot height; jitter horizontally within the band
+        const bandWidth=fcRange*bandFrac*0.5;
+        const ys=items.map((_,i)=>{
+            // Spread evenly across [0.05*yMax, 0.95*yMax]
+            const t=items.length>1?i/(items.length-1):0.5;
+            return yMax*(0.05+0.90*t);
+        });
+        const xs=items.map((_,i)=>bandX+(((i*0.6180339887)%1)-0.5)*bandWidth);
+        const mo=applyMarkerOverrides(items.map(it=>it.pidx),signColor,5,'diamond');
+        return{
+            x:xs,y:ys,mode:'markers',
+            marker:{size:mo.size,color:mo.color,opacity:0.85,symbol:mo.symbol},
+            text:items.map(it=>{
+                const v=it.mA!=null?it.mA:it.mB;
+                return it.hover+'<br><em>Only in '+labelGroup+'</em><br>Mean '+labelGroup+': '+fmtVal(v)+'<br>Mean '+otherGroup+': 0 (not detected)<br><em>Log2FC and p-value not defined</em>';
+            }),
+            customdata:items.map(it=>it.full)
+        };
+    }
+    const upTrace=_bandTrace(upOnly,xUpBand,gx,gy,grpColor(gx));
+    const downTrace=_bandTrace(downOnly,xDownBand,gy,gx,grpColor(gy));
+    if(upTrace) traces.push(upTrace);
+    if(downTrace) traces.push(downTrace);
+
+    // Threshold reference lines (only across the main cloud's FC range)
     const fdrLine=-Math.log10(fdrT);
     chart._refLines=[
         {axis:'x',value:fcT,color:'#8b949e',dash:'4,4',width:1,opacity:0.6},
@@ -2806,10 +2890,28 @@ function buildVolcanoConfig(chart,p,qd,fidx){
         {axis:'y',value:fdrLine,color:'#8b949e',dash:'4,4',width:1,opacity:0.6}
     ];
     if(p.config.showThresholds===false) chart._showRefLines=false;
+
+    // Axis breaks where the side bands are separated from the main cloud
+    const breaks=[];
+    if(upOnly.length) breaks.push({axis:'x',pos:xUpBreak});
+    if(downOnly.length) breaks.push({axis:'x',pos:xDownBreak});
+    chart._axisBreaks=breaks;
+
     chart._plotType='volcano';
     let yLabel='-Log10(FDR adj. P-value)';
     if(!canTTest) yLabel='-Log10(P) \u2014 need \u22652 replicates for statistics (n='+nRepX+','+nRepY+')';
-    chart.setChartTitle(p.title||'').setData(traces).setXTitle('\u2190 '+gy+' | Log2 Fold Change | '+gx+' \u2192').setYTitle(yLabel).render();
+    let title=p.title||'';
+    if(upOnly.length||downOnly.length){
+        const parts=[];
+        if(upOnly.length) parts.push(upOnly.length+' only in '+gx);
+        if(downOnly.length) parts.push(downOnly.length+' only in '+gy);
+        title+=' \u2014 side bands: '+parts.join(', ');
+    }
+    chart.setChartTitle(title)
+        .setData(traces)
+        .setXTitle('\u2190 '+gy+' | Log2 Fold Change | '+gx+' \u2192')
+        .setYTitle(yLabel)
+        .render();
 }
 
 function buildDotplotConfig(chart,p,qd,fidx){
@@ -2934,7 +3036,12 @@ function buildPCAConfig(chart,p,qd,fidx){
     } else {
         chart._ellipses=[];
     }
-    chart.setChartTitle((p.title||'')+restrictedNote).setData(traces).setXTitle('PC1 ('+pca.varExpl[0].toFixed(1)+'%)').setYTitle('PC2 ('+pca.varExpl[1].toFixed(1)+'%)').render();
+    chart._plotType='pca';
+    chart.setChartTitle((p.title||'')+restrictedNote)
+        .setData(traces)
+        .setXTitle('PC1 — '+pca.varExpl[0].toFixed(1)+'% variance explained')
+        .setYTitle('PC2 — '+pca.varExpl[1].toFixed(1)+'% variance explained')
+        .render();
 }
 
 function buildAbundanceConfig(chart,p,qd,fidx){
