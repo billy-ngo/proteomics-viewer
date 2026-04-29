@@ -34,7 +34,8 @@ class ProkerChart {
         this._zoomed = false;
         this._origXRange = null;
         this._origYRange = null;
-        this._refLines = []; // [{axis:'x'|'y', value, color, dash, width, opacity}]
+        this._refLines = [];
+        this._ellipses = []; // [{axis:'x'|'y', value, color, dash, width, opacity}]
 
         // Symbol renderers
         this._symbols = {
@@ -320,6 +321,19 @@ class ProkerChart {
                 const x2 = m.left + xScale(mx), y2 = m.top + yScale(mx);
                 svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${T.text}" stroke-width="0.8" opacity="0.4" stroke-dasharray="none"/>`;
             }
+        }
+
+        // Confidence ellipses (PCA grouping ovals)
+        if (this._ellipses && this._ellipses.length) {
+            this._ellipses.forEach(el => {
+                const cx = m.left + xScale(el.cx);
+                const cy = m.top + yScale(el.cy);
+                const rx = Math.abs(xScale(el.cx + el.rx) - xScale(el.cx));
+                const ry = Math.abs(yScale(el.cy + el.ry) - yScale(el.cy));
+                if (rx > 0 && ry > 0) {
+                    svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" transform="rotate(${-(el.angle||0)},${cx},${cy})" fill="${el.color||T.accent}" fill-opacity="${el.opacity||0.08}" stroke="${el.color||T.accent}" stroke-width="1.5" stroke-opacity="${(el.opacity||0.08)*4}" stroke-dasharray="4,3"/>`;
+                }
+            });
         }
 
         // Reference lines (threshold lines, etc.) — hidden when _showRefLines === false

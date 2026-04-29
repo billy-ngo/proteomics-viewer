@@ -380,6 +380,10 @@ async function uploadFile(file,append){
                 <label id="gs-fc-line-label" class="checkbox-row" style="margin:0;display:none;font-size:10px"><input type="checkbox" id="gs-show-fc-lines" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)"> FC</label>
                 <label id="gs-fdr-line-label" class="checkbox-row" style="margin:0;display:none;font-size:10px"><input type="checkbox" id="gs-show-fdr-line" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)"> FDR</label>
             </div>
+            <div id="gs-ellipses-row" style="display:flex;align-items:center;gap:6px">
+                <input type="checkbox" id="gs-show-ellipses" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)" title="Show 95% confidence ellipses around groups">
+                <span style="font-size:11px;color:var(--text-sec)">Confidence ellipses</span>
+            </div>
             <div style="display:flex;align-items:center;gap:6px">
                 <input type="checkbox" id="gs-show-plotbg" checked onchange="applyGraphSettings()" style="accent-color:var(--accent)" title="Show a colored background behind the plot area">
                 <span style="font-size:11px;color:var(--text-sec)">Plot background</span>
@@ -618,9 +622,11 @@ async function uploadFile(file,append){
             <div class="proc-option-body hidden" id="norm-opts">
                 <div class="proc-sub"><div class="proc-sub-label">Normalization scope</div>
                     <select id="norm-scope" onchange="toggleNormOrg();updateProcPreview()" title="Normalize across all peptides or within a specific organism"><option value="all">Across all detected peptides</option><option value="organism">Within a given organism</option></select>
+                    <div style="font-size:10px;color:var(--text-sec);margin-top:4px;line-height:1.4" id="norm-scope-desc">Total-sum normalization: each sample is scaled so its total intensity matches the median across all samples. This corrects for differences in sample loading.</div>
                 </div>
                 <div class="proc-sub hidden" id="norm-org-panel">
                     <div class="proc-sub-label">Select organism(s) by locus tag prefix</div>
+                    <div style="font-size:10px;color:var(--text-sec);margin-bottom:4px;line-height:1.4">Only proteins from the selected organism(s) are used for normalization. Useful for mixed-species experiments (e.g. SILAC spike-ins) where you want to normalize based on one organism while analyzing fold changes in another.</div>
                     <div id="norm-org-list" style="max-height:160px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:4px;margin-top:4px"></div>
                 </div>
                 <div class="proc-sub" style="margin-top:10px">
@@ -1322,7 +1328,7 @@ window.addEventListener('beforeunload',e=>{
 // ================================================================
 function toggleIntensityOpts(){document.getElementById('intensity-opts').classList.toggle('hidden',!document.getElementById('proc-intensity').checked)}
 function toggleNorm(){document.getElementById('norm-opts').classList.toggle('hidden',!document.getElementById('proc-norm').checked);toggleNormOrg()}
-function toggleNormOrg(){const show=document.getElementById('proc-norm').checked&&document.getElementById('norm-scope').value==='organism';document.getElementById('norm-org-panel').classList.toggle('hidden',!show);if(show)populateNormOrg()}
+function toggleNormOrg(){const show=document.getElementById('proc-norm').checked&&document.getElementById('norm-scope').value==='organism';document.getElementById('norm-org-panel').classList.toggle('hidden',!show);if(show)populateNormOrg();const desc=document.getElementById('norm-scope-desc');if(desc)desc.textContent=show?'Only proteins from the selected organism(s) contribute to the normalization scale factor. Other proteins are still scaled but not included in the total. Useful for mixed-species experiments.':'Total-sum normalization: each sample is scaled so its total intensity matches the median across all samples. This corrects for differences in sample loading.'}
 function populateNormOrg(){if(!RAW)return;const c=document.getElementById('norm-org-list');const prefixes=new Set();RAW.proteins.forEach(p=>{const m=(p.majority_id||p.id||'').match(/^([A-Za-z][A-Za-z0-9]*_)/);if(m)prefixes.add(m[1])});const sorted=[...prefixes].sort();
     const counts={};sorted.forEach(px=>{counts[px]=0});RAW.proteins.forEach(p=>{const m=(p.majority_id||p.id||'').match(/^([A-Za-z][A-Za-z0-9]*_)/);if(m&&counts[m[1]]!==undefined)counts[m[1]]++});
     const prev=new Set();c.querySelectorAll('input:checked').forEach(cb=>prev.add(cb.value));
@@ -2153,6 +2159,7 @@ function showVizConfig(type){
     let html=`<div class="viz-config"><div class="vc-title">Configure ${type}</div>`;
     if(type==='pca'){
         html+=`<div class="af-row"><span class="af-lbl">Samples from groups</span><div id="pca-grp-checks">${names.map(n=>`<label class="checkbox-row"><input type="checkbox" value="${n}" checked>${n}</label>`).join('')}</div></div>`;
+        html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="pca-ellipses" checked> Show 95% confidence ellipses</label>`;
     } else if(type==='abundance'){
         // Build sample options from RAW.samples
         const sampleOpts=RAW?RAW.samples.map(s=>`<option value="${s}">${s}</option>`).join(''):'';
@@ -2285,6 +2292,7 @@ function addPlotToCanvas(type){
         title={enrichment:'Ranked Enrichment - '+gx+'/'+gy,unique:'Unique Proteins',volcano:'Volcano: '+gx+' vs '+gy,dotplot:gx+' vs '+gy}[type];
     }
     const config={gx,gy,type};
+    if(type==='pca'){config.showEllipses=document.getElementById('pca-ellipses')?.checked!==false}
     if(type==='enrichment'){
         config.style=document.getElementById('vc-enr-style')?.value||'dot';
         config.log2=document.getElementById('vc-enr-log2')?.checked||false;
@@ -2577,7 +2585,11 @@ function buildUniqueConfig(chart,p,qd,fidx){
 function buildVolcanoConfig(chart,p,qd,fidx){
     if(isAggSum()){chart.setData([]).setXTitle('').setYTitle('Sums mode — no statistics').render();return}
     const gx=p.config.gx,gy=p.config.gy,fcT=p.config.fc||1,fdrT=p.config.fdr||0.05,doImpute=p.config.impute;
+    if(gx===gy){chart.setData([]).setXTitle('').setYTitle('Group X and Y are the same').render();return}
     const s0=p.config.s0||0;
+    const binXn=BINS.find(b=>b.label===gx),binYn=BINS.find(b=>b.label===gy);
+    const nRepX=binXn?binXn.samples.length:0,nRepY=binYn?binYn.samples.length:0;
+    const canTTest=nRepX>=2&&nRepY>=2;
     const impMethod=p.config.imputeMethod||'perseus';
     // For kNN: build sample list for both groups
     const _binGx=BINS.find(b=>b.label===gx),_binGy=BINS.find(b=>b.label===gy);
@@ -2601,14 +2613,17 @@ function buildVolcanoConfig(chart,p,qd,fidx){
             const imp=imputeValues(vA,vB,impMethod,_allValsForPerseus,_allSamples,qd,fidx,fi);
             vA=imp.a;vB=imp.b;
         }
-        fc.push(Math.log2(mA/mB));
-        rawP.push(ttest(vA,vB,s0));
+        const fcVal=Math.log2(mA/mB);
+        if(!isFinite(fcVal))continue;
+        fc.push(fcVal);
+        rawP.push(canTTest?ttest(vA,vB,s0):1);
         labels.push(pLabel(fidx,fi));
         fulls.push(pFullLabel(fidx,fi));
         pidxArr.push(fidx[fi]);
         hoverLabels.push(pHoverLabel(fidx,fi));
     }
-    const adjP=bhFDR(rawP);const negLog=adjP.map(p=>-Math.log10(Math.max(p,1e-300)));
+    if(!fc.length){chart.setData([]).setXTitle('').setYTitle('No proteins detected in both groups').render();return}
+    const adjP=canTTest?bhFDR(rawP):rawP;const negLog=adjP.map(p=>-Math.log10(Math.max(p,1e-300)));
     const cats=fc.map((f,i)=>adjP[i]<fdrT&&Math.abs(f)>=fcT?(f>0?'up':'down'):'ns');
     const traces=[];
     ['ns','up','down'].forEach(cat=>{const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);if(!idx.length)return;
@@ -2625,7 +2640,9 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     ];
     if(p.config.showThresholds===false) chart._showRefLines=false;
     chart._plotType='volcano';
-    chart.setChartTitle(p.title||'').setData(traces).setXTitle('\u2190 '+gy+' | Log2 Fold Change | '+gx+' \u2192').setYTitle('-Log10(FDR adj. P-value)').render();
+    let yLabel='-Log10(FDR adj. P-value)';
+    if(!canTTest) yLabel='-Log10(P) \u2014 need \u22652 replicates for statistics (n='+nRepX+','+nRepY+')';
+    chart.setChartTitle(p.title||'').setData(traces).setXTitle('\u2190 '+gy+' | Log2 Fold Change | '+gx+' \u2192').setYTitle(yLabel).render();
 }
 
 function buildDotplotConfig(chart,p,qd,fidx){
@@ -2714,6 +2731,29 @@ function buildPCAConfig(chart,p,qd,fidx){
     if(sampleNames.length<3){chart.setData([]).setXTitle('').setYTitle('Need ≥3 samples').render();return}
     const pca=computePCA(sampleNames,qd,fidx);
     const traces=groups.map(g=>{const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),mode:'markers',marker:{size:5,color:grpColor(g),symbol:'circle'},text:idx.map(i=>pca.scores[i].name),customdata:idx.map(i=>g+': '+pca.scores[i].name)}});
+    const showEllipses=p.config.showEllipses!==false;
+    if(showEllipses){
+        const ellipses=[];
+        groups.forEach(g=>{
+            const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);
+            if(idx.length<3)return;
+            const xs=idx.map(i=>pca.scores[i].pc1),ys=idx.map(i=>pca.scores[i].pc2);
+            const mx=mean(xs),my=mean(ys);
+            const n=xs.length;
+            let sxx=0,syy=0,sxy=0;
+            for(let i=0;i<n;i++){sxx+=(xs[i]-mx)**2;syy+=(ys[i]-my)**2;sxy+=(xs[i]-mx)*(ys[i]-my)}
+            sxx/=(n-1);syy/=(n-1);sxy/=(n-1);
+            const tr=sxx+syy,det=sxx*syy-sxy*sxy;
+            const disc=Math.sqrt(Math.max(0,tr*tr/4-det));
+            const e1=tr/2+disc,e2=tr/2-disc;
+            const angle=sxy===0?(sxx>=syy?0:90):Math.atan2(e1-sxx,sxy)*180/Math.PI;
+            const chi95=Math.sqrt(5.991);
+            ellipses.push({cx:mx,cy:my,rx:chi95*Math.sqrt(Math.max(0,e1)),ry:chi95*Math.sqrt(Math.max(0,e2)),angle,color:grpColor(g),opacity:0.1});
+        });
+        chart._ellipses=ellipses;
+    } else {
+        chart._ellipses=[];
+    }
     chart.setChartTitle(p.title||'').setData(traces).setXTitle('PC1 ('+pca.varExpl[0].toFixed(1)+'%)').setYTitle('PC2 ('+pca.varExpl[1].toFixed(1)+'%)').render();
 }
 
@@ -3284,10 +3324,10 @@ function applyGraphSettings(){
     const showThresholds=document.getElementById('gs-show-thresholds').checked;
     const showFClines=document.getElementById('gs-show-fc-lines')?.checked!==false;
     const showFDRline=document.getElementById('gs-show-fdr-line')?.checked!==false;
+    const showEllipses=document.getElementById('gs-show-ellipses')?.checked!==false;
     gsTargetPlots.forEach(plotId=>{
         const chart=CHARTS[plotId];if(!chart)return;
         chart.restyle({size,symbol:shape,color,opacity,hollow});
-        // Filter threshold lines if individual controls are set
         if(chart._refLines&&showThresholds){
             chart._refLines.forEach(rl=>{
                 if(rl.axis==='x') rl._hidden=!showFClines;
@@ -3296,7 +3336,14 @@ function applyGraphSettings(){
         }
         chart.relayout({plotBg:showPlotBg?plotBg:null,paperBg:showPaperBg?paperBg:null,gridColor,showGrid,showRefLines:showThresholds,transparentBg:!showPaperBg&&!showPlotBg,fontSize});
         const cp=CANVAS_PLOTS.find(c=>c.plotId===plotId);
-        if(cp&&cp.config){cp.config.showThresholds=showThresholds;cp.config.showFClines=showFClines;cp.config.showFDRline=showFDRline}
+        if(cp&&cp.config){
+            cp.config.showThresholds=showThresholds;cp.config.showFClines=showFClines;cp.config.showFDRline=showFDRline;
+            if(cp.type==='pca'){
+                cp.config.showEllipses=showEllipses;
+                cp._forceUpdate=true;
+                const{data:qd}=getQData();renderPlot(cp,qd,getFilteredIdx());
+            }
+        }
     });
 }
 
@@ -3884,6 +3931,9 @@ function openGraphSettingsForPlot(plotId){
         document.getElementById('gs-show-fc-lines').checked=cp.config.showFClines!==false;
         document.getElementById('gs-show-fdr-line').checked=cp.config.showFDRline!==false;
     }
+    const isPCA=cp&&cp.type==='pca';
+    document.getElementById('gs-ellipses-row').style.display=isPCA?'flex':'none';
+    if(isPCA&&cp.config) document.getElementById('gs-show-ellipses').checked=cp.config.showEllipses!==false;
     closePanels();
     document.getElementById('graph-settings-panel').classList.remove('hidden');
     gsUpdateSwatches();
