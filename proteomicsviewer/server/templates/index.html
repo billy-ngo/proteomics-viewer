@@ -501,7 +501,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.7.0</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.7.1</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -820,7 +820,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='4.7.0';
+var PROKER_VERSION='4.7.1';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -2337,7 +2337,8 @@ function showVizConfig(type){
         // ── Data source ──
         const qtOpts=(RAW?.quant_types||[]).map(q=>`<option value="${q}">${q}</option>`).join('');
         html+=`<div class="af-row" title="Use post-processed data (after filtering, normalization, pruning) or the raw values straight from proteinGroups.txt."><span class="af-lbl">Data source</span><select id="pca-source"><option value="processed" selected>Processed (post-normalization)</option><option value="raw">Raw (pre-processing)</option></select></div>`;
-        html+=`<div class="af-row" title="Quantification column to feed into PCA. Defaults to whatever the Processing tab is using."><span class="af-lbl">Quant type</span><select id="pca-quant-type"><option value="">— use current ('+(typeof PROC_QT==='string'?PROC_QT:'Intensity')+') —</option>${qtOpts}</select></div>`;
+        const _curQt=typeof PROC_QT==='string'&&PROC_QT?PROC_QT:'Intensity';
+        html+=`<div class="af-row" title="Quantification column to feed into PCA. Defaults to whatever the Processing tab is using."><span class="af-lbl">Quant type</span><select id="pca-quant-type"><option value="">— use current (${_curQt}) —</option>${qtOpts}</select></div>`;
         // ── Pre-PCA transformations ──
         html+=`<div class="af-row" title="Log-transform intensities before PCA. Standard practice for proteomics where values span many orders of magnitude."><span class="af-lbl">Transform</span><select id="pca-transform"><option value="log2" selected>Log2 (x + 1)</option><option value="log10">Log10 (x + 1)</option><option value="none">None (raw values)</option></select></div>`;
         html+=`<div class="af-row" title="Z-score scaling makes every protein contribute equally to the variance, regardless of absolute abundance. Center-only is the standard PCA default."><span class="af-lbl">Scaling</span><select id="pca-scale"><option value="center" selected>Center only (standard)</option><option value="zscore">Z-score (unit variance)</option><option value="none">No centering (raw)</option></select></div>`;
