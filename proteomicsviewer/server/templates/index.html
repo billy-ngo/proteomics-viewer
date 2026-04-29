@@ -501,7 +501,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.6.0</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.7.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -820,7 +820,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='4.6.0';
+var PROKER_VERSION='4.7.0';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -2178,53 +2178,112 @@ function imputeValues(vA,vB,method,allVals,allSamples,qd,fidx,fi,baseSeed){
 }
 
 // PCA (dual method for n_samples << n_features)
-function computePCA(sampleNames,qd,fidx,usePositions){
-    // usePositions (optional): subset of filtered positions (0..fidx.length-1) to use.
-    // If omitted, uses every position 0..fidx.length-1 (current behaviour).
-    const positions=usePositions&&usePositions.length?usePositions:Array.from({length:fidx.length},(_,i)=>i);
-    const n=sampleNames.length,m=positions.length;
-    if(n<2||m<1) return{scores:sampleNames.map(s=>({name:s,pc1:0,pc2:0})),varExpl:[0,0]};
+function computePCA(sampleNames,qd,fidx,usePositions,opts){
+    // opts (optional): {
+    //   transform: 'none'|'log2'|'log10' (default 'none' for back-compat),
+    //   scaling:   'none'|'center'|'zscore' (default 'center'),
+    //   missing:   'keep'|'drop'|'halfmin' (default 'keep'),
+    //   topN:      0 = all, otherwise pick top-N proteins by variance,
+    //   pcX:       1..n  which PC to put on X (default 1),
+    //   pcY:       1..n  which PC to put on Y (default 2),
+    // }
+    const o=opts||{};
+    const positions0=usePositions&&usePositions.length?usePositions:Array.from({length:fidx.length},(_,i)=>i);
+    const n=sampleNames.length;
+    if(n<2) return{scores:sampleNames.map(s=>({name:s,pcX:0,pcY:0,pc1:0,pc2:0})),varExpl:[0,0],pcXIndex:0,pcYIndex:1,nProteinsUsed:0};
 
-    // Build n×m data matrix — qd[s] is already indexed by filtered position (0..m-1)
-    const X=[];
-    const colMean=new Array(m).fill(0);
-    sampleNames.forEach(s=>{
-        const row=[];
-        for(let pi=0;pi<m;pi++){const fi=positions[pi];row.push(qd[s]?qd[s][fi]:0)}
-        X.push(row);
-        for(let j=0;j<m;j++) colMean[j]+=row[j];
-    });
-    // Center columns
-    for(let j=0;j<m;j++) colMean[j]/=n;
-    for(let i=0;i<n;i++) for(let j=0;j<m;j++) X[i][j]-=colMean[j];
+    // 1. Materialize the raw matrix (n samples × m positions)
+    let positions=positions0.slice();
+    let raw=sampleNames.map(s=>positions.map(fi=>qd[s]?(qd[s][fi]||0):0));
 
-    // Compute kernel matrix K = X * X^T (n×n) — dual PCA for n<<m
+    // 2. Drop proteins with any missing (zero) value if requested
+    if(o.missing==='drop'){
+        const keep=[];
+        for(let j=0;j<positions.length;j++){
+            let allPresent=true;
+            for(let i=0;i<n;i++){if(!(raw[i][j]>0)){allPresent=false;break}}
+            if(allPresent)keep.push(j);
+        }
+        if(keep.length<1) return{scores:sampleNames.map(s=>({name:s,pcX:0,pcY:0,pc1:0,pc2:0})),varExpl:[0,0],pcXIndex:0,pcYIndex:1,nProteinsUsed:0};
+        raw=raw.map(row=>keep.map(j=>row[j]));
+        positions=keep.map(j=>positions[j]);
+    } else if(o.missing==='halfmin'){
+        // Per-sample: replace zeros with min(non-zero)/2 of that sample
+        for(let i=0;i<n;i++){
+            const nz=raw[i].filter(v=>v>0);
+            const hm=nz.length?Math.min(...nz)/2:0;
+            for(let j=0;j<raw[i].length;j++) if(!(raw[i][j]>0)) raw[i][j]=hm;
+        }
+    }
+    let m=positions.length;
+    if(m<1) return{scores:sampleNames.map(s=>({name:s,pcX:0,pcY:0,pc1:0,pc2:0})),varExpl:[0,0],pcXIndex:0,pcYIndex:1,nProteinsUsed:0};
+
+    // 3. Apply log transform if requested (offset of 1 keeps log defined at 0)
+    if(o.transform==='log2'||o.transform==='log10'){
+        const fn=o.transform==='log2'?Math.log2:Math.log10;
+        for(let i=0;i<n;i++) for(let j=0;j<m;j++) raw[i][j]=raw[i][j]>0?fn(raw[i][j]+1):0;
+    }
+
+    // 4. Top-N variable proteins (computed across samples per protein)
+    if(o.topN&&o.topN>=2&&o.topN<m){
+        const vars=new Array(m).fill(0);
+        const means=new Array(m).fill(0);
+        for(let j=0;j<m;j++){
+            let s=0;for(let i=0;i<n;i++) s+=raw[i][j];
+            means[j]=s/n;
+            let v=0;for(let i=0;i<n;i++){const d=raw[i][j]-means[j];v+=d*d}
+            vars[j]=v/(n-1||1);
+        }
+        const order=vars.map((v,j)=>({v,j})).sort((a,b)=>b.v-a.v).slice(0,o.topN).map(x=>x.j).sort((a,b)=>a-b);
+        raw=raw.map(row=>order.map(j=>row[j]));
+        m=order.length;
+    }
+
+    // 5. Centering / scaling
+    const X=raw.map(r=>r.slice());
+    const scaling=o.scaling||'center';
+    if(scaling==='center'||scaling==='zscore'){
+        const colMean=new Array(m).fill(0);
+        for(let i=0;i<n;i++) for(let j=0;j<m;j++) colMean[j]+=X[i][j];
+        for(let j=0;j<m;j++) colMean[j]/=n;
+        for(let i=0;i<n;i++) for(let j=0;j<m;j++) X[i][j]-=colMean[j];
+        if(scaling==='zscore'){
+            const colSd=new Array(m).fill(0);
+            for(let i=0;i<n;i++) for(let j=0;j<m;j++) colSd[j]+=X[i][j]*X[i][j];
+            for(let j=0;j<m;j++) colSd[j]=Math.sqrt(colSd[j]/(n-1||1));
+            for(let i=0;i<n;i++) for(let j=0;j<m;j++){
+                if(colSd[j]>0) X[i][j]/=colSd[j];
+            }
+        }
+    }
+
+    // 6. Dual PCA: K = X · X^T  (n × n)
     const K=Array.from({length:n},()=>new Array(n).fill(0));
     for(let i=0;i<n;i++) for(let j=i;j<n;j++){
         let dot=0;for(let k=0;k<m;k++) dot+=X[i][k]*X[j][k];
         K[i][j]=dot;K[j][i]=dot;
     }
-
-    // Jacobi eigendecomposition
     const eig=jacobiEigen(K,n);
-
-    // Sort eigenvalues descending
     const pairs=eig.values.map((v,i)=>({val:Math.max(0,v),idx:i})).sort((a,b)=>b.val-a.val);
     const totalVar=pairs.reduce((s,p)=>s+p.val,0)||1;
 
-    // PC scores are the eigenvectors (already in sample space for dual PCA)
-    // Scale by sqrt(eigenvalue) for proper projection
+    // 7. Project onto chosen PCs
+    const pcXIdx=Math.max(0,Math.min(pairs.length-1,(o.pcX||1)-1));
+    const pcYIdx=Math.max(0,Math.min(pairs.length-1,(o.pcY||2)-1));
     const scores=sampleNames.map((s,i)=>({
         name:s,
+        pcX:eig.vectors[i][pairs[pcXIdx].idx]*Math.sqrt(pairs[pcXIdx].val||0),
+        pcY:eig.vectors[i][pairs[pcYIdx].idx]*Math.sqrt(pairs[pcYIdx].val||0),
+        // Backwards-compat aliases (callers used these before component selection existed)
         pc1:eig.vectors[i][pairs[0].idx]*Math.sqrt(pairs[0].val||0),
-        pc2:pairs.length>1?eig.vectors[i][pairs[1].idx]*Math.sqrt(pairs[1].val||0):0
+        pc2:pairs.length>1?eig.vectors[i][pairs[1].idx]*Math.sqrt(pairs[1].val||0):0,
     }));
 
     const varExpl=[
-        pairs[0].val/totalVar*100,
-        pairs.length>1?pairs[1].val/totalVar*100:0
+        pairs[pcXIdx].val/totalVar*100,
+        pairs[pcYIdx].val/totalVar*100,
     ];
-    return{scores,varExpl};
+    return{scores,varExpl,pcXIndex:pcXIdx+1,pcYIndex:pcYIdx+1,nProteinsUsed:m};
 }
 
 function jacobiEigen(A,n){
@@ -2275,7 +2334,23 @@ function showVizConfig(type){
     let html=`<div class="viz-config"><div class="vc-title">Configure ${type}</div>`;
     if(type==='pca'){
         html+=`<div class="af-row"><span class="af-lbl">Samples from groups</span><div id="pca-grp-checks">${names.map(n=>`<label class="checkbox-row"><input type="checkbox" value="${n}" checked>${n}</label>`).join('')}</div></div>`;
-        html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="pca-ellipses" checked> Show 95% confidence ellipses</label>`;
+        // ── Data source ──
+        const qtOpts=(RAW?.quant_types||[]).map(q=>`<option value="${q}">${q}</option>`).join('');
+        html+=`<div class="af-row" title="Use post-processed data (after filtering, normalization, pruning) or the raw values straight from proteinGroups.txt."><span class="af-lbl">Data source</span><select id="pca-source"><option value="processed" selected>Processed (post-normalization)</option><option value="raw">Raw (pre-processing)</option></select></div>`;
+        html+=`<div class="af-row" title="Quantification column to feed into PCA. Defaults to whatever the Processing tab is using."><span class="af-lbl">Quant type</span><select id="pca-quant-type"><option value="">— use current ('+(typeof PROC_QT==='string'?PROC_QT:'Intensity')+') —</option>${qtOpts}</select></div>`;
+        // ── Pre-PCA transformations ──
+        html+=`<div class="af-row" title="Log-transform intensities before PCA. Standard practice for proteomics where values span many orders of magnitude."><span class="af-lbl">Transform</span><select id="pca-transform"><option value="log2" selected>Log2 (x + 1)</option><option value="log10">Log10 (x + 1)</option><option value="none">None (raw values)</option></select></div>`;
+        html+=`<div class="af-row" title="Z-score scaling makes every protein contribute equally to the variance, regardless of absolute abundance. Center-only is the standard PCA default."><span class="af-lbl">Scaling</span><select id="pca-scale"><option value="center" selected>Center only (standard)</option><option value="zscore">Z-score (unit variance)</option><option value="none">No centering (raw)</option></select></div>`;
+        // ── Missing value handling ──
+        html+=`<div class="af-row" title="How to treat zero / missing values before PCA."><span class="af-lbl">Missing values</span><select id="pca-missing"><option value="keep" selected>Keep as zero (current)</option><option value="drop">Drop proteins with any missing</option><option value="halfmin">Replace with half-minimum (per sample)</option></select></div>`;
+        // ── Feature selection ──
+        html+=`<div class="af-row" title="Use only the top N proteins by variance. Useful for emphasizing the most discriminating features. Empty = use all."><span class="af-lbl">Top variable proteins</span><input type="number" id="pca-top-n" placeholder="all" min="2" step="1" style="width:90px"></div>`;
+        // ── Component selection ──
+        html+=`<div class="af-row" title="Which principal components to plot. Default is PC1 vs PC2 (the two highest-variance components)."><span class="af-lbl">Plot components</span><select id="pca-components"><option value="1,2" selected>PC1 vs PC2</option><option value="1,3">PC1 vs PC3</option><option value="2,3">PC2 vs PC3</option><option value="3,4">PC3 vs PC4</option></select></div>`;
+        // ── Display ──
+        html+=`<div class="af-row" title="Confidence interval (in standard deviations) for the group ellipses. 95% is conventional."><span class="af-lbl">Ellipse confidence</span><select id="pca-ellipse-level"><option value="0.95" selected>95%</option><option value="0.90">90%</option><option value="0.99">99%</option><option value="0.68">68% (1 SD)</option></select></div>`;
+        html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="pca-ellipses" checked> Show confidence ellipses</label>`;
+        html+=`<label class="checkbox-row" style="margin-top:4px"><input type="checkbox" id="pca-show-labels"> Show sample labels next to dots</label>`;
         html+=`<label class="checkbox-row" style="margin-top:4px" title="When enabled species highlights or GOI exist, restrict PCA to only those proteins."><input type="checkbox" id="pca-restrict-highlights"> Restrict to highlighted proteins (species / GOI)</label>`;
     } else if(type==='abundance'){
         // Build sample options from RAW.samples
@@ -2421,7 +2496,21 @@ function addPlotToCanvas(type){
         title={enrichment:'Ranked Enrichment - '+gx+'/'+gy,unique:'Unique Proteins',volcano:'Volcano: '+gx+' vs '+gy,dotplot:gx+' vs '+gy}[type];
     }
     const config={gx,gy,type};
-    if(type==='pca'){config.showEllipses=document.getElementById('pca-ellipses')?.checked!==false;config.restrictToHighlights=document.getElementById('pca-restrict-highlights')?.checked||false}
+    if(type==='pca'){
+        config.showEllipses=document.getElementById('pca-ellipses')?.checked!==false;
+        config.restrictToHighlights=document.getElementById('pca-restrict-highlights')?.checked||false;
+        config.dataSource=document.getElementById('pca-source')?.value||'processed';
+        config.quantType=document.getElementById('pca-quant-type')?.value||'';
+        config.transform=document.getElementById('pca-transform')?.value||'log2';
+        config.scaling=document.getElementById('pca-scale')?.value||'center';
+        config.missing=document.getElementById('pca-missing')?.value||'keep';
+        const tn=document.getElementById('pca-top-n')?.value;
+        config.topN=tn?Math.max(2,Math.floor(+tn)):0;
+        const comps=(document.getElementById('pca-components')?.value||'1,2').split(',').map(Number);
+        config.pcX=comps[0]||1;config.pcY=comps[1]||2;
+        config.ellipseLevel=+(document.getElementById('pca-ellipse-level')?.value||0.95);
+        config.showLabels=document.getElementById('pca-show-labels')?.checked||false;
+    }
     if(type==='enrichment'){
         config.style=document.getElementById('vc-enr-style')?.value||'dot';
         config.log2=document.getElementById('vc-enr-log2')?.checked||false;
@@ -2998,12 +3087,44 @@ function buildPCAConfig(chart,p,qd,fidx){
     const groups=p.config.gx.split(',');const sampleNames=[],sampleGroups=[];
     groups.forEach(g=>{const bin=BINS.find(b=>b.label===g);if(bin)bin.samples.forEach(s=>{sampleNames.push(s);sampleGroups.push(g)})});
     if(sampleNames.length<3){chart.setData([]).setXTitle('').setYTitle('Need ≥3 samples').render();return}
-    // Optional restriction: only highlighted proteins (species/GOI)
+
+    // ── Resolve data source ──
+    // dataSource='processed' (default) → use the qd that buildProcessedData produced (post-norm/prune)
+    // dataSource='raw'                 → bypass processing; pull directly from RAW.quant_data
+    // quantType (optional) overrides which column we read from
+    let useQd=qd, useFidx=fidx;
+    const requestedQt=p.config.quantType||'';
+    const wantRaw=(p.config.dataSource||'processed')==='raw';
+    if(wantRaw||(requestedQt&&requestedQt!==PROC_QT)){
+        const sourceQt=requestedQt||PROC_QT||(RAW.quant_types[0]);
+        const sourceData=RAW.quant_data[sourceQt]||{};
+        if(wantRaw){
+            // Use ALL proteins (excluding contaminants/reverse/by-site for sanity)
+            useFidx=[];
+            for(let i=0;i<RAW.proteins.length;i++){
+                const pp=RAW.proteins[i];
+                if(pp.potential_contaminant||pp.reverse||pp.only_identified_by_site) continue;
+                useFidx.push(i);
+            }
+            useQd={};
+            sampleNames.forEach(s=>{
+                useQd[s]=useFidx.map(i=>sourceData[s]?sourceData[s][i]:0);
+            });
+        } else {
+            // Use processed FIDX but with a different quant column
+            useQd={};
+            sampleNames.forEach(s=>{
+                useQd[s]=fidx.map(i=>sourceData[s]?sourceData[s][i]:0);
+            });
+        }
+    }
+
+    // ── Optional restriction: only highlighted proteins (species/GOI) ──
     let usePositions=null,restrictedNote='';
     if(p.config.restrictToHighlights&&typeof hasActiveHighlights==='function'&&hasActiveHighlights()){
         usePositions=[];
-        for(let fi=0;fi<fidx.length;fi++){
-            if(getHighlightColor(fidx[fi])!==null) usePositions.push(fi);
+        for(let i=0;i<useFidx.length;i++){
+            if(getHighlightColor(useFidx[i])!==null) usePositions.push(i);
         }
         if(usePositions.length<2){
             chart.setData([]).setXTitle('').setYTitle('Restricted set has <2 proteins ('+usePositions.length+'). Enable more highlights or uncheck the restriction.').render();
@@ -3011,36 +3132,89 @@ function buildPCAConfig(chart,p,qd,fidx){
         }
         restrictedNote=' — restricted to '+usePositions.length+' highlighted proteins';
     }
-    const pca=computePCA(sampleNames,qd,fidx,usePositions);
-    const traces=groups.map(g=>{const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),mode:'markers',marker:{size:5,color:grpColor(g),symbol:'circle'},text:idx.map(i=>pca.scores[i].name),customdata:idx.map(i=>g+': '+pca.scores[i].name)}});
+
+    const opts={
+        transform:p.config.transform||'log2',
+        scaling:p.config.scaling||'center',
+        missing:p.config.missing||'keep',
+        topN:p.config.topN||0,
+        pcX:p.config.pcX||1,
+        pcY:p.config.pcY||2,
+    };
+    const pca=computePCA(sampleNames,useQd,useFidx,usePositions,opts);
+
+    // ── Traces ──
+    const showLabels=!!p.config.showLabels;
+    const traces=groups.map(g=>{
+        const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);
+        return{
+            x:idx.map(i=>pca.scores[i].pcX),
+            y:idx.map(i=>pca.scores[i].pcY),
+            mode:'markers',
+            marker:{size:6,color:grpColor(g),symbol:'circle'},
+            text:idx.map(i=>pca.scores[i].name),
+            customdata:idx.map(i=>g+': '+pca.scores[i].name),
+        };
+    });
+
+    // Sample labels (drawn as pinned annotations next to each point)
+    if(showLabels){
+        // Reset any previous PCA-managed annotations
+        chart.annotations=(chart.annotations||[]).filter(a=>!a.key||!String(a.key).startsWith('pca_lbl_'));
+        pca.scores.forEach((sc,i)=>{
+            chart.annotations.push({
+                x:sc.pcX,y:sc.pcY,text:sc.name,
+                key:'pca_lbl_'+sc.name,ax:18,ay:-12,
+            });
+        });
+    } else {
+        chart.annotations=(chart.annotations||[]).filter(a=>!a.key||!String(a.key).startsWith('pca_lbl_'));
+    }
+
+    // ── Confidence ellipses ──
     const showEllipses=p.config.showEllipses!==false;
     if(showEllipses){
+        // chi-square critical values for 2 degrees of freedom (bivariate ellipse)
+        const level=p.config.ellipseLevel||0.95;
+        const chiTable={0.68:2.279,0.90:4.605,0.95:5.991,0.99:9.210};
+        const chiVal=chiTable[level]||5.991;
+        const chiK=Math.sqrt(chiVal);
         const ellipses=[];
         groups.forEach(g=>{
             const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);
             if(idx.length<3)return;
-            const xs=idx.map(i=>pca.scores[i].pc1),ys=idx.map(i=>pca.scores[i].pc2);
+            const xs=idx.map(i=>pca.scores[i].pcX),ys=idx.map(i=>pca.scores[i].pcY);
             const mx=mean(xs),my=mean(ys);
-            const n=xs.length;
+            const nn=xs.length;
             let sxx=0,syy=0,sxy=0;
-            for(let i=0;i<n;i++){sxx+=(xs[i]-mx)**2;syy+=(ys[i]-my)**2;sxy+=(xs[i]-mx)*(ys[i]-my)}
-            sxx/=(n-1);syy/=(n-1);sxy/=(n-1);
+            for(let i=0;i<nn;i++){sxx+=(xs[i]-mx)**2;syy+=(ys[i]-my)**2;sxy+=(xs[i]-mx)*(ys[i]-my)}
+            sxx/=(nn-1);syy/=(nn-1);sxy/=(nn-1);
             const tr=sxx+syy,det=sxx*syy-sxy*sxy;
             const disc=Math.sqrt(Math.max(0,tr*tr/4-det));
             const e1=tr/2+disc,e2=tr/2-disc;
             const angle=sxy===0?(sxx>=syy?0:90):Math.atan2(e1-sxx,sxy)*180/Math.PI;
-            const chi95=Math.sqrt(5.991);
-            ellipses.push({cx:mx,cy:my,rx:chi95*Math.sqrt(Math.max(0,e1)),ry:chi95*Math.sqrt(Math.max(0,e2)),angle,color:grpColor(g),opacity:0.1});
+            ellipses.push({cx:mx,cy:my,rx:chiK*Math.sqrt(Math.max(0,e1)),ry:chiK*Math.sqrt(Math.max(0,e2)),angle,color:grpColor(g),opacity:0.1});
         });
         chart._ellipses=ellipses;
     } else {
         chart._ellipses=[];
     }
     chart._plotType='pca';
-    chart.setChartTitle((p.title||'')+restrictedNote)
+
+    // Title suffix: data source / transform / scaling / N proteins used
+    const noteParts=[];
+    noteParts.push(wantRaw?'raw':'processed');
+    if(requestedQt) noteParts.push(requestedQt);
+    if(opts.transform!=='none') noteParts.push(opts.transform);
+    if(opts.scaling==='zscore') noteParts.push('z-score');
+    if(opts.topN&&pca.nProteinsUsed===opts.topN) noteParts.push('top '+opts.topN+' var');
+    else noteParts.push(pca.nProteinsUsed+' proteins');
+    const dsNote=' ['+noteParts.join(' · ')+']';
+
+    chart.setChartTitle((p.title||'')+restrictedNote+dsNote)
         .setData(traces)
-        .setXTitle('PC1 — '+pca.varExpl[0].toFixed(1)+'% variance explained')
-        .setYTitle('PC2 — '+pca.varExpl[1].toFixed(1)+'% variance explained')
+        .setXTitle('PC'+pca.pcXIndex+' — '+pca.varExpl[0].toFixed(1)+'% variance explained')
+        .setYTitle('PC'+pca.pcYIndex+' — '+pca.varExpl[1].toFixed(1)+'% variance explained')
         .render();
 }
 
@@ -3650,21 +3824,58 @@ function _buildPCARows(plot){
     const sampleNames=[],sampleGroups=[];
     pcaGroups.forEach(g=>{const bin=BINS.find(b=>b.label===g);if(bin)bin.samples.forEach(s=>{sampleNames.push(s);sampleGroups.push(g)})});
     if(sampleNames.length<3) return null;
-    // Honour the plot's own restrictToHighlights setting
+
+    // Resolve data source the same way buildPCAConfig does
+    let useQd=ctx.qd, useFidx=ctx.fidx;
+    const requestedQt=plot.config.quantType||'';
+    const wantRaw=(plot.config.dataSource||'processed')==='raw';
+    if(wantRaw||(requestedQt&&requestedQt!==PROC_QT)){
+        const sourceQt=requestedQt||PROC_QT||(RAW.quant_types[0]);
+        const sourceData=RAW.quant_data[sourceQt]||{};
+        if(wantRaw){
+            useFidx=[];
+            for(let i=0;i<RAW.proteins.length;i++){
+                const pp=RAW.proteins[i];
+                if(pp.potential_contaminant||pp.reverse||pp.only_identified_by_site) continue;
+                useFidx.push(i);
+            }
+            useQd={};
+            sampleNames.forEach(s=>{useQd[s]=useFidx.map(i=>sourceData[s]?sourceData[s][i]:0)});
+        } else {
+            useQd={};
+            sampleNames.forEach(s=>{useQd[s]=ctx.fidx.map(i=>sourceData[s]?sourceData[s][i]:0)});
+        }
+    }
     let usePositions=null;
     if(plot.config.restrictToHighlights&&typeof hasActiveHighlights==='function'&&hasActiveHighlights()){
         usePositions=[];
-        for(let fi=0;fi<ctx.fidx.length;fi++){
-            if(getHighlightColor(ctx.fidx[fi])!==null) usePositions.push(fi);
+        for(let i=0;i<useFidx.length;i++){
+            if(getHighlightColor(useFidx[i])!==null) usePositions.push(i);
         }
     }
-    const pca=computePCA(sampleNames,ctx.qd,ctx.fidx,usePositions);
+    const opts={
+        transform:plot.config.transform||'log2',
+        scaling:plot.config.scaling||'center',
+        missing:plot.config.missing||'keep',
+        topN:plot.config.topN||0,
+        pcX:plot.config.pcX||1,
+        pcY:plot.config.pcY||2,
+    };
+    const pca=computePCA(sampleNames,useQd,useFidx,usePositions,opts);
     const rows=[];
-    rows.push(['Variance Explained','PC1='+pca.varExpl[0].toFixed(2)+'%','PC2='+pca.varExpl[1].toFixed(2)+'%']);
-    if(usePositions) rows.push(['Restricted to highlighted proteins',usePositions.length,'']);
+    rows.push(['Data source',wantRaw?'raw':'processed']);
+    rows.push(['Quant type',requestedQt||PROC_QT||'']);
+    rows.push(['Transform',opts.transform]);
+    rows.push(['Scaling',opts.scaling]);
+    rows.push(['Missing handling',opts.missing]);
+    rows.push(['Top variable proteins',opts.topN||'all']);
+    rows.push(['Components',`PC${pca.pcXIndex} vs PC${pca.pcYIndex}`]);
+    rows.push(['Proteins used',pca.nProteinsUsed]);
+    if(usePositions) rows.push(['Restricted to highlighted proteins',usePositions.length]);
+    rows.push(['Variance Explained',`PC${pca.pcXIndex}=${pca.varExpl[0].toFixed(2)}%`,`PC${pca.pcYIndex}=${pca.varExpl[1].toFixed(2)}%`]);
     rows.push([]);
-    rows.push(['Sample','Group','PC1','PC2']);
-    pca.scores.forEach((sc,i)=>rows.push([sc.name,sampleGroups[i],+sc.pc1.toFixed(6),+sc.pc2.toFixed(6)]));
+    rows.push(['Sample','Group',`PC${pca.pcXIndex}`,`PC${pca.pcYIndex}`]);
+    pca.scores.forEach((sc,i)=>rows.push([sc.name,sampleGroups[i],+sc.pcX.toFixed(6),+sc.pcY.toFixed(6)]));
     return rows;
 }
 
