@@ -58,6 +58,11 @@ async def upload_file(file: UploadFile = File(...)):
     try:
         data = parse_protein_groups(tmp_path)
         data["filename"] = file.filename
+        # Tag every protein and sample with the source filename so the frontend
+        # can detect multi-file mixing and reject incompatible comparisons.
+        for p in data.get("proteins", []):
+            p["source_file"] = file.filename
+        data["sample_source"] = {s: file.filename for s in data.get("samples", [])}
         state.data = data
         state.filename = file.filename
         return data
@@ -93,9 +98,13 @@ async def _autoload():
     if filepath and Path(filepath).exists():
         try:
             data = parse_protein_groups(filepath)
-            data["filename"] = Path(filepath).name
+            fname = Path(filepath).name
+            data["filename"] = fname
+            for p in data.get("proteins", []):
+                p["source_file"] = fname
+            data["sample_source"] = {s: fname for s in data.get("samples", [])}
             state.data = data
-            state.filename = Path(filepath).name
+            state.filename = fname
         except Exception:
             pass  # Silently skip — user can upload manually
 

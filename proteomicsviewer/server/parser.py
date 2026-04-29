@@ -279,6 +279,9 @@ def parse_protein_groups(filepath):
                 "reverse": is_reverse,
                 "potential_contaminant": is_contaminant,
                 "peptide_sequences": row.get("Peptide sequences", ""),
+                # Tag every protein with its source file for multi-file workflows.
+                # main.py overwrites this with the user-facing filename.
+                "source_file": str(filepath),
             }
             proteins.append(protein)
 

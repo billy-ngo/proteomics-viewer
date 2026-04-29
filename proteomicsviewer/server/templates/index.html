@@ -270,9 +270,17 @@ async function uploadFile(file,append){
         var resp=await fetch('/api/upload',{method:'POST',body:form});
         if(!resp.ok){var err=await resp.json();throw new Error(err.detail||'Upload failed')}
         var data=await resp.json();
+        // Defensive backfill of source tags in case the backend didn't set them
+        if(data.proteins) data.proteins.forEach(p=>{if(!p.source_file) p.source_file=data.filename});
+        if(!data.sample_source){
+            data.sample_source={};
+            (data.samples||[]).forEach(s=>{data.sample_source[s]=data.filename});
+        }
         if(append&&RAW){mergeData(data)}
         else{
             RAW=data;
+            // Promote sample_source to top-level for downstream code
+            RAW.sample_source=data.sample_source;
             // Cache raw file (raw_headers/raw_rows) per source for export
             RAW.raw_files=[{filename:data.filename,headers:data.raw_headers||[],rows:data.raw_rows||[]}];
         }
@@ -501,7 +509,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.7.1</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.8.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -820,7 +828,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='4.7.1';
+var PROKER_VERSION='4.8.0';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -1285,29 +1293,90 @@ function resetState(){RAW=null;BINS=[];UNASSIGNED=[];ANALYSES=[];DERIVED=[];CANV
 }
 
 function mergeData(newData){
-    // Append new samples to existing data
+    // True multi-file merge:
+    //   - Append the new file's proteins to RAW.proteins (no dedup; different files
+    //     may have entirely different protein sets, e.g. different organisms).
+    //   - Pad EXISTING samples with zeros for the new proteins (they had no
+    //     measurement of those proteins).
+    //   - For NEW samples, pre-pad with zeros for the existing proteins, then
+    //     append their real values for the new proteins.
+    //   - Track each protein's source_file (already set by parser) and each
+    //     sample's source_file via RAW.sample_source so the analysis layer can
+    //     reject incompatible cross-file comparisons.
+    if(!RAW.sample_source) RAW.sample_source={};
     const existingSamples=new Set(RAW.samples);
     const newSamples=newData.samples.filter(s=>!existingSamples.has(s));
-    if(!newSamples.length){alert('No new samples found in file');return}
-    RAW.samples.push(...newSamples);
-    newSamples.forEach(s=>{
-        RAW.quant_types.forEach(qt=>{
-            if(newData.quant_data[qt]&&newData.quant_data[qt][s]){
-                // Pad with zeros if protein counts differ
-                const vals=newData.quant_data[qt][s];
-                while(vals.length<RAW.proteins.length)vals.push(0);
-                RAW.quant_data[qt][s]=vals.slice(0,RAW.proteins.length);
-            }else{
-                RAW.quant_data[qt][s]=new Array(RAW.proteins.length).fill(0);
+    if(!newSamples.length&&!newData.proteins.length){alert('No new samples or proteins found in file');return}
+
+    const oldProteinCount=RAW.proteins.length;
+    const newProteinCount=newData.proteins.length;
+
+    // Tag every new protein with its source file (parser sets this; ensure)
+    newData.proteins.forEach(p=>{if(!p.source_file) p.source_file=newData.filename});
+
+    // Extend RAW.proteins
+    RAW.proteins.push(...newData.proteins);
+
+    // Union of quant types (keep a stable order: existing first, then any new)
+    const allQts=[...RAW.quant_types];
+    newData.quant_types.forEach(qt=>{if(!allQts.includes(qt)) allQts.push(qt)});
+
+    // Pad existing samples with zeros for the new proteins, AND ensure
+    // every quant type slot exists for every existing sample.
+    allQts.forEach(qt=>{
+        if(!RAW.quant_data[qt]) RAW.quant_data[qt]={};
+        RAW.samples.forEach(s=>{
+            const arr=RAW.quant_data[qt][s];
+            if(!arr){
+                // This sample didn't have data for this quant type (e.g. file 1
+                // had Intensity but not iBAQ; file 2 has iBAQ). Initialise.
+                RAW.quant_data[qt][s]=new Array(oldProteinCount+newProteinCount).fill(0);
+            } else {
+                // Pad to the new total length
+                while(arr.length<oldProteinCount) arr.push(0);
+                arr.length=oldProteinCount; // truncate any over-length stray (paranoia)
+                for(let k=0;k<newProteinCount;k++) arr.push(0);
             }
         });
     });
-    for(const[prefix,samples]of Object.entries(newData.suggested_groups)){
+
+    // Add new samples: zeros for old proteins + their real values for new proteins
+    newSamples.forEach(s=>{
+        RAW.sample_source[s]=newData.filename;
+        allQts.forEach(qt=>{
+            if(!RAW.quant_data[qt]) RAW.quant_data[qt]={};
+            const tail=(newData.quant_data[qt]&&newData.quant_data[qt][s])
+                ? newData.quant_data[qt][s].slice(0,newProteinCount)
+                : new Array(newProteinCount).fill(0);
+            // Pad tail to exactly newProteinCount in case parser produced fewer
+            while(tail.length<newProteinCount) tail.push(0);
+            RAW.quant_data[qt][s]=new Array(oldProteinCount).fill(0).concat(tail);
+        });
+    });
+    RAW.samples.push(...newSamples);
+    RAW.quant_types=allQts;
+
+    // Sample-source tracking for samples already in RAW (in case they weren't tagged)
+    if(newData.sample_source){
+        Object.keys(newData.sample_source).forEach(s=>{
+            if(!RAW.sample_source[s]) RAW.sample_source[s]=newData.sample_source[s];
+        });
+    }
+
+    // Suggested groups merging — disambiguate name collisions by tagging with source
+    for(const[prefix,samples]of Object.entries(newData.suggested_groups||{})){
         const newInGroup=samples.filter(s=>newSamples.includes(s));
-        if(newInGroup.length){
-            if(RAW.suggested_groups[prefix])RAW.suggested_groups[prefix].push(...newInGroup);
-            else RAW.suggested_groups[prefix]=newInGroup;
+        if(!newInGroup.length) continue;
+        let key=prefix;
+        // If a group with this name already exists from a different source, append a suffix
+        if(RAW.suggested_groups[key]){
+            const existingSources=new Set(RAW.suggested_groups[key].map(s=>RAW.sample_source[s]).filter(Boolean));
+            if(!existingSources.has(newData.filename)){
+                key=prefix+' ('+newData.filename.replace(/\.[^.]+$/,'').slice(0,20)+')';
+            }
         }
+        if(RAW.suggested_groups[key]) RAW.suggested_groups[key].push(...newInGroup);
+        else RAW.suggested_groups[key]=newInGroup;
     }
     RAW.total_proteins=RAW.proteins.length;
     RAW.filename+=' + '+newData.filename;
@@ -1974,8 +2043,10 @@ function buildProcessedData(){
     const rmContam = document.getElementById('norm-rm-contam')?.checked;
     if(normOn){
         const totals = {};
+        const sourceOf = (RAW.sample_source||{});
         RAW.samples.forEach(s => {
             const sampleVals = rawQd[s] || [];
+            const sampleSource = sourceOf[s] || null;
             let sum = 0;
             for(let i = 0; i < RAW.proteins.length; i++){
                 const p = RAW.proteins[i];
@@ -1984,6 +2055,11 @@ function buildProcessedData(){
                 if(p.peptides < 1) continue;
                 // Contaminants: included or excluded per checkbox
                 if(rmContam && p.potential_contaminant) continue;
+                // Multi-file: only count proteins from the SAME source as this
+                // sample (otherwise sum is always 0 → division-by-zero ruins
+                // the scale factor). When only one file is loaded, source_file
+                // is the same for every protein so this is a no-op.
+                if(sampleSource && (p.source_file||'') && (p.source_file||'') !== sampleSource) continue;
                 // Honour organism filter so denominator matches analysis scope
                 if(filterByOrganism){
                     const pid = p.majority_id || p.id || '';
@@ -1991,11 +2067,18 @@ function buildProcessedData(){
                 }
                 sum += sampleVals[i] || 0;
             }
-            totals[s] = sum || 1;
+            totals[s] = sum;
         });
-        const medianTotal = median(Object.values(totals));
+        // Use median of NON-ZERO totals so a sample whose source doesn't include
+        // the chosen organism doesn't drag the median to 0.
+        const nonZero = Object.values(totals).filter(v => v > 0);
+        const medianTotal = nonZero.length ? median(nonZero) : 1;
         RAW.samples.forEach(s => {
-            const scale = medianTotal / totals[s];
+            const t = totals[s];
+            // If a sample has zero total under this filter (e.g. organism-restricted
+            // normalisation but the sample is from a different organism), leave it
+            // unscaled rather than blowing up its values to infinity.
+            const scale = (t > 0) ? medianTotal / t : 1;
             for(let fi = 0; fi < PROC_FIDX.length; fi++) matrix[s][fi] *= scale;
         });
     }
@@ -2051,6 +2134,70 @@ function grpVals(fi,grp,qd,fidx){
     return[grpMean(fi,grp,qd,fidx)];
 }
 function grpColor(grp){const b=BINS.find(b=>b.label===grp);return b?b.color:DERIVED.find(d=>d.name===grp)?'#bc8cff':'#8b949e'}
+// ── Multi-file source helpers ──
+// Returns the source filename for a sample, or null if unknown.
+function _sourceOfSample(s){return RAW&&RAW.sample_source?RAW.sample_source[s]||null:null}
+// Returns the unique source file for a list of sample names, or null if empty/mixed.
+function _uniqueSourceForSamples(sampleNames){
+    if(!sampleNames||!sampleNames.length) return null;
+    const sources=new Set();
+    sampleNames.forEach(s=>{const src=_sourceOfSample(s);if(src) sources.add(src)});
+    return sources.size===1?[...sources][0]:null;
+}
+// Returns the unique source file for a group, or null if mixed/unknown.
+function _sourceOfGroup(label){
+    const bin=BINS.find(b=>b.label===label);
+    if(!bin) return null;
+    return _uniqueSourceForSamples(bin.samples);
+}
+// Returns the set of source files spanned by the given groups.
+function _sourceSetForGroups(labels){
+    const sources=new Set();
+    labels.forEach(g=>{
+        const bin=BINS.find(b=>b.label===g);
+        if(!bin) return;
+        bin.samples.forEach(s=>{const src=_sourceOfSample(s);if(src) sources.add(src)});
+    });
+    return sources;
+}
+// Validates that all groups come from the same source file.
+// Returns {ok:true, source:<filename>|null} or {ok:false, error:'...'}.
+function _validateSameSource(labels){
+    const sources=_sourceSetForGroups(labels);
+    if(sources.size>1){
+        return{ok:false,error:'Cannot compare groups from different source files:\n  • '+[...sources].join('\n  • ')+'\n\nSamples from different proteinGroups.txt files have different protein sets, so direct comparison is not statistically valid. Either restrict each plot to one source file, or merge the files upstream by orthologous protein IDs.'};
+    }
+    return{ok:true,source:sources.size?[...sources][0]:null};
+}
+// Returns the subset of fidx that belongs to a particular source file.
+// If srcFile is null, returns fidx unchanged.
+function _fidxForSource(fidx,srcFile){
+    if(!srcFile||!RAW||!RAW.proteins) return fidx;
+    return fidx.filter(i=>{
+        const p=RAW.proteins[i];
+        return p&&(p.source_file||'')===srcFile;
+    });
+}
+// Number of distinct source files currently loaded.
+function _sourceFileCount(){
+    if(!RAW||!RAW.sample_source) return 1;
+    return new Set(Object.values(RAW.sample_source)).size;
+}
+// Subset (qd, fidx) to only proteins from the given source file.
+// qd[sample] is indexed by FILTERED POSITION (0..fidx.length-1), so we keep the
+// matching positions in lockstep with the new fidx.
+function _restrictData(qd,fidx,srcFile){
+    if(!srcFile||!RAW||!RAW.proteins) return{qd,fidx};
+    const keepPos=[],newFidx=[];
+    for(let pos=0;pos<fidx.length;pos++){
+        const p=RAW.proteins[fidx[pos]];
+        if(p&&(p.source_file||'')===srcFile){keepPos.push(pos);newFidx.push(fidx[pos])}
+    }
+    const newQd={};
+    Object.keys(qd).forEach(s=>{newQd[s]=keepPos.map(pos=>qd[s][pos])});
+    return{qd:newQd,fidx:newFidx};
+}
+
 function pLabel(fidx,fi){const p=RAW.proteins[fidx[fi]];const g=p.gene_name||p.majority_id||p.id;return g.length>40?g.slice(0,37)+'...':g}
 function pHoverLabel(fidx,fi){const p=RAW.proteins[fidx[fi]];const pid=p.majority_id||p.id||'';const gene=p.gene_name||'';if(gene&&gene!==pid)return gene+'<br>'+pid;return pid}
 function pFullLabel(fidx,fi){const p=RAW.proteins[fidx[fi]];return (p.majority_id||p.id)+'\n'+(p.gene_name||'')}
@@ -2548,6 +2695,46 @@ function addPlotToCanvas(type){
         gy='';
         title='Abundance: '+gx;
     }
+
+    // ── Multi-file source validation ──
+    // When more than one proteinGroups.txt is loaded, samples from different
+    // files have completely different protein sets — comparing groups across
+    // files would produce nonsense statistics. Block it explicitly.
+    if(_sourceFileCount()>1){
+        let groupsToCheck=[];
+        if(type==='pca') groupsToCheck=gx.split(',').filter(Boolean);
+        else if(type==='unique'){
+            groupsToCheck=[config.featuredGroup,...(config.excludeGroups||[])].filter(Boolean);
+            if(config.controlGroup) groupsToCheck.push(config.controlGroup);
+        }
+        else if(type==='abundance'){
+            if(config.source==='group') groupsToCheck=[config.group];
+            else {
+                // Single-sample mode — validate the sample's source is consistent
+                const src=_sourceOfSample(config.sample);
+                if(!src){alert('Cannot determine source file for sample '+config.sample);return}
+                config._sourceFile=src;
+                groupsToCheck=[]; // already validated
+            }
+        }
+        else if(type==='dotplot'&&config.intraGroup){
+            const sx=config.intraSampleX, sy=config.intraSampleY;
+            const srcX=_sourceOfSample(sx), srcY=_sourceOfSample(sy);
+            if(srcX&&srcY&&srcX!==srcY){
+                alert('Cannot compare samples from different source files:\n  • '+srcX+' (sample '+sx+')\n  • '+srcY+' (sample '+sy+')\n\nProteins are not directly comparable across files.');
+                return;
+            }
+            config._sourceFile=srcX||srcY||null;
+            groupsToCheck=[];
+        }
+        else groupsToCheck=[gx,gy].filter(Boolean);
+        if(groupsToCheck.length){
+            const v=_validateSameSource(groupsToCheck);
+            if(!v.ok){alert(v.error);return}
+            config._sourceFile=v.source||null;
+        }
+    }
+
     CANVAS_PLOTS.push({id:nextPlotId-1,type,config,plotId,title});
     updateStatsMethodsPanel();
 
@@ -2665,12 +2852,20 @@ function renderPlot(p,qd,fidx){
     const chart=new ProkerChart(div,{theme:getChartTheme()});
     CHARTS[p.plotId]=chart;
 
-    if(p.type==='enrichment') buildEnrichmentConfig(chart,p,qd,fidx);
-    else if(p.type==='unique') buildUniqueConfig(chart,p,qd,fidx);
-    else if(p.type==='volcano') buildVolcanoConfig(chart,p,qd,fidx);
-    else if(p.type==='dotplot') buildDotplotConfig(chart,p,qd,fidx);
-    else if(p.type==='pca') buildPCAConfig(chart,p,qd,fidx);
-    else if(p.type==='abundance') buildAbundanceConfig(chart,p,qd,fidx);
+    // When multiple source files are loaded, restrict each plot to its own
+    // file's proteins so cross-file zero padding doesn't pollute the analysis.
+    let useQd=qd, useFidx=fidx;
+    if(p.config&&p.config._sourceFile&&_sourceFileCount()>1){
+        const r=_restrictData(qd,fidx,p.config._sourceFile);
+        useQd=r.qd; useFidx=r.fidx;
+    }
+
+    if(p.type==='enrichment') buildEnrichmentConfig(chart,p,useQd,useFidx);
+    else if(p.type==='unique') buildUniqueConfig(chart,p,useQd,useFidx);
+    else if(p.type==='volcano') buildVolcanoConfig(chart,p,useQd,useFidx);
+    else if(p.type==='dotplot') buildDotplotConfig(chart,p,useQd,useFidx);
+    else if(p.type==='pca') buildPCAConfig(chart,p,useQd,useFidx);
+    else if(p.type==='abundance') buildAbundanceConfig(chart,p,useQd,useFidx);
 
     chart.on('dblclick',()=>openGraphSettingsForPlot(p.plotId));
     chart.on('resetcolors',()=>{p._forceUpdate=true;const{data:q}=getQData();renderPlot(p,q,getFilteredIdx())});
