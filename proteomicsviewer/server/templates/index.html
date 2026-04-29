@@ -6,6 +6,7 @@
 <title>Pro-ker</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230d1117'/%3E%3Cg transform='translate(2,4) rotate(-12,20,28)'%3E%3Crect x='2' y='3' width='30' height='44' rx='4' fill='%23222' stroke='%23222' stroke-width='2'/%3E%3Crect x='4' y='5' width='26' height='40' rx='3' fill='white'/%3E%3Ctext x='9' y='15' font-size='8' font-weight='700' fill='%23dc2626' font-family='Arial,sans-serif'%3E2%3C/text%3E%3Cpath d='M10,18.5 l1.8,-2.5 1.8,2.5 -1.8,2.5z' fill='%23dc2626'/%3E%3Ctext x='17' y='32' font-size='15' font-weight='700' fill='%23dc2626' font-family='Arial,sans-serif' text-anchor='middle'%3E2%3C/text%3E%3C/g%3E%3Cg transform='translate(2,4) rotate(4,40,28)'%3E%3Crect x='26' y='1' width='33' height='48' rx='4' fill='%23222' stroke='%23222' stroke-width='2'/%3E%3Crect x='28' y='3' width='29' height='44' rx='3' fill='white'/%3E%3Ctext x='33' y='13' font-size='8' font-weight='700' fill='%23dc2626' font-family='Arial,sans-serif'%3E2%3C/text%3E%3Cpath d='M34,16.5 l1.8,-2.5 1.8,2.5 -1.8,2.5z' fill='%23dc2626'/%3E%3Ctext x='42.5' y='33' font-size='17' font-weight='700' fill='%23dc2626' font-family='Arial,sans-serif' text-anchor='middle'%3E2%3C/text%3E%3Cpath d='M48,39 l2,-3 2,3 -2,3z' fill='%23dc2626'/%3E%3C/g%3E%3C/svg%3E">
 <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="/proker-charts.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -241,10 +242,26 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 <script>
 window.onerror=function(msg,url,line){document.title='JS ERROR: '+msg+' line:'+line;console.error('INIT ERROR:',msg,'line:',line)};
 // Early-defined upload functions so inline handlers work
-var RAW=null, pendingFile=null;
+var RAW=null, pendingFile=null, pendingFileQueue=[];
 function handleIncoming(file){
     if(RAW){pendingFile=file;document.getElementById('file-modal').classList.remove('hidden');return}
     uploadFile(file,false);
+}
+function handleMultipleFiles(files){
+    if(!files||!files.length)return;
+    if(files.length===1){handleIncoming(files[0]);return}
+    if(RAW){
+        // Stash all files; modal handlers will process them
+        pendingFile=files[0];
+        pendingFileQueue=files.slice(1);
+        document.getElementById('file-modal').classList.remove('hidden');
+        return;
+    }
+    // Cold start: load first as fresh, then append rest sequentially
+    (async()=>{
+        await uploadFile(files[0],false);
+        for(var i=1;i<files.length;i++) await uploadFile(files[i],true);
+    })();
 }
 async function uploadFile(file,append){
     document.getElementById('upload-error').textContent='';
@@ -253,7 +270,12 @@ async function uploadFile(file,append){
         var resp=await fetch('/api/upload',{method:'POST',body:form});
         if(!resp.ok){var err=await resp.json();throw new Error(err.detail||'Upload failed')}
         var data=await resp.json();
-        if(append&&RAW){mergeData(data)}else{RAW=data}
+        if(append&&RAW){mergeData(data)}
+        else{
+            RAW=data;
+            // Cache raw file (raw_headers/raw_rows) per source for export
+            RAW.raw_files=[{filename:data.filename,headers:data.raw_headers||[],rows:data.raw_rows||[]}];
+        }
         initGrouping();
     }catch(e){document.getElementById('upload-error').textContent=e.message}
 }
@@ -479,7 +501,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.3.1</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.4.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -555,8 +577,8 @@ async function uploadFile(file,append){
 <aside id="left-panel">
 
 <!-- ── UPLOAD TAB ── -->
-<input type="file" id="file-input" accept=".txt,.tsv,.csv"
-    onchange="if(this.files.length){handleIncoming(this.files[0]);this.value=''}"
+<input type="file" id="file-input" accept=".txt,.tsv,.csv" multiple
+    onchange="if(this.files.length){handleMultipleFiles([...this.files]);this.value=''}"
     style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0,0,0,0)">
 <div class="tab-panel" data-for="upload">
     <!-- Compact re-upload (shown after file loaded) -->
@@ -570,7 +592,7 @@ async function uploadFile(file,append){
              onclick="document.getElementById('file-input').click()"
              ondragover="event.preventDefault();event.stopPropagation();this.classList.add('dragover')"
              ondragleave="this.classList.remove('dragover')"
-             ondrop="event.preventDefault();event.stopPropagation();this.classList.remove('dragover');if(event.dataTransfer.files.length)handleIncoming(event.dataTransfer.files[0])">
+             ondrop="event.preventDefault();event.stopPropagation();this.classList.remove('dragover');if(event.dataTransfer.files.length)handleMultipleFiles([...event.dataTransfer.files])">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="pointer-events:none"><path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
             <div class="uz-text" style="pointer-events:none">Drop proteinGroups.txt here</div>
             <div class="uz-hint" style="pointer-events:none">or click to browse</div>
@@ -731,8 +753,12 @@ async function uploadFile(file,append){
     </div>
     <div class="panel-section">
         <div class="section-label">Export Data</div>
-        <button class="btn-primary" onclick="exportCSV()" style="font-size:14px;padding:12px">Export Analysis as CSV</button>
-        <div style="font-size:11px;color:var(--text-sec);margin-top:6px">Exports raw data, processed data, group assignments, processing settings, volcano plot statistics, PCA scores, and analysis metadata.</div>
+        <div style="display:flex;gap:6px">
+            <button class="btn-primary" onclick="exportAnalysis('xlsx')" style="font-size:13px;padding:10px;flex:1">Export as XLSX</button>
+            <button class="btn-primary" onclick="exportAnalysis('csv')" style="font-size:13px;padding:10px;flex:1;background:var(--card);color:var(--text);border:1px solid var(--border)">CSV</button>
+        </div>
+        <label class="checkbox-row" style="margin-top:8px;font-size:11px"><input type="checkbox" id="export-include-raw" checked> Include raw proteinGroups.txt</label>
+        <div style="font-size:11px;color:var(--text-sec);margin-top:4px">XLSX puts each analysis (raw file, parsed data, processed data, per-protein log2FC + statistics, PCA scores, volcano settings) on its own sheet. CSV concatenates everything into one file.</div>
     </div>
 </div>
 
@@ -793,7 +819,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='4.3.1';
+var PROKER_VERSION='4.4.0';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -974,7 +1000,38 @@ function openNativeColorPicker(currentColor,onPick){
 }
 
 function tbBase(){
-    return `<button onclick="addCanvasTextBox()" title="Add text box" style="font-size:10px">+ Text</button><button onclick="addCanvasLine()" title="Add line" style="font-size:10px">+ Line</button><button onclick="addCanvasShape()" title="Add shape" style="font-size:10px">+ Shape</button>`;
+    return `<button onclick="addCanvasTextBox()" title="Add text box" style="font-size:10px">+ Text</button><button onclick="addCanvasLine()" title="Add line" style="font-size:10px">+ Line</button><button onclick="showShapeMenu(this)" title="Pick a shape to add" style="font-size:10px">+ Shape ▾</button>`;
+}
+
+function showShapeMenu(anchor){
+    document.querySelectorAll('.shape-menu').forEach(m=>m.remove());
+    const menu=document.createElement('div');
+    menu.className='shape-menu';
+    const r=anchor.getBoundingClientRect();
+    menu.style.cssText='position:fixed;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px;box-shadow:0 6px 18px rgba(0,0,0,.6);display:flex;gap:2px;left:'+r.left+'px;top:'+(r.bottom+2)+'px';
+    const shapes=[
+        {t:'rectangle',svg:'<rect x="3" y="6" width="18" height="12" fill="none" stroke="currentColor" stroke-width="2"/>'},
+        {t:'circle',svg:'<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/>'},
+        {t:'ellipse',svg:'<ellipse cx="12" cy="12" rx="9" ry="6" fill="none" stroke="currentColor" stroke-width="2"/>'},
+        {t:'diamond',svg:'<polygon points="12,3 21,12 12,21 3,12" fill="none" stroke="currentColor" stroke-width="2"/>'},
+        {t:'triangle',svg:'<polygon points="12,3 21,21 3,21" fill="none" stroke="currentColor" stroke-width="2"/>'},
+    ];
+    shapes.forEach(s=>{
+        const btn=document.createElement('button');
+        btn.title=s.t.charAt(0).toUpperCase()+s.t.slice(1);
+        btn.style.cssText='width:32px;height:32px;border:1px solid transparent;border-radius:4px;background:transparent;color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0';
+        btn.innerHTML='<svg width="20" height="20" viewBox="0 0 24 24">'+s.svg+'</svg>';
+        btn.onmouseenter=()=>{btn.style.background='var(--card)';btn.style.borderColor='var(--accent)'};
+        btn.onmouseleave=()=>{btn.style.background='transparent';btn.style.borderColor='transparent'};
+        btn.onclick=()=>{addCanvasShape(s.t);menu.remove()};
+        menu.appendChild(btn);
+    });
+    document.body.appendChild(menu);
+    setTimeout(()=>{
+        document.addEventListener('mousedown',function close(e){
+            if(!menu.contains(e.target)){menu.remove();document.removeEventListener('mousedown',close)}
+        });
+    },10);
 }
 
 function updateToolbar(el,pointData){
@@ -1199,9 +1256,22 @@ document.addEventListener('dragover',e=>{if(hasFileType(e.dataTransfer)){e.preve
 document.addEventListener('drop',e=>{if(!hasFileType(e.dataTransfer))return;e.preventDefault();e.stopPropagation();if(e.dataTransfer.files.length)handleIncoming(e.dataTransfer.files[0])},false);
 
 // handleIncoming and uploadFile defined in early script block
-function closeFileModal(){pendingFile=null;document.getElementById('file-modal').classList.add('hidden')}
-function fileModalReplace(){document.getElementById('file-modal').classList.add('hidden');resetState();uploadFile(pendingFile,false);pendingFile=null}
-function fileModalAppend(){document.getElementById('file-modal').classList.add('hidden');uploadFile(pendingFile,true);pendingFile=null}
+function closeFileModal(){pendingFile=null;pendingFileQueue=[];document.getElementById('file-modal').classList.add('hidden')}
+async function fileModalReplace(){
+    document.getElementById('file-modal').classList.add('hidden');
+    resetState();
+    const first=pendingFile,queue=pendingFileQueue.slice();
+    pendingFile=null;pendingFileQueue=[];
+    await uploadFile(first,false);
+    for(var i=0;i<queue.length;i++) await uploadFile(queue[i],true);
+}
+async function fileModalAppend(){
+    document.getElementById('file-modal').classList.add('hidden');
+    const first=pendingFile,queue=pendingFileQueue.slice();
+    pendingFile=null;pendingFileQueue=[];
+    await uploadFile(first,true);
+    for(var i=0;i<queue.length;i++) await uploadFile(queue[i],true);
+}
 
 function resetState(){RAW=null;BINS=[];UNASSIGNED=[];ANALYSES=[];DERIVED=[];CANVAS_PLOTS=[];nextBinId=1;nextAnaId=1;nextPlotId=1;SELECTED.clear();
     document.getElementById('canvas').innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>';
@@ -1240,6 +1310,11 @@ function mergeData(newData){
     }
     RAW.total_proteins=RAW.proteins.length;
     RAW.filename+=' + '+newData.filename;
+    // Track raw file content per source for export
+    if(!RAW.raw_files)RAW.raw_files=[];
+    if(newData.raw_headers||newData.raw_rows){
+        RAW.raw_files.push({filename:newData.filename,headers:newData.raw_headers||[],rows:newData.raw_rows||[]});
+    }
 }
 
 (async function(){try{const r=await fetch('/api/data');if(r.ok){RAW=await r.json();if(RAW.proteins)initGrouping()}}catch(e){}})();
@@ -2065,8 +2140,11 @@ function imputeValues(vA,vB,method,allVals,allSamples,qd,fidx,fi){
 }
 
 // PCA (dual method for n_samples << n_features)
-function computePCA(sampleNames,qd,fidx){
-    const n=sampleNames.length,m=fidx.length;
+function computePCA(sampleNames,qd,fidx,usePositions){
+    // usePositions (optional): subset of filtered positions (0..fidx.length-1) to use.
+    // If omitted, uses every position 0..fidx.length-1 (current behaviour).
+    const positions=usePositions&&usePositions.length?usePositions:Array.from({length:fidx.length},(_,i)=>i);
+    const n=sampleNames.length,m=positions.length;
     if(n<2||m<1) return{scores:sampleNames.map(s=>({name:s,pc1:0,pc2:0})),varExpl:[0,0]};
 
     // Build n×m data matrix — qd[s] is already indexed by filtered position (0..m-1)
@@ -2074,7 +2152,7 @@ function computePCA(sampleNames,qd,fidx){
     const colMean=new Array(m).fill(0);
     sampleNames.forEach(s=>{
         const row=[];
-        for(let fi=0;fi<m;fi++) row.push(qd[s]?qd[s][fi]:0);
+        for(let pi=0;pi<m;pi++){const fi=positions[pi];row.push(qd[s]?qd[s][fi]:0)}
         X.push(row);
         for(let j=0;j<m;j++) colMean[j]+=row[j];
     });
@@ -2160,6 +2238,7 @@ function showVizConfig(type){
     if(type==='pca'){
         html+=`<div class="af-row"><span class="af-lbl">Samples from groups</span><div id="pca-grp-checks">${names.map(n=>`<label class="checkbox-row"><input type="checkbox" value="${n}" checked>${n}</label>`).join('')}</div></div>`;
         html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="pca-ellipses" checked> Show 95% confidence ellipses</label>`;
+        html+=`<label class="checkbox-row" style="margin-top:4px" title="When enabled species highlights or GOI exist, restrict PCA to only those proteins."><input type="checkbox" id="pca-restrict-highlights"> Restrict to highlighted proteins (species / GOI)</label>`;
     } else if(type==='abundance'){
         // Build sample options from RAW.samples
         const sampleOpts=RAW?RAW.samples.map(s=>`<option value="${s}">${s}</option>`).join(''):'';
@@ -2292,7 +2371,7 @@ function addPlotToCanvas(type){
         title={enrichment:'Ranked Enrichment - '+gx+'/'+gy,unique:'Unique Proteins',volcano:'Volcano: '+gx+' vs '+gy,dotplot:gx+' vs '+gy}[type];
     }
     const config={gx,gy,type};
-    if(type==='pca'){config.showEllipses=document.getElementById('pca-ellipses')?.checked!==false}
+    if(type==='pca'){config.showEllipses=document.getElementById('pca-ellipses')?.checked!==false;config.restrictToHighlights=document.getElementById('pca-restrict-highlights')?.checked||false}
     if(type==='enrichment'){
         config.style=document.getElementById('vc-enr-style')?.value||'dot';
         config.log2=document.getElementById('vc-enr-log2')?.checked||false;
@@ -2544,28 +2623,53 @@ function buildUniqueConfig(chart,p,qd,fidx){
     else if(mode==='exclusive') excludeGroups=allGroups.filter(g=>g!==featured);
     const items=[];
     for(let fi=0;fi<fidx.length;fi++){
-        const fm=mean(grpVals(fi,featured,qd,fidx));if(fm<=0)continue;
+        const fm=mean(grpVals(fi,featured,qd,fidx));if(!(fm>0))continue;
         let found=false;for(const eg of excludeGroups){if(eg===featured)continue;if(mean(grpVals(fi,eg,qd,fidx))>0){found=true;break}}
         if(found)continue;
         items.push({label:pLabel(fidx,fi),hoverLabel:pHoverLabel(fidx,fi),abund:fm,full:pFullLabel(fidx,fi),pidx:fidx[fi]});
     }
-    items.sort((a,b)=>a.abund-b.abund);const shown=items.slice(0,80);
-    // Beeswarm: compute collision based on data range
-    // The Y collision threshold is proportional to the data range / number of points
-    const yMin=shown.length?shown[0].abund:0;
-    const yMax=shown.length?shown[shown.length-1].abund:1;
-    const yRange=yMax-yMin||1;
-    const dotSize=yRange/Math.max(shown.length,10)*1.2; // Y distance that counts as overlapping
-    const xStep=0.035; // horizontal offset step
+
+    // Diagnostic: empty result
+    if(!items.length){
+        const exMsg=excludeGroups.length?' excluded by: '+excludeGroups.join(', '):' (no exclusion criteria)';
+        chart.setData([]).setXTitle('').setYTitle('No unique proteins for "'+featured+'"'+exMsg).render();
+        return;
+    }
+
+    items.sort((a,b)=>a.abund-b.abund);
+    const total=items.length;
+    const shown=items.slice(-200); // show top 200 most-abundant (was 80 from low end)
+    // Re-sort ascending for beeswarm placement (lowest at bottom)
+    shown.sort((a,b)=>a.abund-b.abund);
+
+    // Robust Y-range: extend by 5% on top, anchor min at 0 if positive data spans an order of magnitude
+    const dataMin=shown[0].abund, dataMax=shown[shown.length-1].abund;
+    const dataRange=dataMax-dataMin;
+    let yLo, yHi;
+    if(dataRange===0){
+        // All values identical — pad symmetrically so the dot is visible
+        const pad=Math.abs(dataMax)*0.1||1;
+        yLo=dataMax-pad; yHi=dataMax+pad;
+    } else {
+        const pad=dataRange*0.08;
+        yLo=dataMin-pad; yHi=dataMax+pad;
+        // If data spans >1 order of magnitude, anchor to 0
+        if(dataMin>0&&dataMax/dataMin>10) yLo=0;
+    }
+
+    // Beeswarm: collision based on data range, proportionally
+    const yRange=yHi-yLo||1;
+    const dotSize=yRange/Math.max(shown.length,10)*1.2;
+    const xStep=0.035;
     const placed=[];
     const jittered=shown.map(d=>{
         let bestX=0;
         for(let attempt=0;attempt<30;attempt++){
             const tryX=attempt===0?0:((attempt%2?1:-1)*Math.ceil(attempt/2)*xStep);
             let collides=false;
-            for(const p of placed){
-                const dy=Math.abs(p.y-d.abund)/dotSize;
-                const dx=Math.abs(p.x-tryX)/xStep;
+            for(const pp of placed){
+                const dy=Math.abs(pp.y-d.abund)/dotSize;
+                const dx=Math.abs(pp.x-tryX)/xStep;
                 if(dy<1.0&&dx<0.9){collides=true;break}
             }
             if(!collides){bestX=tryX;break}
@@ -2575,8 +2679,21 @@ function buildUniqueConfig(chart,p,qd,fidx){
         return pt;
     });
     const mo=applyMarkerOverrides(jittered.map(d=>d.pidx),'#e6edf3',5,'circle');
-    chart.setData([{x:jittered.map(d=>d.x),y:jittered.map(d=>d.y),mode:'markers',marker:{size:mo.size,color:mo.color,symbol:mo.symbol},text:jittered.map(d=>d.hoverLabel+'<br>Abundance: '+fmtVal(d.y)),customdata:jittered.map(d=>d.full)}]);
-    chart.setChartTitle(p.title||'').setXTitle('').setYTitle('Abundance');
+    const subtitle=total>shown.length?' ('+shown.length+' of '+total+' shown, top by abundance)':' ('+total+' proteins)';
+    chart.setData([{
+        x:jittered.map(d=>d.x),
+        y:jittered.map(d=>d.y),
+        mode:'markers',
+        marker:{size:mo.size,color:mo.color,symbol:mo.symbol},
+        text:jittered.map(d=>d.hoverLabel+'<br>Abundance: '+fmtVal(d.y)),
+        customdata:jittered.map(d=>d.full)
+    }]);
+    chart.setChartTitle((p.title||'Unique to '+featured)+subtitle).setXTitle('').setYTitle('Abundance ('+featured+')');
+    // Force explicit ranges for consistent display
+    chart.setXRange(-0.5,0.5);
+    chart.setYRange(yLo,yHi);
+    // After render, mark range as auto so user edits still take precedence
+    chart._xManual=false; chart._yManual=false;
     const wrap=chart.container.closest('.canvas-plot');
     if(wrap&&!wrap.dataset.userResized){wrap.style.width='320px';wrap.dataset.userResized=''}
     chart.render();
@@ -2728,7 +2845,20 @@ function buildPCAConfig(chart,p,qd,fidx){
     const groups=p.config.gx.split(',');const sampleNames=[],sampleGroups=[];
     groups.forEach(g=>{const bin=BINS.find(b=>b.label===g);if(bin)bin.samples.forEach(s=>{sampleNames.push(s);sampleGroups.push(g)})});
     if(sampleNames.length<3){chart.setData([]).setXTitle('').setYTitle('Need ≥3 samples').render();return}
-    const pca=computePCA(sampleNames,qd,fidx);
+    // Optional restriction: only highlighted proteins (species/GOI)
+    let usePositions=null,restrictedNote='';
+    if(p.config.restrictToHighlights&&typeof hasActiveHighlights==='function'&&hasActiveHighlights()){
+        usePositions=[];
+        for(let fi=0;fi<fidx.length;fi++){
+            if(getHighlightColor(fidx[fi])!==null) usePositions.push(fi);
+        }
+        if(usePositions.length<2){
+            chart.setData([]).setXTitle('').setYTitle('Restricted set has <2 proteins ('+usePositions.length+'). Enable more highlights or uncheck the restriction.').render();
+            return;
+        }
+        restrictedNote=' — restricted to '+usePositions.length+' highlighted proteins';
+    }
+    const pca=computePCA(sampleNames,qd,fidx,usePositions);
     const traces=groups.map(g=>{const idx=sampleGroups.map((sg,i)=>sg===g?i:-1).filter(i=>i>=0);return{x:idx.map(i=>pca.scores[i].pc1),y:idx.map(i=>pca.scores[i].pc2),mode:'markers',marker:{size:5,color:grpColor(g),symbol:'circle'},text:idx.map(i=>pca.scores[i].name),customdata:idx.map(i=>g+': '+pca.scores[i].name)}});
     const showEllipses=p.config.showEllipses!==false;
     if(showEllipses){
@@ -2753,7 +2883,7 @@ function buildPCAConfig(chart,p,qd,fidx){
     } else {
         chart._ellipses=[];
     }
-    chart.setChartTitle(p.title||'').setData(traces).setXTitle('PC1 ('+pca.varExpl[0].toFixed(1)+'%)').setYTitle('PC2 ('+pca.varExpl[1].toFixed(1)+'%)').render();
+    chart.setChartTitle((p.title||'')+restrictedNote).setData(traces).setXTitle('PC1 ('+pca.varExpl[0].toFixed(1)+'%)').setYTitle('PC2 ('+pca.varExpl[1].toFixed(1)+'%)').render();
 }
 
 function buildAbundanceConfig(chart,p,qd,fidx){
@@ -3081,6 +3211,7 @@ function addCanvasLine(){
     document.addEventListener('mouseup',function(){
         if(lineDragState.ep||lineDragState.whole){lineDragState.ep=false;lineDragState.whole=false;document.body.style.cursor=''}
     });
+    canvas.appendChild(wrap);
     renderLine();
 }
 
@@ -3139,253 +3270,328 @@ function doExport(fmt){
     }
     document.getElementById('export-panel')?.classList.add('hidden');
 }
-function exportCSV(){
-    if(!RAW)return;
+// ================================================================
+// EXPORT: data builders (shared by CSV and XLSX paths)
+// ================================================================
+function _buildExportContext(){
     const{qt,data:qd}=getQData();
     const fidx=getFilteredIdx();
     const groups=BINS.filter(b=>b.samples.length>0);
     const allSamples=[];groups.forEach(g=>g.samples.forEach(s=>allSamples.push(s)));
+    return{qd,fidx,groups,allSamples};
+}
+
+function _buildMetadataRows(){
+    const ctx=_buildExportContext();
     const useIntensity=document.getElementById('proc-intensity')?.checked;
     const useLFQ=document.getElementById('proc-lfq')?.checked;
     const aggMode=isAggSum()?'Sum':'Average';
-
-    // Determine raw quant type (before processing)
-    const rawQt=RAW.quant_types.includes('Intensity')?'Intensity':RAW.quant_types[0];
-    const rawQd=RAW.quant_data[rawQt]||{};
-
-    let csv='';
-
-    // ── Sheet 1: Metadata ──
-    csv+='=== ANALYSIS METADATA ===\n';
-    csv+='Software,Pro-ker Proteomics Analysis\n';
-    csv+='Version,'+PROKER_VERSION+'\n';
-    csv+='Website,https://github.com/billy-ngo/proteomics-viewer\n';
-    csv+='Export Date,"'+new Date().toLocaleString()+'"\n';
-    csv+='Source File,"'+RAW.filename+'"\n';
-    csv+='Total Proteins (raw),'+RAW.total_proteins+'\n';
-    csv+='Proteins After Filtering,'+fidx.length+'\n';
-    csv+='Contaminants Removed,'+RAW.contaminants+'\n';
-    csv+='Reverse Hits Removed,'+RAW.reverse_hits+'\n';
-    csv+='\n';
-
-    // Processing settings
-    csv+='=== PROCESSING SETTINGS ===\n';
-    csv+='Quantification Type,"'+PROC_QT+'"\n';
-    csv+='Intensity Analysis,'+(useIntensity?'Yes':'No (raw spectral counts)')+'\n';
-    if(useIntensity) csv+='LFQ,'+(useLFQ?'Yes':'No')+'\n';
-    csv+='Aggregation Mode,'+aggMode+'\n';
+    const rows=[];
+    rows.push(['ANALYSIS METADATA','']);
+    rows.push(['Software','Pro-ker Proteomics Analysis']);
+    rows.push(['Version',PROKER_VERSION]);
+    rows.push(['Website','https://github.com/billy-ngo/proteomics-viewer']);
+    rows.push(['Export Date',new Date().toLocaleString()]);
+    rows.push(['Source File',RAW.filename]);
+    rows.push(['Total Proteins (raw)',RAW.total_proteins]);
+    rows.push(['Proteins After Filtering',ctx.fidx.length]);
+    rows.push(['Contaminants Removed',RAW.contaminants]);
+    rows.push(['Reverse Hits Removed',RAW.reverse_hits]);
+    rows.push(['','']);
+    rows.push(['PROCESSING SETTINGS','']);
+    rows.push(['Quantification Type',PROC_QT]);
+    rows.push(['Intensity Analysis',useIntensity?'Yes':'No (raw spectral counts)']);
+    if(useIntensity) rows.push(['LFQ',useLFQ?'Yes':'No']);
+    rows.push(['Aggregation Mode',aggMode]);
     const normOn=document.getElementById('proc-norm')?.checked;
-    csv+='Normalization,'+(normOn?'Yes':'No')+'\n';
+    rows.push(['Normalization',normOn?'Yes':'No']);
     if(normOn){
         const normScope=document.getElementById('norm-scope')?.value;
-        csv+='Normalization Scope,"'+(normScope==='organism'?'Within organism(s): '+getSelOrgs().join('; '):'All detected peptides')+'"\n';
-        csv+='Remove Contaminants Before Normalizing,'+(document.getElementById('norm-rm-contam')?.checked?'Yes':'No')+'\n';
+        rows.push(['Normalization Scope',normScope==='organism'?'Within organism(s): '+getSelOrgs().join('; '):'All detected peptides']);
+        rows.push(['Remove Contaminants Before Normalizing',document.getElementById('norm-rm-contam')?.checked?'Yes':'No']);
     }
     const pruneOn=document.getElementById('proc-prune')?.checked;
-    csv+='Pruning,'+(pruneOn?'Yes':'No')+'\n';
+    rows.push(['Pruning',pruneOn?'Yes':'No']);
     if(pruneOn){
-        csv+='Prune Metric,"'+document.getElementById('prune-metric')?.value+'"\n';
-        csv+='Prune Threshold,'+document.getElementById('prune-value')?.value+'\n';
-        csv+='Prune Aggregation,"'+document.getElementById('prune-agg')?.value+'"\n';
-        csv+='Prune Scope,"'+document.getElementById('prune-scope')?.value+'"\n';
+        rows.push(['Prune Metric',document.getElementById('prune-metric')?.value]);
+        rows.push(['Prune Threshold',document.getElementById('prune-value')?.value]);
+        rows.push(['Prune Aggregation',document.getElementById('prune-agg')?.value]);
+        rows.push(['Prune Scope',document.getElementById('prune-scope')?.value]);
     }
-    csv+='\n';
-
-    // Sample grouping
-    csv+='=== SAMPLE GROUPS ===\n';
-    csv+='Group,Samples\n';
-    groups.forEach(g=>{csv+='"'+g.label+'","'+g.samples.join('; ')+'"\n'});
-    if(UNASSIGNED.length) csv+='Unassigned,"'+UNASSIGNED.join('; ')+'"\n';
-    csv+='\n';
-
-    // Derived groups
+    rows.push(['','']);
+    rows.push(['SAMPLE GROUPS','']);
+    rows.push(['Group','Samples']);
+    ctx.groups.forEach(g=>rows.push([g.label,g.samples.join('; ')]));
+    if(UNASSIGNED.length) rows.push(['Unassigned',UNASSIGNED.join('; ')]);
     if(DERIVED.length){
-        csv+='=== DERIVED GROUPS ===\n';
-        csv+='Name,Operation,Left,Right\n';
+        rows.push(['','']);
+        rows.push(['DERIVED GROUPS','']);
+        rows.push(['Name','Operation','Left','Right']);
         const opSym={divide:'/',subtract:'-',add:'+',multiply:'*'};
-        DERIVED.forEach(d=>{csv+='"'+d.name+'","'+opSym[d.op]+'","'+d.left+'","'+d.right+'"\n'});
-        csv+='\n';
+        DERIVED.forEach(d=>rows.push([d.name,opSym[d.op],d.left,d.right]));
     }
-
-    // Saved analyses
     if(ANALYSES.length){
-        csv+='=== SAVED ANALYSES ===\n';
-        csv+='Name,Group X,Group Y\n';
-        ANALYSES.forEach(a=>{csv+='"'+a.name+'","'+a.groupX+'","'+a.groupY+'"\n'});
-        csv+='\n';
+        rows.push(['','']);
+        rows.push(['SAVED ANALYSES','']);
+        rows.push(['Name','Group X','Group Y']);
+        ANALYSES.forEach(a=>rows.push([a.name,a.groupX,a.groupY]));
     }
+    return rows;
+}
 
-    // ── Sheet 2: Raw Data (before processing) ──
-    csv+='=== RAW DATA ('+rawQt+') ===\n';
-    csv+='Protein ID,Gene Name,Mol Weight (kDa),Peptides,Unique Peptides,Sequence Coverage (%)';
-    allSamples.forEach(s=>csv+=','+s+' (raw)');
-    csv+='\n';
+function _buildParsedDataRows(){
+    const ctx=_buildExportContext();
+    const rawQt=RAW.quant_types.includes('Intensity')?'Intensity':RAW.quant_types[0];
+    const rawQd=RAW.quant_data[rawQt]||{};
+    const rows=[];
+    const hdr=['Protein ID','Gene Name','Mol Weight (kDa)','Peptides','Unique Peptides','Sequence Coverage (%)'];
+    ctx.allSamples.forEach(s=>hdr.push(s+' ('+rawQt+')'));
+    rows.push(hdr);
     for(let i=0;i<RAW.proteins.length;i++){
         const p=RAW.proteins[i];
         if(p.potential_contaminant||p.reverse||p.only_identified_by_site)continue;
-        csv+='"'+p.majority_id+'","'+p.gene_name+'",'+p.mol_weight+','+p.peptides+','+p.unique_peptides+','+p.sequence_coverage;
-        allSamples.forEach(s=>{csv+=','+(rawQd[s]?rawQd[s][i]:0)});
-        csv+='\n';
+        const r=[p.majority_id,p.gene_name||'',p.mol_weight,p.peptides,p.unique_peptides,p.sequence_coverage];
+        ctx.allSamples.forEach(s=>r.push(rawQd[s]?rawQd[s][i]:0));
+        rows.push(r);
     }
-    csv+='\n';
+    return rows;
+}
 
-    // ── Sheet 3: Processed Data (after filtering + normalization) ──
-    csv+='=== PROCESSED DATA ('+PROC_QT+', '+aggMode+') ===\n';
-    csv+='Protein ID,Gene Name';
-    allSamples.forEach(s=>csv+=','+s+' (processed)');
-    groups.forEach(g=>csv+=','+g.label+' ('+aggMode.toLowerCase()+')');
-    csv+='\n';
-    for(let fi=0;fi<fidx.length;fi++){
-        const pi=fidx[fi];
-        const p=RAW.proteins[pi];
-        csv+='"'+p.majority_id+'","'+p.gene_name+'"';
-        allSamples.forEach(s=>{csv+=','+(qd[s]?qd[s][fi]:0)});
-        groups.forEach(g=>{csv+=','+grpMean(fi,g.label,qd,fidx).toFixed(4)});
-        csv+='\n';
+function _buildProcessedDataRows(){
+    const ctx=_buildExportContext();
+    const aggMode=isAggSum()?'Sum':'Average';
+    const rows=[];
+    const hdr=['Protein ID','Gene Name'];
+    ctx.allSamples.forEach(s=>hdr.push(s+' (processed)'));
+    ctx.groups.forEach(g=>hdr.push(g.label+' ('+aggMode.toLowerCase()+')'));
+    rows.push(hdr);
+    for(let fi=0;fi<ctx.fidx.length;fi++){
+        const pi=ctx.fidx[fi];const p=RAW.proteins[pi];
+        const r=[p.majority_id,p.gene_name||''];
+        ctx.allSamples.forEach(s=>r.push(ctx.qd[s]?ctx.qd[s][fi]:0));
+        ctx.groups.forEach(g=>r.push(+grpMean(fi,g.label,ctx.qd,ctx.fidx).toFixed(4)));
+        rows.push(r);
     }
-    csv+='\n';
+    return rows;
+}
 
-    // ── Per-Protein Analysis (log2FC + statistics for every group pair) ──
-    // Collect all unique group pairs from enrichment, volcano, and saved analyses
+function _collectGroupPairs(){
     const pairSet=new Set();
-    CANVAS_PLOTS.forEach(cp=>{
-        if(cp.type==='enrichment'||cp.type==='volcano'){
-            pairSet.add(cp.config.gx+'|||'+cp.config.gy);
-        }
-    });
+    CANVAS_PLOTS.forEach(cp=>{if(cp.type==='enrichment'||cp.type==='volcano') pairSet.add(cp.config.gx+'|||'+cp.config.gy)});
     ANALYSES.forEach(a=>pairSet.add(a.groupX+'|||'+a.groupY));
-    const pairs=[...pairSet].map(s=>{const[gx,gy]=s.split('|||');return{gx,gy}});
-
-    // Collect volcano configs for pairs that have statistical analysis
     const volcanoByPair={};
     CANVAS_PLOTS.filter(cp=>cp.type==='volcano').forEach(vp=>{
         const key=vp.config.gx+'|||'+vp.config.gy;
         if(!volcanoByPair[key]) volcanoByPair[key]=vp.config;
     });
+    return{pairs:[...pairSet].map(s=>{const[gx,gy]=s.split('|||');return{gx,gy}}),volcanoByPair};
+}
 
-    if(pairs.length>0){
-        csv+='=== PER-PROTEIN ANALYSIS ===\n';
-        // Build header
-        let hdr='Protein ID,Gene Name';
-        groups.forEach(g=>{hdr+=',Mean '+g.label});
-        pairs.forEach(pr=>{
-            hdr+=',Log2FC ('+pr.gx+'/'+pr.gy+')';
-            const vk=pr.gx+'|||'+pr.gy;
-            if(volcanoByPair[vk]){
-                hdr+=',P-value ('+pr.gx+' vs '+pr.gy+')';
-                hdr+=',FDR adj. P ('+pr.gx+' vs '+pr.gy+')';
-                hdr+=',Significant ('+pr.gx+' vs '+pr.gy+')';
-            }
-        });
-        csv+=hdr+'\n';
-
-        // Pre-compute volcano stats for each pair
-        const volcanoStats={};// key -> {fc[], rawP[], adjP[], sig[]}  indexed by fi
-        pairs.forEach(pr=>{
-            const vk=pr.gx+'|||'+pr.gy;
-            const vc=volcanoByPair[vk];
-            if(!vc)return;
-            const fcArr=[],rawPArr=[];
-            const doImpute=vc.impute,s0=vc.s0||0,impMethod=vc.imputeMethod||'perseus';
-            const fcT=vc.fc||1,fdrT=vc.fdr||0.05;
-            // Match buildVolcanoConfig: detect whether t-test is feasible and pre-build distributions
-            const _bx=BINS.find(b=>b.label===pr.gx),_by=BINS.find(b=>b.label===pr.gy);
-            const _canT=(_bx?_bx.samples.length:0)>=2&&(_by?_by.samples.length:0)>=2;
-            const _allSamples=(_bx?_bx.samples:[]).concat(_by?_by.samples:[]);
-            let _allVals=null;
-            if(impMethod==='perseus'&&doImpute){
-                _allVals=[];
-                for(let fi=0;fi<fidx.length;fi++){
-                    grpVals(fi,pr.gx,qd,fidx).concat(grpVals(fi,pr.gy,qd,fidx)).forEach(v=>{if(v>0)_allVals.push(v)});
-                }
-            }
-            for(let fi=0;fi<fidx.length;fi++){
-                let vA=grpVals(fi,pr.gx,qd,fidx),vB=grpVals(fi,pr.gy,qd,fidx);
-                const mA=mean(vA),mB=mean(vB);
-                if(mA===0||mB===0){fcArr.push(NaN);rawPArr.push(NaN);continue}
-                if(doImpute){
-                    const imp=imputeValues(vA,vB,impMethod,_allVals,_allSamples,qd,fidx,fi);
-                    vA=imp.a;vB=imp.b;
-                }
-                const fcVal=Math.log2(mean(vA)/mean(vB));
-                if(!isFinite(fcVal)){fcArr.push(NaN);rawPArr.push(NaN);continue}
-                fcArr.push(fcVal);
-                rawPArr.push(_canT?ttest(vA,vB,s0):NaN);
-            }
-            const validP=rawPArr.map(p=>isNaN(p)?1:p);
-            const adjP=bhFDR(validP);
-            volcanoStats[vk]={fc:fcArr,rawP:rawPArr,adjP,fcT,fdrT};
-        });
-
-        // Write rows
-        for(let fi=0;fi<fidx.length;fi++){
-            const pi=fidx[fi];const p=RAW.proteins[pi];
-            let row='"'+p.majority_id+'","'+(p.gene_name||'')+'"';
-            groups.forEach(g=>{row+=','+grpMean(fi,g.label,qd,fidx).toFixed(4)});
-            pairs.forEach(pr=>{
-                const mA=grpMean(fi,pr.gx,qd,fidx),mB=grpMean(fi,pr.gy,qd,fidx);
-                if(mA===0||mB===0){
-                    row+=',';
-                    const vk=pr.gx+'|||'+pr.gy;
-                    if(volcanoByPair[vk]) row+=',,,';
-                } else {
-                    row+=','+Math.log2(mA/mB).toFixed(4);
-                    const vk=pr.gx+'|||'+pr.gy;
-                    const vs=volcanoStats[vk];
-                    if(vs){
-                        const fc=vs.fc[fi],pv=vs.rawP[fi],ap=vs.adjP[fi];
-                        if(isNaN(fc)){row+=',,,'}
-                        else if(isNaN(pv)){
-                            // log2FC computed but t-test not feasible (e.g. <2 replicates)
-                            row+=',N/A,N/A,N/A (insufficient replicates)';
-                        }
-                        else{
-                            const sig=ap<vs.fdrT&&Math.abs(fc)>=vs.fcT;
-                            const dir=sig?(fc>0?'Up ('+pr.gx+')':'Down ('+pr.gy+')'):'NS';
-                            row+=','+pv.toExponential(4)+','+ap.toExponential(4)+','+dir;
-                        }
-                    }
-                }
-            });
-            csv+=row+'\n';
+function _buildPerProteinRows(){
+    const ctx=_buildExportContext();
+    const{pairs,volcanoByPair}=_collectGroupPairs();
+    if(!pairs.length) return null;
+    const rows=[];
+    const hdr=['Protein ID','Gene Name'];
+    ctx.groups.forEach(g=>hdr.push('Mean '+g.label));
+    pairs.forEach(pr=>{
+        hdr.push('Log2FC ('+pr.gx+'/'+pr.gy+')');
+        const vk=pr.gx+'|||'+pr.gy;
+        if(volcanoByPair[vk]){
+            hdr.push('P-value ('+pr.gx+' vs '+pr.gy+')');
+            hdr.push('FDR adj. P ('+pr.gx+' vs '+pr.gy+')');
+            hdr.push('Significant ('+pr.gx+' vs '+pr.gy+')');
         }
-        csv+='\n';
+    });
+    rows.push(hdr);
 
-        // Volcano settings summary
-        Object.entries(volcanoByPair).forEach(([key,vc])=>{
-            const[gx,gy]=key.split('|||');
-            csv+='Volcano Settings ('+gx+' vs '+gy+'),"FDR='+vc.fdr+', |FC|='+vc.fc+', Impute='+(vc.impute?'Yes ('+( vc.imputeMethod||'perseus')+')':'No')+', S0='+(vc.s0||0)+'"\n';
-        });
-        csv+='\n';
-    }
-
-    // ── PCA Scores ──
-    const pcaPlots=CANVAS_PLOTS.filter(cp=>cp.type==='pca');
-    pcaPlots.forEach(pp=>{
-        const pcaGroups=pp.config.gx.split(',');
-        const sampleNames=[],sampleGroups=[];
-        pcaGroups.forEach(g=>{const bin=BINS.find(b=>b.label===g);if(bin)bin.samples.forEach(s=>{sampleNames.push(s);sampleGroups.push(g)})});
-        if(sampleNames.length<3)return;
-        const pca=computePCA(sampleNames,qd,fidx);
-        csv+='=== PCA: '+pcaGroups.join(', ')+' ===\n';
-        csv+='Variance Explained,PC1='+pca.varExpl[0].toFixed(2)+'%,PC2='+pca.varExpl[1].toFixed(2)+'%\n';
-        csv+='Sample,Group,PC1,PC2\n';
-        pca.scores.forEach((sc,i)=>{
-            csv+='"'+sc.name+'","'+sampleGroups[i]+'",'+sc.pc1.toFixed(6)+','+sc.pc2.toFixed(6)+'\n';
-        });
-        csv+='\n';
+    // Pre-compute volcano stats per pair
+    const volcanoStats={};
+    pairs.forEach(pr=>{
+        const vk=pr.gx+'|||'+pr.gy;
+        const vc=volcanoByPair[vk];if(!vc)return;
+        const fcArr=[],rawPArr=[];
+        const doImpute=vc.impute,s0=vc.s0||0,impMethod=vc.imputeMethod||'perseus';
+        const fcT=vc.fc||1,fdrT=vc.fdr||0.05;
+        const _bx=BINS.find(b=>b.label===pr.gx),_by=BINS.find(b=>b.label===pr.gy);
+        const _canT=(_bx?_bx.samples.length:0)>=2&&(_by?_by.samples.length:0)>=2;
+        const _allSamples=(_bx?_bx.samples:[]).concat(_by?_by.samples:[]);
+        let _allVals=null;
+        if(impMethod==='perseus'&&doImpute){
+            _allVals=[];
+            for(let fi=0;fi<ctx.fidx.length;fi++){
+                grpVals(fi,pr.gx,ctx.qd,ctx.fidx).concat(grpVals(fi,pr.gy,ctx.qd,ctx.fidx)).forEach(v=>{if(v>0)_allVals.push(v)});
+            }
+        }
+        for(let fi=0;fi<ctx.fidx.length;fi++){
+            let vA=grpVals(fi,pr.gx,ctx.qd,ctx.fidx),vB=grpVals(fi,pr.gy,ctx.qd,ctx.fidx);
+            const mA=mean(vA),mB=mean(vB);
+            if(mA===0||mB===0){fcArr.push(NaN);rawPArr.push(NaN);continue}
+            if(doImpute){
+                const imp=imputeValues(vA,vB,impMethod,_allVals,_allSamples,ctx.qd,ctx.fidx,fi);
+                vA=imp.a;vB=imp.b;
+            }
+            const fcVal=Math.log2(mean(vA)/mean(vB));
+            if(!isFinite(fcVal)){fcArr.push(NaN);rawPArr.push(NaN);continue}
+            fcArr.push(fcVal);
+            rawPArr.push(_canT?ttest(vA,vB,s0):NaN);
+        }
+        const validP=rawPArr.map(pv=>isNaN(pv)?1:pv);
+        const adjP=bhFDR(validP);
+        volcanoStats[vk]={fc:fcArr,rawP:rawPArr,adjP,fcT,fdrT};
     });
 
-    // ── Credits ──
-    csv+='=== CREDITS ===\n';
-    csv+='Pro-ker Proteomics Analysis\n';
-    csv+='By Billy M Ngo (billy.ngo0108@gmail.com)\n';
-    csv+='https://github.com/billy-ngo/proteomics-viewer\n';
-    csv+='Ngo B.M. (2026). Pro-ker Proteomics Analysis [Software].\n';
+    for(let fi=0;fi<ctx.fidx.length;fi++){
+        const pi=ctx.fidx[fi];const p=RAW.proteins[pi];
+        const row=[p.majority_id,p.gene_name||''];
+        ctx.groups.forEach(g=>row.push(+grpMean(fi,g.label,ctx.qd,ctx.fidx).toFixed(4)));
+        pairs.forEach(pr=>{
+            const mA=grpMean(fi,pr.gx,ctx.qd,ctx.fidx),mB=grpMean(fi,pr.gy,ctx.qd,ctx.fidx);
+            const vk=pr.gx+'|||'+pr.gy;
+            if(mA===0||mB===0){
+                row.push('');
+                if(volcanoByPair[vk]){row.push('','','')}
+            } else {
+                row.push(+Math.log2(mA/mB).toFixed(4));
+                const vs=volcanoStats[vk];
+                if(vs){
+                    const fc=vs.fc[fi],pv=vs.rawP[fi],ap=vs.adjP[fi];
+                    if(isNaN(fc)){row.push('','','')}
+                    else if(isNaN(pv)){row.push('N/A','N/A','N/A (insufficient replicates)')}
+                    else{
+                        const sig=ap<vs.fdrT&&Math.abs(fc)>=vs.fcT;
+                        const dir=sig?(fc>0?'Up ('+pr.gx+')':'Down ('+pr.gy+')'):'NS';
+                        row.push(+pv.toExponential(6),+ap.toExponential(6),dir);
+                    }
+                }
+            }
+        });
+        rows.push(row);
+    }
+    return rows;
+}
 
+function _buildVolcanoSettingsRows(){
+    const{volcanoByPair}=_collectGroupPairs();
+    const entries=Object.entries(volcanoByPair);
+    if(!entries.length) return null;
+    const rows=[['Group X','Group Y','FDR Threshold','|Log2 FC| Threshold','Imputation','Imputation Method','S0']];
+    entries.forEach(([key,vc])=>{
+        const[gx,gy]=key.split('|||');
+        rows.push([gx,gy,vc.fdr,vc.fc,vc.impute?'Yes':'No',vc.imputeMethod||'perseus',vc.s0||0]);
+    });
+    return rows;
+}
+
+function _buildPCARows(plot){
+    const ctx=_buildExportContext();
+    const pcaGroups=plot.config.gx.split(',');
+    const sampleNames=[],sampleGroups=[];
+    pcaGroups.forEach(g=>{const bin=BINS.find(b=>b.label===g);if(bin)bin.samples.forEach(s=>{sampleNames.push(s);sampleGroups.push(g)})});
+    if(sampleNames.length<3) return null;
+    // Honour the plot's own restrictToHighlights setting
+    let usePositions=null;
+    if(plot.config.restrictToHighlights&&typeof hasActiveHighlights==='function'&&hasActiveHighlights()){
+        usePositions=[];
+        for(let fi=0;fi<ctx.fidx.length;fi++){
+            if(getHighlightColor(ctx.fidx[fi])!==null) usePositions.push(fi);
+        }
+    }
+    const pca=computePCA(sampleNames,ctx.qd,ctx.fidx,usePositions);
+    const rows=[];
+    rows.push(['Variance Explained','PC1='+pca.varExpl[0].toFixed(2)+'%','PC2='+pca.varExpl[1].toFixed(2)+'%']);
+    if(usePositions) rows.push(['Restricted to highlighted proteins',usePositions.length,'']);
+    rows.push([]);
+    rows.push(['Sample','Group','PC1','PC2']);
+    pca.scores.forEach((sc,i)=>rows.push([sc.name,sampleGroups[i],+sc.pc1.toFixed(6),+sc.pc2.toFixed(6)]));
+    return rows;
+}
+
+function _safeSheetName(name){
+    // Excel sheet names: max 31 chars, no : \ / ? * [ ]
+    return (name||'Sheet').replace(/[:\\\/\?\*\[\]]/g,'_').slice(0,31);
+}
+
+// ================================================================
+// EXPORT: dispatcher (called from UI)
+// ================================================================
+function exportAnalysis(format){
+    if(!RAW){alert('No data loaded');return}
+    if(format==='xlsx') exportXLSX(); else exportCSV();
+}
+
+function exportXLSX(){
+    if(typeof XLSX==='undefined'){alert('XLSX library failed to load. Falling back to CSV.');exportCSV();return}
+    const wb=XLSX.utils.book_new();
+    const includeRaw=document.getElementById('export-include-raw')?.checked!==false;
+
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(_buildMetadataRows()),_safeSheetName('Metadata'));
+
+    // Raw proteinGroups.txt — one sheet per source file
+    if(includeRaw&&RAW.raw_files&&RAW.raw_files.length){
+        RAW.raw_files.forEach((rf,idx)=>{
+            const aoa=[rf.headers||[]].concat(rf.rows||[]);
+            const baseName=rf.filename||('Source '+(idx+1));
+            const sheetName=_safeSheetName('Raw — '+baseName.replace(/\.txt$/i,''));
+            XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),sheetName);
+        });
+    }
+
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(_buildParsedDataRows()),_safeSheetName('Parsed Data'));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(_buildProcessedDataRows()),_safeSheetName('Processed Data'));
+
+    const ppr=_buildPerProteinRows();
+    if(ppr) XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ppr),_safeSheetName('Per-Protein Analysis'));
+
+    const vsr=_buildVolcanoSettingsRows();
+    if(vsr) XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(vsr),_safeSheetName('Volcano Settings'));
+
+    // One PCA sheet per PCA plot
+    CANVAS_PLOTS.filter(cp=>cp.type==='pca').forEach((pp,i)=>{
+        const rows=_buildPCARows(pp);
+        if(!rows) return;
+        const groups=pp.config.gx.split(',').slice(0,3).join(', ');
+        XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),_safeSheetName('PCA '+(i+1)+' — '+groups));
+    });
+
+    const name=(RAW.filename||'proker').replace(/\.[^.]+$/,'').replace(/\s\+\s.+/,'')||'proker';
+    XLSX.writeFile(wb,name+'_analysis_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+function _aoaToCSV(aoa){
+    return aoa.map(row=>row.map(cell=>{
+        if(cell==null) return '';
+        const s=String(cell);
+        if(/[",\n]/.test(s)) return '"'+s.replace(/"/g,'""')+'"';
+        return s;
+    }).join(',')).join('\n');
+}
+
+function exportCSV(){
+    if(!RAW)return;
+    const includeRaw=document.getElementById('export-include-raw')?.checked!==false;
+    let csv='';
+    csv+='=== ANALYSIS METADATA ===\n'+_aoaToCSV(_buildMetadataRows())+'\n\n';
+    if(includeRaw&&RAW.raw_files&&RAW.raw_files.length){
+        RAW.raw_files.forEach(rf=>{
+            csv+='=== RAW proteinGroups.txt — '+(rf.filename||'')+' ===\n';
+            csv+=_aoaToCSV([rf.headers||[]].concat(rf.rows||[]))+'\n\n';
+        });
+    }
+    csv+='=== PARSED DATA ===\n'+_aoaToCSV(_buildParsedDataRows())+'\n\n';
+    csv+='=== PROCESSED DATA ===\n'+_aoaToCSV(_buildProcessedDataRows())+'\n\n';
+    const ppr=_buildPerProteinRows();
+    if(ppr){csv+='=== PER-PROTEIN ANALYSIS ===\n'+_aoaToCSV(ppr)+'\n\n'}
+    const vsr=_buildVolcanoSettingsRows();
+    if(vsr){csv+='=== VOLCANO SETTINGS ===\n'+_aoaToCSV(vsr)+'\n\n'}
+    CANVAS_PLOTS.filter(cp=>cp.type==='pca').forEach((pp,i)=>{
+        const rows=_buildPCARows(pp);if(!rows)return;
+        csv+='=== PCA '+(i+1)+': '+pp.config.gx+' ===\n'+_aoaToCSV(rows)+'\n\n';
+    });
+    csv+='=== CREDITS ===\nPro-ker Proteomics Analysis\nBy Billy M Ngo (billy.ngo0108@gmail.com)\nhttps://github.com/billy-ngo/proteomics-viewer\nNgo B.M. (2026). Pro-ker Proteomics Analysis [Software].\n';
     const blob=new Blob([csv],{type:'text/csv'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-    const name=RAW.filename?.replace(/\.[^.]+$/,'')||'proker';
+    const name=(RAW.filename||'proker').replace(/\.[^.]+$/,'').replace(/\s\+\s.+/,'')||'proker';
     a.download=name+'_analysis_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
 }
 

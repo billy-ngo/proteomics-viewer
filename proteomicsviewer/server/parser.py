@@ -128,12 +128,17 @@ def parse_protein_groups(filepath):
         # Parse all rows
         proteins = []
         quant_data = {qt: {s: [] for s in samples} for qt in quant_columns}
+        # Preserve raw rows (every column, original order) for export
+        raw_headers = list(headers)
+        raw_rows = []
 
         contaminant_count = 0
         reverse_count = 0
         only_by_site_count = 0
 
         for row in reader:
+            # Capture the row as a list aligned with raw_headers
+            raw_rows.append([(row.get(h, "") or "") for h in raw_headers])
             is_contaminant = row.get("Potential contaminant", "") == "+"
             is_reverse = row.get("Reverse", "") == "+"
             is_only_by_site = row.get("Only identified by site", "") == "+"
@@ -184,4 +189,7 @@ def parse_protein_groups(filepath):
         "contaminants": contaminant_count,
         "reverse_hits": reverse_count,
         "only_by_site": only_by_site_count,
+        # Original-file preservation for downstream Excel/CSV export
+        "raw_headers": raw_headers,
+        "raw_rows": raw_rows,
     }

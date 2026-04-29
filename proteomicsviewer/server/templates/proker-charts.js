@@ -506,6 +506,15 @@ class ProkerChart {
             const key = g.dataset.key;
             let dragging = false, startMX, startMY, origAx, origAy;
 
+            // Double-click on text → edit inline
+            texts.forEach(t => {
+                t.addEventListener('dblclick', e => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    this._editAnnotation(key, t);
+                });
+            });
+
             // All child elements are drag handles
             [...texts, circle].filter(Boolean).forEach(target => {
                 target.style.cursor = 'grab';
@@ -778,6 +787,18 @@ class ProkerChart {
         const rect = el.getBoundingClientRect();
         this._showEditInput(rect, current, v => {
             if (axis === 'x') this.xTitle = v; else this.yTitle = v;
+            this.render();
+        });
+    }
+
+    _editAnnotation(key, textEl) {
+        const ann = this.annotations.find(a => a.key === key);
+        if (!ann) return;
+        // Edit using literal '|' as line separator (newlines confuse a single-line input)
+        const current = (ann.text || '').split('\n').join(' | ');
+        const rect = textEl.getBoundingClientRect();
+        this._showEditInput(rect, current, v => {
+            ann.text = v.split(/\s*\|\s*/).join('\n');
             this.render();
         });
     }

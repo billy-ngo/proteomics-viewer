@@ -72,10 +72,12 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.get("/api/data")
 def get_data():
-    """Return currently loaded data."""
+    """Return currently loaded data (without bulky raw_rows)."""
     if not state.data:
         return JSONResponse({"error": "No data loaded"}, status_code=404)
-    return state.data
+    # Strip raw_rows to keep this endpoint fast — only /api/upload returns them.
+    out = {k: v for k, v in state.data.items() if k not in ("raw_rows", "raw_headers")}
+    return out
 
 
 @app.get("/health")
