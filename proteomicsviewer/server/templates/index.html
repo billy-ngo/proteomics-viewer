@@ -519,7 +519,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.8.2</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.9.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -838,7 +838,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='4.8.2';
+var PROKER_VERSION='4.9.0';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -3510,18 +3510,40 @@ function buildAbundanceConfig(chart,p,qd,fidx){
 // ================================================================
 // EXPORT
 // ================================================================
+// Returns {w, h} — the actual rendered width/height of an SVG element,
+// using getBBox() to detect content overflow (e.g. text descenders below
+// the declared bottom). Falls back to declared width/height if getBBox
+// is unavailable. Adds an 8 px safety pad on every side so font glyphs
+// never get clipped by either SVG renderers or the canvas rasterizer.
+function _measureSvg(svg){
+    const declaredW=parseInt(svg.getAttribute('width'))||600;
+    const declaredH=parseInt(svg.getAttribute('height'))||400;
+    let w=declaredW,h=declaredH;
+    try{
+        const bb=svg.getBBox();
+        if(bb&&isFinite(bb.x)&&isFinite(bb.y)){
+            // Expand to cover any content that lies outside the declared box
+            w=Math.max(declaredW,Math.ceil(bb.x+bb.width));
+            h=Math.max(declaredH,Math.ceil(bb.y+bb.height));
+        }
+    }catch(e){/* getBBox throws on detached/zero-sized SVG; fall back to declared */}
+    // Pad to avoid clipping glyph descenders / antialias halos
+    const pad=8;
+    return{w:w+pad,h:h+pad};
+}
+
 function exportAllSVG(){
     // Combine all plot SVGs into one canvas SVG
     const canvas=document.getElementById('canvas');if(!canvas)return;
     const plots=canvas.querySelectorAll('.proker-svg');
     if(!plots.length)return;
-    let totalH=0;const maxW=Math.max(...[...plots].map(s=>parseInt(s.getAttribute('width'))||600));
+    const sizes=[...plots].map(_measureSvg);
+    const maxW=Math.max(...sizes.map(s=>s.w));
+    let totalH=0;
     const svgParts=[];
-    plots.forEach(svg=>{
-        const w=parseInt(svg.getAttribute('width'))||600;
-        const h=parseInt(svg.getAttribute('height'))||400;
-        const inner=svg.innerHTML;
-        svgParts.push(`<g transform="translate(0,${totalH})">${inner}</g>`);
+    plots.forEach((svg,idx)=>{
+        const{h}=sizes[idx];
+        svgParts.push(`<g transform="translate(0,${totalH})">${svg.innerHTML}</g>`);
         totalH+=h+12;
     });
     const combined=`<svg xmlns="http://www.w3.org/2000/svg" width="${maxW}" height="${totalH}" style="font-family:Arial,Helvetica,sans-serif">${svgParts.join('')}</svg>`;
@@ -3533,13 +3555,14 @@ function exportAllPNG(){
     const plots=canvas.querySelectorAll('.proker-svg');
     if(!plots.length)return;
     const scale=2;
-    const maxW=Math.max(...[...plots].map(s=>parseInt(s.getAttribute('width'))||600));
+    const sizes=[...plots].map(_measureSvg);
+    const maxW=Math.max(...sizes.map(s=>s.w));
     let totalH=0;
-    plots.forEach(s=>{totalH+=parseInt(s.getAttribute('height'))||400;totalH+=12});
+    sizes.forEach(s=>{totalH+=s.h+12});
     // Combine SVGs then render to canvas
     const svgParts=[];let yOff=0;
-    plots.forEach(svg=>{
-        const h=parseInt(svg.getAttribute('height'))||400;
+    plots.forEach((svg,idx)=>{
+        const{h}=sizes[idx];
         svgParts.push(`<g transform="translate(0,${yOff})">${svg.innerHTML}</g>`);
         yOff+=h+12;
     });
@@ -3559,14 +3582,22 @@ function _buildCanvasCompositeSVG(){
     // Measure full content bounds
     let minX=Infinity,minY=Infinity,maxX=0,maxY=0;
     const items=[];
-    // Collect plots
+    // Collect plots — measure SVG content via getBBox to catch any text that
+    // visually extends past the wrapper's declared rect (e.g. axis-title
+    // descenders). Same issue PNG/SVG export had.
     canvas.querySelectorAll('.canvas-plot').forEach(pw=>{
         const r=pw.getBoundingClientRect();
         const x=r.left-canvasRect.left, y=r.top-canvasRect.top;
         const svg=pw.querySelector('.proker-svg');
-        if(svg){items.push({type:'svg',x,y,w:r.width,h:r.height,content:svg.outerHTML})}
+        let w=r.width,h=r.height;
+        if(svg){
+            const m=_measureSvg(svg);
+            if(m.h>h) h=m.h;
+            if(m.w>w) w=m.w;
+            items.push({type:'svg',x,y,w,h,content:svg.outerHTML});
+        }
         minX=Math.min(minX,x);minY=Math.min(minY,y);
-        maxX=Math.max(maxX,x+r.width);maxY=Math.max(maxY,y+r.height);
+        maxX=Math.max(maxX,x+w);maxY=Math.max(maxY,y+h);
     });
     // Collect text boxes
     canvas.querySelectorAll('.canvas-anno-wrap').forEach(wrap=>{
@@ -4104,6 +4135,29 @@ function _safeSheetName(name){
     // Excel sheet names: max 31 chars, no : \ / ? * [ ]
     return (name||'Sheet').replace(/[:\\\/\?\*\[\]]/g,'_').slice(0,31);
 }
+// Excel cells (and the underlying SheetJS writer) cap text at 32 767
+// characters. proteinGroups.txt fields like Fasta headers, Peptide sequences,
+// or Evidence IDs can easily exceed that for proteins with many peptides.
+// Clip to 32 700 with an explicit "...truncated" marker so users know.
+const _XLSX_CELL_MAX=32700;
+function _clipCell(v){
+    if(v==null) return v;
+    if(typeof v==='string'&&v.length>_XLSX_CELL_MAX){
+        return v.slice(0,_XLSX_CELL_MAX-15)+'...[truncated]';
+    }
+    return v;
+}
+function _clipAOA(aoa){
+    // Clip every cell in a 2-D array of arrays so SheetJS never sees an
+    // over-length string. Done in-place but returns the same reference.
+    if(!aoa) return aoa;
+    for(let r=0;r<aoa.length;r++){
+        const row=aoa[r];
+        if(!row) continue;
+        for(let c=0;c<row.length;c++) row[c]=_clipCell(row[c]);
+    }
+    return aoa;
+}
 
 // ================================================================
 // EXPORT: dispatcher (called from UI)
@@ -4115,40 +4169,48 @@ function exportAnalysis(format){
 
 function exportXLSX(){
     if(typeof XLSX==='undefined'){alert('XLSX library failed to load. Falling back to CSV.');exportCSV();return}
-    const wb=XLSX.utils.book_new();
-    const includeRaw=document.getElementById('export-include-raw')?.checked!==false;
+    try{
+        const wb=XLSX.utils.book_new();
+        const includeRaw=document.getElementById('export-include-raw')?.checked!==false;
+        // Helper: clip cells, build sheet, append. Wrap each sheet in its own
+        // try/catch so a single problematic sheet doesn't kill the whole export.
+        const addSheet=(rows,name)=>{
+            try{
+                XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(_clipAOA(rows)),_safeSheetName(name));
+            }catch(e){
+                console.error('Failed to add sheet',name,e);
+            }
+        };
 
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(_buildMetadataRows()),_safeSheetName('Metadata'));
+        addSheet(_buildMetadataRows(),'Metadata');
 
-    // Raw proteinGroups.txt — one sheet per source file
-    if(includeRaw&&RAW.raw_files&&RAW.raw_files.length){
-        RAW.raw_files.forEach((rf,idx)=>{
-            const aoa=[rf.headers||[]].concat(rf.rows||[]);
-            const baseName=rf.filename||('Source '+(idx+1));
-            const sheetName=_safeSheetName('Raw — '+baseName.replace(/\.txt$/i,''));
-            XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),sheetName);
+        // Raw proteinGroups.txt — one sheet per source file
+        if(includeRaw&&RAW.raw_files&&RAW.raw_files.length){
+            RAW.raw_files.forEach((rf,idx)=>{
+                const aoa=[rf.headers||[]].concat(rf.rows||[]);
+                const baseName=rf.filename||('Source '+(idx+1));
+                addSheet(aoa,'Raw — '+baseName.replace(/\.txt$/i,''));
+            });
+        }
+        addSheet(_buildParsedDataRows(),'Parsed Data');
+        addSheet(_buildProcessedDataRows(),'Processed Data');
+        const ppr=_buildPerProteinRows();
+        if(ppr) addSheet(ppr,'Per-Protein Analysis');
+        const vsr=_buildVolcanoSettingsRows();
+        if(vsr) addSheet(vsr,'Volcano Settings');
+        CANVAS_PLOTS.filter(cp=>cp.type==='pca').forEach((pp,i)=>{
+            const rows=_buildPCARows(pp);
+            if(!rows) return;
+            const groups=pp.config.gx.split(',').slice(0,3).join(', ');
+            addSheet(rows,'PCA '+(i+1)+' — '+groups);
         });
+
+        const name=(RAW.filename||'proker').replace(/\.[^.]+$/,'').replace(/\s\+\s.+/,'')||'proker';
+        XLSX.writeFile(wb,name+'_analysis_'+new Date().toISOString().slice(0,10)+'.xlsx');
+    }catch(e){
+        console.error('XLSX export failed:',e);
+        alert('XLSX export failed:\n'+(e&&e.message?e.message.slice(0,300):String(e).slice(0,300))+'\n\nFalling back to CSV — try that as an alternative.');
     }
-
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(_buildParsedDataRows()),_safeSheetName('Parsed Data'));
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(_buildProcessedDataRows()),_safeSheetName('Processed Data'));
-
-    const ppr=_buildPerProteinRows();
-    if(ppr) XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ppr),_safeSheetName('Per-Protein Analysis'));
-
-    const vsr=_buildVolcanoSettingsRows();
-    if(vsr) XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(vsr),_safeSheetName('Volcano Settings'));
-
-    // One PCA sheet per PCA plot
-    CANVAS_PLOTS.filter(cp=>cp.type==='pca').forEach((pp,i)=>{
-        const rows=_buildPCARows(pp);
-        if(!rows) return;
-        const groups=pp.config.gx.split(',').slice(0,3).join(', ');
-        XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),_safeSheetName('PCA '+(i+1)+' — '+groups));
-    });
-
-    const name=(RAW.filename||'proker').replace(/\.[^.]+$/,'').replace(/\s\+\s.+/,'')||'proker';
-    XLSX.writeFile(wb,name+'_analysis_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
 function _aoaToCSV(aoa){
@@ -4362,12 +4424,39 @@ function toggleSessionPanel(){
         else{info.textContent='No auto-saved session found.'}
     }
 }
+// Highest session schema version this build understands.
+const SESSION_SCHEMA_VERSION=3;
+
+// localStorage typically caps at ~5 MB. Big multi-file sessions blow past
+// that fast (raw_files alone can be 5–50 MB). Always strip raw_files from
+// the autosave payload — they live in the source proteinGroups.txt files
+// the user re-uploads, not in the session.
 function autoSaveSession(){
     if(!RAW)return;
     try{
-        const session=buildSessionObject();
-        localStorage.setItem('proker-autosave',JSON.stringify(session));
-    }catch(e){}
+        const session=buildSessionObject({forAutoSave:true});
+        const json=JSON.stringify(session);
+        try{
+            localStorage.setItem('proker-autosave',json);
+        }catch(quotaErr){
+            // QuotaExceeded — drop annotations / colorOverrides too, keep the
+            // structural backbone (groups, processing, canvas plots) so a
+            // browser refresh still recovers something.
+            if(session.canvasPlots){
+                session.canvasPlots.forEach(cp=>{
+                    cp.colorOverrides=[];
+                    cp.annotations=[];
+                });
+            }
+            session.canvasAnnotations=[];
+            try{localStorage.setItem('proker-autosave',JSON.stringify(session))}catch(e2){
+                // Truly out of room. Drop the autosave entirely so we don't
+                // serve stale data on next load.
+                try{localStorage.removeItem('proker-autosave')}catch(e3){}
+                console.warn('Autosave skipped (localStorage quota exceeded)');
+            }
+        }
+    }catch(e){console.warn('Autosave failed:',e)}
 }
 function restoreAutoSave(){
     const saved=localStorage.getItem('proker-autosave');
@@ -4404,22 +4493,34 @@ function _serializeCanvasAnnotations(){
     });
     return annos;
 }
-function buildSessionObject(){
+function buildSessionObject(opts){
+    opts=opts||{};
+    const _safeMap=(arr,fn)=>{const out=[];if(!Array.isArray(arr))return out;for(let i=0;i<arr.length;i++){try{out.push(fn(arr[i],i))}catch(e){}}return out};
     return{
-        version:2,savedAt:new Date().toISOString(),app:'Pro-ker Proteomics Analysis',
+        version:SESSION_SCHEMA_VERSION,
+        savedAt:new Date().toISOString(),
+        app:'Pro-ker Proteomics Analysis',
+        appVersion:typeof PROKER_VERSION==='string'?PROKER_VERSION:'',
         filename:RAW?.filename||'',
-        bins:BINS.map(b=>({label:b.label,color:b.color,samples:[...b.samples]})),
-        unassigned:[...UNASSIGNED],
-        analyses:ANALYSES.map(a=>({name:a.name,groupX:a.groupX,groupY:a.groupY})),
-        derived:DERIVED.map(d=>({name:d.name,op:d.op,left:d.left,right:d.right})),
-        canvasPlots:CANVAS_PLOTS.map(p=>{
+        // Sample-source info so a multi-file session round-trips correctly
+        sampleSource:RAW?.sample_source?{...RAW.sample_source}:null,
+        sourceFileCount:_sourceFileCount?_sourceFileCount():1,
+        bins:_safeMap(BINS,b=>({label:b.label,color:b.color,samples:[...(b.samples||[])]})),
+        unassigned:Array.isArray(UNASSIGNED)?[...UNASSIGNED]:[],
+        analyses:_safeMap(ANALYSES,a=>({name:a.name,groupX:a.groupX,groupY:a.groupY})),
+        derived:_safeMap(DERIVED,d=>({name:d.name,op:d.op,left:d.left,right:d.right})),
+        canvasPlots:_safeMap(CANVAS_PLOTS,p=>{
             const card=document.getElementById('card-'+p.plotId);
             const chart=CHARTS[p.plotId];
-            return{type:p.type,config:p.config,title:p.title,
+            return{
+                type:p.type,
+                config:p.config,
+                title:p.title,
                 frozen:p.frozen||false,
-                position:card?{left:card.style.left,top:card.style.top,width:card.style.width,height:card.style.height}:null,
-                colorOverrides:chart?._colorOverrides||[],
-                annotations:chart?.annotations||[]};
+                position:card?{left:card.style.left||'',top:card.style.top||'',width:card.style.width||'',height:card.style.height||''}:null,
+                colorOverrides:chart&&Array.isArray(chart._colorOverrides)?chart._colorOverrides:[],
+                annotations:chart&&Array.isArray(chart.annotations)?chart.annotations:[],
+            };
         }),
         processing:{
             intensity:document.getElementById('proc-intensity')?.checked!==false,
@@ -4434,10 +4535,11 @@ function buildSessionObject(){
             pruneAgg:document.getElementById('prune-agg')?.value||'total',
             pruneScope:document.getElementById('prune-scope')?.value||'all',
         },
-        theme:currentThemeName,customTheme:customTheme,
-        canvasScale:canvasScale||1,
-        groupsOfInterest:GROUPS_OF_INTEREST.map(g=>({prefix:g.prefix,start:g.start,end:g.end,color:g.color,symbol:g.symbol,size:g.size,proteins:g.proteins})),
-        speciesHighlights:SPECIES_HIGHLIGHTS.map(h=>({prefix:h.prefix,color:h.color,enabled:h.enabled})),
+        theme:typeof currentThemeName!=='undefined'?currentThemeName:'dark',
+        customTheme:typeof customTheme!=='undefined'?customTheme:{},
+        canvasScale:typeof canvasScale==='number'?canvasScale:1,
+        groupsOfInterest:_safeMap(GROUPS_OF_INTEREST,g=>({prefix:g.prefix,start:g.start,end:g.end,color:g.color,symbol:g.symbol,size:g.size,proteins:g.proteins})),
+        speciesHighlights:_safeMap(SPECIES_HIGHLIGHTS,h=>({prefix:h.prefix,color:h.color,enabled:h.enabled})),
         canvasAnnotations:_serializeCanvasAnnotations(),
     };
 }
@@ -4449,65 +4551,178 @@ function saveSession(){
     a.download=`proker-session-${name}-${new Date().toISOString().slice(0,10)}.json`;a.click();
     document.getElementById('session-panel')?.classList.add('hidden');
 }
+// Migration: bring older session schemas up to the current shape.
+// v1 = pre-multi-source, no canvasScale/GOI/speciesHighlights/canvasAnnotations
+// v2 = added position/colorOverrides/annotations/canvasScale/GOI/highlights/canvasAnnotations
+// v3 = added appVersion/sampleSource/sourceFileCount
+function _migrateSession(s){
+    if(!s||typeof s!=='object') return s;
+    if(typeof s.version!=='number') s.version=1;
+    // Defaults for fields introduced in later versions
+    if(!Array.isArray(s.canvasPlots)) s.canvasPlots=[];
+    if(!Array.isArray(s.bins)) s.bins=[];
+    if(!Array.isArray(s.unassigned)) s.unassigned=[];
+    if(!Array.isArray(s.analyses)) s.analyses=[];
+    if(!Array.isArray(s.derived)) s.derived=[];
+    if(!Array.isArray(s.groupsOfInterest)) s.groupsOfInterest=[];
+    if(!Array.isArray(s.speciesHighlights)) s.speciesHighlights=[];
+    if(!Array.isArray(s.canvasAnnotations)) s.canvasAnnotations=[];
+    if(typeof s.canvasScale!=='number') s.canvasScale=1;
+    if(!s.processing||typeof s.processing!=='object') s.processing={};
+    if(!s.customTheme||typeof s.customTheme!=='object') s.customTheme={};
+    return s;
+}
+
 function loadSession(file){
     if(!file)return;
     const reader=new FileReader();
     reader.onload=function(e){
+        let s;
         try{
-            const s=JSON.parse(e.target.result);
-            if((!s.version&&s.version!==0)||!s.bins){alert('Invalid session file');return}
-            // Restore processing settings
-            if(s.processing){
-                const p=s.processing;
-                const setChk=(id,v)=>{const el=document.getElementById(id);if(el)el.checked=!!v};
-                const setVal=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v||''};
-                setChk('proc-intensity',p.intensity!==false);setChk('proc-lfq',p.lfq!==false);toggleIntensityOpts();
-                const aggRadio=document.querySelector('input[name="proc-agg"][value="'+(p.agg||'average')+'"]');if(aggRadio)aggRadio.checked=true;
-                setChk('proc-norm',p.norm);setVal('norm-scope',p.normScope);
-                setChk('norm-rm-contam',p.normRmContam);
-                setChk('proc-prune',p.prune);setVal('prune-metric',p.pruneMetric);
-                setVal('prune-value',p.pruneValue);setVal('prune-agg',p.pruneAgg);
-                setVal('prune-scope',p.pruneScope);
-                toggleNorm();togglePrune();
+            s=JSON.parse(e.target.result);
+        }catch(parseErr){
+            alert('Could not parse session file:\n'+(parseErr&&parseErr.message?parseErr.message.slice(0,300):'invalid JSON'));
+            return;
+        }
+        if(!s||typeof s!=='object'){alert('Invalid session file (not an object).');return}
+        // Sanity check: at minimum we need a version stamp
+        if(typeof s.version!=='number'&&!s.bins&&!s.canvasPlots){
+            alert('This file does not look like a Pro-ker session.');
+            return;
+        }
+        s=_migrateSession(s);
+        if(s.version>SESSION_SCHEMA_VERSION){
+            // Newer format than we know — try anyway, but warn the user
+            console.warn('Session was saved by a newer Pro-ker (schema v'+s.version+'); current build understands v'+SESSION_SCHEMA_VERSION+'. Restoring best-effort.');
+        }
+
+        const warnings=[];
+        const tryRun=(label,fn)=>{try{fn()}catch(err){warnings.push(label+': '+(err&&err.message?err.message:String(err)));console.error('[loadSession]',label,err)}};
+
+        // ── Processing settings ──
+        tryRun('processing settings',()=>{
+            const p=s.processing||{};
+            const setChk=(id,v)=>{const el=document.getElementById(id);if(el)el.checked=!!v};
+            const setVal=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v==null?'':v};
+            setChk('proc-intensity',p.intensity!==false);setChk('proc-lfq',p.lfq!==false);
+            if(typeof toggleIntensityOpts==='function') toggleIntensityOpts();
+            const aggRadio=document.querySelector('input[name="proc-agg"][value="'+(p.agg||'average')+'"]');
+            if(aggRadio) aggRadio.checked=true;
+            setChk('proc-norm',p.norm);setVal('norm-scope',p.normScope||'all');
+            setChk('norm-rm-contam',p.normRmContam);
+            setChk('proc-prune',p.prune);setVal('prune-metric',p.pruneMetric||'spectral');
+            setVal('prune-value',p.pruneValue||'2');setVal('prune-agg',p.pruneAgg||'total');
+            setVal('prune-scope',p.pruneScope||'all');
+            if(typeof toggleNorm==='function') toggleNorm();
+            if(typeof togglePrune==='function') togglePrune();
+        });
+
+        // ── Theme ──
+        tryRun('theme',()=>{
+            if(s.theme==='light'&&!document.documentElement.classList.contains('light')) toggleTheme();
+            else if(s.theme==='dark'&&document.documentElement.classList.contains('light')) toggleTheme();
+        });
+
+        // ── Sample groups (BINS) ──
+        // Must come BEFORE canvas plots (plot configs reference bin labels)
+        let restoredBinCount=0,droppedBinCount=0,droppedSamples=[];
+        tryRun('sample groups',()=>{
+            if(!RAW||!Array.isArray(s.bins)) return;
+            const allSamples=new Set(RAW.samples);
+            BINS=[];
+            s.bins.forEach(b=>{
+                if(!b||!Array.isArray(b.samples)){droppedBinCount++;return}
+                const valid=b.samples.filter(sa=>allSamples.has(sa));
+                if(!valid.length){droppedBinCount++;b.samples.forEach(sa=>{if(!allSamples.has(sa))droppedSamples.push(sa)});return}
+                if(valid.length<b.samples.length){
+                    b.samples.filter(sa=>!allSamples.has(sa)).forEach(sa=>droppedSamples.push(sa));
+                }
+                BINS.push({id:nextBinId++,label:b.label||'Group',color:b.color||'#58a6ff',samples:valid});
+                restoredBinCount++;
+            });
+            const assigned=new Set();
+            BINS.forEach(b=>b.samples.forEach(sa=>assigned.add(sa)));
+            UNASSIGNED=RAW.samples.filter(sa=>!assigned.has(sa));
+            if(typeof renderAll==='function') renderAll();
+        });
+        if(droppedBinCount){
+            warnings.push(droppedBinCount+' group(s) dropped (samples not in current dataset)');
+        }
+        if(droppedSamples.length){
+            warnings.push(droppedSamples.length+' sample reference(s) dropped: '+droppedSamples.slice(0,5).join(', ')+(droppedSamples.length>5?', ...':''));
+        }
+
+        // ── Analyses & derived groups ──
+        tryRun('saved analyses',()=>{
+            if(Array.isArray(s.analyses)){
+                ANALYSES=s.analyses.filter(a=>a&&a.name).map(a=>({id:nextAnaId++,name:a.name,groupX:a.groupX,groupY:a.groupY}));
+                if(typeof renderAnaList==='function') renderAnaList();
             }
-            // Restore theme
-            if(s.theme==='light'&&!document.documentElement.classList.contains('light'))toggleTheme();
-            else if(s.theme==='dark'&&document.documentElement.classList.contains('light'))toggleTheme();
-            // Restore groups (only if data is loaded and samples match)
-            if(RAW&&s.bins){
-                const allSamples=new Set(RAW.samples);
-                BINS=s.bins.filter(b=>b.samples.every(sa=>allSamples.has(sa))).map((b,i)=>({id:nextBinId++,label:b.label,color:b.color,samples:[...b.samples]}));
-                const assigned=new Set();BINS.forEach(b=>b.samples.forEach(sa=>assigned.add(sa)));
-                UNASSIGNED=RAW.samples.filter(sa=>!assigned.has(sa));
-                renderAll();
+        });
+        tryRun('derived groups',()=>{
+            if(Array.isArray(s.derived)){
+                DERIVED=s.derived.filter(d=>d&&d.name).slice();
+                if(typeof renderDerived==='function') renderDerived();
+                if(typeof populateGroupSelects==='function') populateGroupSelects();
             }
-            // Restore analyses & derived
-            if(s.analyses){ANALYSES=s.analyses.map(a=>({id:nextAnaId++,...a}));renderAnaList?.()}
-            if(s.derived){DERIVED=[...s.derived];renderDerived?.();populateGroupSelects?.()}
-            // Restore GOI and species highlights before plots (they affect rendering)
-            if(s.groupsOfInterest&&s.groupsOfInterest.length){
-                GROUPS_OF_INTEREST=s.groupsOfInterest.map(g=>({id:_goiNextId++,...g}));
-                renderGOIList?.();
+        });
+
+        // ── GOI + species highlights (must come BEFORE plots) ──
+        tryRun('groups of interest',()=>{
+            if(Array.isArray(s.groupsOfInterest)&&s.groupsOfInterest.length){
+                GROUPS_OF_INTEREST=s.groupsOfInterest.filter(g=>g&&g.prefix).map(g=>({id:_goiNextId++,...g}));
+                if(typeof renderGOIList==='function') renderGOIList();
             }
-            if(s.speciesHighlights&&s.speciesHighlights.length){
-                SPECIES_HIGHLIGHTS=s.speciesHighlights;
-                renderSpeciesHighlights?.();
+        });
+        tryRun('species highlights',()=>{
+            if(Array.isArray(s.speciesHighlights)&&s.speciesHighlights.length){
+                SPECIES_HIGHLIGHTS=s.speciesHighlights.filter(h=>h&&h.prefix);
+                if(typeof renderSpeciesHighlights==='function') renderSpeciesHighlights();
             }
-            // Restore canvas plots with positions, colors, annotations
-            if(s.canvasPlots&&s.canvasPlots.length&&RAW){
-                buildProcessedData();
-                const{data:qd}=getQData();const fidx=getFilteredIdx();
-                document.getElementById('right-welcome')?.classList.add('hidden');
-                const wrap=document.getElementById('canvas-wrap');if(wrap){wrap.classList.remove('hidden');wrap.style.display='flex'}
-                const canvas=document.getElementById('canvas');canvas?.classList.remove('empty-canvas');
-                const hint=document.getElementById('canvas-drop');if(hint)hint.remove();
-                s.canvasPlots.forEach((cp,ci)=>{
+        });
+
+        // ── Canvas plots ──
+        let restoredPlotCount=0,droppedPlotCount=0;
+        tryRun('canvas plots',()=>{
+            if(!Array.isArray(s.canvasPlots)||!s.canvasPlots.length||!RAW) return;
+            buildProcessedData();
+            const{data:qd}=getQData();const fidx=getFilteredIdx();
+            document.getElementById('right-welcome')?.classList.add('hidden');
+            const wrap=document.getElementById('canvas-wrap');if(wrap){wrap.classList.remove('hidden');wrap.style.display='flex'}
+            const canvas=document.getElementById('canvas');canvas?.classList.remove('empty-canvas');
+            const hint=document.getElementById('canvas-drop');if(hint)hint.remove();
+
+            // Build a lookup: which group labels currently exist?
+            const existingGroups=new Set(BINS.map(b=>b.label));
+            // Plus derived names
+            DERIVED.forEach(d=>existingGroups.add(d.name));
+
+            s.canvasPlots.forEach((cp,ci)=>{
+                if(!cp||typeof cp!=='object'){droppedPlotCount++;return}
+                // Validate that the plot's referenced groups still exist
+                const cfg=cp.config||{};
+                const refs=[];
+                if(cfg.gx&&cp.type!=='pca'&&cp.type!=='abundance') refs.push(cfg.gx);
+                if(cfg.gy) refs.push(cfg.gy);
+                if(cfg.featuredGroup) refs.push(cfg.featuredGroup);
+                if(cfg.controlGroup) refs.push(cfg.controlGroup);
+                if(cfg.group) refs.push(cfg.group);
+                if(cp.type==='pca'&&typeof cfg.gx==='string'){
+                    cfg.gx.split(',').filter(Boolean).forEach(g=>refs.push(g));
+                }
+                const missing=refs.filter(g=>!existingGroups.has(g));
+                if(missing.length){
+                    droppedPlotCount++;
+                    warnings.push('plot "'+(cp.title||cp.type)+'" dropped (missing groups: '+missing.slice(0,3).join(', ')+')');
+                    return;
+                }
+
+                try{
                     const plotId='plot-'+(nextPlotId++);
-                    const plotEntry={id:nextPlotId-1,type:cp.type,config:cp.config,plotId,title:cp.title,frozen:cp.frozen||false};
+                    const plotEntry={id:nextPlotId-1,type:cp.type,config:cfg,plotId,title:cp.title||cp.type,frozen:cp.frozen||false};
                     CANVAS_PLOTS.push(plotEntry);
                     const pw=document.createElement('div');pw.className='canvas-plot';pw.id='card-'+plotId;
-                    // Restore position and size
-                    if(cp.position){
+                    if(cp.position&&typeof cp.position==='object'){
                         if(cp.position.left)pw.style.left=cp.position.left;
                         if(cp.position.top)pw.style.top=cp.position.top;
                         if(cp.position.width)pw.style.width=cp.position.width;
@@ -4516,53 +4731,68 @@ function loadSession(file){
                         pw.style.height='420px';
                     }
                     pw.innerHTML=`<button class="cp-close" onclick="removePlot('${plotId}')">&times;</button><div id="${plotId}" style="width:100%;height:100%"></div>`;
-                    canvas.appendChild(pw);setupPlotResize(pw,plotId);
-                    // Render plot then restore chart-level state
+                    canvas.appendChild(pw);
+                    if(typeof setupPlotResize==='function') setupPlotResize(pw,plotId);
                     setTimeout(()=>{
-                        renderPlot(plotEntry,qd,fidx);
-                        const chart=CHARTS[plotId];
-                        if(chart){
-                            if(cp.colorOverrides&&cp.colorOverrides.length){
-                                chart._colorOverrides=cp.colorOverrides;
-                                chart.render();
+                        try{
+                            renderPlot(plotEntry,qd,fidx);
+                            const chart=CHARTS[plotId];
+                            if(chart){
+                                if(Array.isArray(cp.colorOverrides)&&cp.colorOverrides.length){
+                                    chart._colorOverrides=cp.colorOverrides;
+                                    chart.render();
+                                }
+                                if(Array.isArray(cp.annotations)&&cp.annotations.length){
+                                    cp.annotations.forEach(a=>{
+                                        if(a&&typeof a.x==='number'&&typeof a.y==='number'){
+                                            chart.addAnnotation(a.x,a.y,a.text||'',{ax:a.ax,ay:a.ay,key:a.key});
+                                        }
+                                    });
+                                }
                             }
-                            if(cp.annotations&&cp.annotations.length){
-                                cp.annotations.forEach(a=>chart.addAnnotation(a.x,a.y,a.text,{ax:a.ax,ay:a.ay,key:a.key}));
-                            }
+                        }catch(plotErr){
+                            console.error('Failed to render restored plot',cp.title,plotErr);
                         }
                     },100+ci*50);
-                });
-            }
-            // Restore canvas zoom
-            if(s.canvasScale&&s.canvasScale!==1){
+                    restoredPlotCount++;
+                }catch(plotErr){
+                    droppedPlotCount++;
+                    warnings.push('plot "'+(cp.title||cp.type)+'" failed: '+(plotErr.message||'error'));
+                }
+            });
+        });
+
+        // ── Canvas zoom ──
+        tryRun('canvas zoom',()=>{
+            if(typeof s.canvasScale==='number'&&s.canvasScale>0&&s.canvasScale!==1){
                 canvasScale=s.canvasScale;
                 const c=document.getElementById('canvas');
                 if(c){c.style.transform='scale('+canvasScale+')';c.style.transformOrigin='0 0'}
                 const lbl=document.getElementById('canvas-zoom-label');
                 if(lbl)lbl.textContent=Math.round(canvasScale*100)+'%';
             }
-            // Restore canvas annotations (text boxes, lines)
-            if(s.canvasAnnotations&&s.canvasAnnotations.length){
-                s.canvasAnnotations.forEach(a=>{
+        });
+
+        // ── Canvas annotations (text boxes, lines, shapes) ──
+        tryRun('canvas annotations',()=>{
+            if(!Array.isArray(s.canvasAnnotations)) return;
+            s.canvasAnnotations.forEach(a=>{
+                if(!a||!a.type) return;
+                try{
                     if(a.type==='text'){
                         addCanvasTextBox();
                         const canvas=document.getElementById('canvas');
                         const wraps=canvas.querySelectorAll('.canvas-anno-wrap');
                         const last=wraps[wraps.length-1];
-                        if(last){
-                            last.style.left=a.left||'50px';last.style.top=a.top||'50px';
-                            const tb=last.querySelector('.canvas-textbox');
-                            if(tb){
-                                tb.textContent=a.text||'Text';
-                                if(a.style){
-                                    if(a.style.color)tb.style.color=a.style.color;
-                                    if(a.style.fontSize)tb.style.fontSize=a.style.fontSize;
-                                    if(a.style.fontWeight)tb.style.fontWeight=a.style.fontWeight;
-                                    if(a.style.fontStyle)tb.style.fontStyle=a.style.fontStyle;
-                                    if(a.style.fontFamily)tb.style.fontFamily=a.style.fontFamily;
-                                    if(a.style.textDecoration)tb.style.textDecoration=a.style.textDecoration;
-                                    if(a.style.textAlign)tb.style.textAlign=a.style.textAlign;
-                                }
+                        if(!last) return;
+                        last.style.left=a.left||'50px';last.style.top=a.top||'50px';
+                        const tb=last.querySelector('.canvas-textbox');
+                        if(tb){
+                            tb.textContent=a.text||'Text';
+                            if(a.style&&typeof a.style==='object'){
+                                Object.keys(a.style).forEach(k=>{
+                                    if(a.style[k]) tb.style[k]=a.style[k];
+                                });
                             }
                         }
                     } else if(a.type==='line'){
@@ -4574,11 +4804,27 @@ function loadSession(file){
                             last.style.left=a.left||'50px';last.style.top=a.top||'100px';
                         }
                     }
-                });
-            }
-            alert('Session restored'+(s.filename?' from: '+s.filename:''));
-        }catch(err){alert('Error loading session: '+err.message)}
+                }catch(annoErr){
+                    console.warn('Annotation restore failed:',annoErr);
+                }
+            });
+        });
+
+        // Final report
+        const lines=['Session restored'+(s.filename?' from: '+s.filename:'')];
+        if(s.appVersion) lines.push('Saved by Pro-ker v'+s.appVersion+(s.appVersion!==PROKER_VERSION?' (now v'+PROKER_VERSION+')':''));
+        if(restoredPlotCount||droppedPlotCount){
+            lines.push('Plots: '+restoredPlotCount+' restored'+(droppedPlotCount?', '+droppedPlotCount+' skipped':''));
+        }
+        if(warnings.length){
+            lines.push('');
+            lines.push('Warnings:');
+            warnings.slice(0,8).forEach(w=>lines.push('• '+w));
+            if(warnings.length>8) lines.push('• ... and '+(warnings.length-8)+' more (see browser console)');
+        }
+        alert(lines.join('\n'));
     };
+    reader.onerror=function(){alert('Failed to read session file.')};
     reader.readAsText(file);
 }
 
