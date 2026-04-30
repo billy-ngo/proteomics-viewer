@@ -892,6 +892,8 @@ class ProkerChart {
             items += `<div class="rc-sep"></div>`;
         }
         items += `<div class="rc-item" data-action="settings">&#9881; Graph settings</div>`;
+        items += `<div class="rc-sep"></div>`;
+        items += `<div class="rc-item" data-action="exportdata">&#128190; Export data (CSV — Prism-ready)</div>`;
         if (this._zoomed) {
             items += `<div class="rc-sep"></div>`;
             items += `<div class="rc-item" data-action="resetzoom">&#8634; Reset zoom</div>`;
@@ -940,8 +942,9 @@ class ProkerChart {
                 else if (action === 'resetcolors') this._emit('resetcolors', {});
                 else if (action === 'freeze') this._emit('freeze', {});
                 else if (action === 'updatefrozen') this._emit('updatefrozen', {});
+                else if (action === 'exportdata') this._emit('exportdata', {});
                 this._closeContextMenu();
-                if (action !== 'settings') this._clearSelection();
+                if (action !== 'settings' && action !== 'exportdata') this._clearSelection();
             });
         });
 

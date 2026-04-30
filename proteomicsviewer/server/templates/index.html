@@ -519,7 +519,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.9.2</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.10.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -838,7 +838,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='4.9.2';
+var PROKER_VERSION='4.10.0';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -2903,6 +2903,7 @@ function renderPlot(p,qd,fidx){
     chart.on('resetcolors',()=>{p._forceUpdate=true;const{data:q}=getQData();renderPlot(p,q,getFilteredIdx())});
     chart.on('freeze',()=>freezePlot(p.plotId));
     chart.on('updatefrozen',()=>updateFrozenPlot(p.plotId));
+    chart.on('exportdata',()=>exportPlotDataCSV(p));
     chart.on('pointselect',d=>{d.plotId=p.plotId;updateToolbar(null,d)});
     chart.on('pointdeselect',()=>updateToolbar(null));
     chart.on('titleselect',d=>updateToolbar(d.element));
@@ -4239,6 +4240,250 @@ function _aoaToCSV(aoa){
         if(/[",\n]/.test(s)) return '"'+s.replace(/"/g,'""')+'"';
         return s;
     }).join(',')).join('\n');
+}
+
+// ================================================================
+// PER-PLOT DATA EXPORT (right-click → "Export data")
+// ================================================================
+// Build a tidy table of exactly what's plotted, with one row per data
+// point and explicit column headers. Output is a CSV ready to paste
+// straight into GraphPad Prism (XY or Column tables) or any other
+// graphing software. The whole computation is re-run the same way the
+// plot's build*Config function does, so what you see is what you get.
+function _slug(s){return String(s||'plot').replace(/[^A-Za-z0-9._-]+/g,'_').slice(0,80)}
+
+function _extractPlotData(p){
+    if(!p||!RAW) return null;
+    const cfg=p.config||{};
+    const ctx=_buildExportContext();
+    let qd=ctx.qd, fidx=ctx.fidx;
+    // Same source-file restriction the plot itself uses
+    if(cfg._sourceFile&&typeof _restrictData==='function'&&_sourceFileCount&&_sourceFileCount()>1){
+        const r=_restrictData(qd,fidx,cfg._sourceFile);
+        qd=r.qd;fidx=r.fidx;
+    }
+
+    if(p.type==='enrichment'){
+        const gx=cfg.gx,gy=cfg.gy,isLog2=cfg.log2||false;
+        const headers=['Rank','Protein ID','Gene Name','Mean '+gx,'Mean '+gy,
+            (isLog2?'Log2(':'')+gx+'/'+gy+(isLog2?')':' Ratio'),'log10(p-value)'];
+        const rows=[];
+        const data=[];
+        for(let fi=0;fi<fidx.length;fi++){
+            const mA=grpMean(fi,gx,qd,fidx),mB=grpMean(fi,gy,qd,fidx);
+            if(!(mA>0)||!(mB>0)) continue;
+            const val=isLog2?Math.log2(mA/mB):(mA/mB);
+            const pi=fidx[fi];const pr=RAW.proteins[pi];
+            data.push({val,id:pr.majority_id||pr.id||'',gene:pr.gene_name||'',mA,mB});
+        }
+        data.sort((a,b)=>a.val-b.val);
+        data.forEach((d,i)=>rows.push([i+1,d.id,d.gene,d.mA,d.mB,d.val]));
+        return{filename:'enrichment_'+_slug(gx)+'_vs_'+_slug(gy),headers,rows,
+            note:'Enrichment ratio = mean('+gx+') / mean('+gy+'). '+(isLog2?'Log2-transformed.':'Linear ratio.')};
+    }
+
+    if(p.type==='volcano'){
+        const gx=cfg.gx,gy=cfg.gy;
+        const fcT=cfg.fc||1,fdrT=cfg.fdr||0.05,s0=cfg.s0||0;
+        const doImpute=cfg.impute,impMethod=cfg.imputeMethod||'perseus';
+        const impSeed=cfg.imputeSeed!=null?cfg.imputeSeed:42;
+        const _bx=BINS.find(b=>b.label===gx),_by=BINS.find(b=>b.label===gy);
+        const _canT=(_bx?_bx.samples.length:0)>=2&&(_by?_by.samples.length:0)>=2;
+        const _allSamples=(_bx?_bx.samples:[]).concat(_by?_by.samples:[]);
+        let _allVals=null;
+        if(impMethod==='perseus'&&doImpute){
+            _allVals=[];
+            for(let fi=0;fi<fidx.length;fi++){
+                grpVals(fi,gx,qd,fidx).concat(grpVals(fi,gy,qd,fidx)).forEach(v=>{if(v>0)_allVals.push(v)});
+            }
+        }
+        const headers=['Protein ID','Gene Name','Mean '+gx,'Mean '+gy,
+            'Log2('+gx+' / '+gy+')','-Log10(P)','-Log10(FDR)','P-value','FDR adj. P-value','Detection','Significance'];
+        // First pass: collect & impute
+        const collected=[];
+        for(let fi=0;fi<fidx.length;fi++){
+            let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
+            const mA0=mean(vA),mB0=mean(vB);
+            const inA=mA0>0,inB=mB0>0;
+            if(!inA&&!inB) continue;
+            const pi=fidx[fi];const pr=RAW.proteins[pi];
+            if(inA&&inB){
+                if(doImpute){
+                    const imp=imputeValues(vA,vB,impMethod,_allVals,_allSamples,qd,fidx,fi,impSeed);
+                    vA=imp.a;vB=imp.b;
+                }
+                const fcVal=Math.log2(mean(vA)/mean(vB));
+                if(!isFinite(fcVal)) continue;
+                const pv=_canT?ttest(vA,vB,s0):NaN;
+                collected.push({id:pr.majority_id||pr.id||'',gene:pr.gene_name||'',mA:mA0,mB:mB0,fc:fcVal,p:pv,detection:'both'});
+            } else if(inA){
+                collected.push({id:pr.majority_id||pr.id||'',gene:pr.gene_name||'',mA:mA0,mB:0,fc:NaN,p:NaN,detection:'only '+gx});
+            } else {
+                collected.push({id:pr.majority_id||pr.id||'',gene:pr.gene_name||'',mA:0,mB:mB0,fc:NaN,p:NaN,detection:'only '+gy});
+            }
+        }
+        // FDR over the both-detected subset
+        const bothIdx=collected.map((r,i)=>r.detection==='both'?i:-1).filter(i=>i>=0);
+        const validP=bothIdx.map(i=>isNaN(collected[i].p)?1:collected[i].p);
+        const adjP=validP.length?bhFDR(validP):[];
+        bothIdx.forEach((idx,j)=>{collected[idx].adjP=adjP[j]});
+        const rows=collected.map(r=>{
+            const pv=r.p,ap=r.adjP;
+            const negLogP=isFinite(pv)?-Math.log10(Math.max(pv,1e-300)):'';
+            const negLogFDR=isFinite(ap)?-Math.log10(Math.max(ap,1e-300)):'';
+            let sig='';
+            if(r.detection==='both'&&isFinite(ap)&&isFinite(r.fc)){
+                if(ap<fdrT&&Math.abs(r.fc)>=fcT) sig=r.fc>0?'Up in '+gx:'Up in '+gy;
+                else sig='NS';
+            } else if(r.detection!=='both') sig='presence-only';
+            return[r.id,r.gene,r.mA,r.mB,isFinite(r.fc)?r.fc:'',negLogP,negLogFDR,
+                isFinite(pv)?pv:'',isFinite(ap)?ap:'',r.detection,sig];
+        });
+        return{filename:'volcano_'+_slug(gx)+'_vs_'+_slug(gy),headers,rows,
+            note:'Settings: FDR='+fdrT+', |Log2 FC|='+fcT+', S0='+s0+', Impute='+(doImpute?'Yes ('+impMethod+', seed='+impSeed+')':'No')};
+    }
+
+    if(p.type==='dotplot'){
+        const tf=cfg.transform||'log10';
+        const intra=cfg.intraGroup;
+        const gx=intra?cfg.intraSampleX:cfg.gx;
+        const gy=intra?cfg.intraSampleY:cfg.gy;
+        const headers=['Protein ID','Gene Name','Mean '+gx,'Mean '+gy,'Detection'];
+        const rows=[];
+        for(let fi=0;fi<fidx.length;fi++){
+            let mx,my;
+            if(intra){mx=qd[gx]?qd[gx][fi]:0;my=qd[gy]?qd[gy][fi]:0}
+            else{mx=grpMean(fi,gx,qd,fidx);my=grpMean(fi,gy,qd,fidx)}
+            if(!(mx>0)&&!(my>0)) continue;
+            const pi=fidx[fi];const pr=RAW.proteins[pi];
+            const det=mx>0&&my>0?'both':(mx>0?'only '+gx:'only '+gy);
+            rows.push([pr.majority_id||pr.id||'',pr.gene_name||'',mx,my,det]);
+        }
+        return{filename:'dotplot_'+_slug(gx)+'_vs_'+_slug(gy),headers,rows,
+            note:'Axis transform: '+tf};
+    }
+
+    if(p.type==='unique'){
+        const featured=cfg.featuredGroup,mode=cfg.mode;
+        const allGroups=BINS.filter(b=>b.samples.length>0).map(b=>b.label);
+        let excludeGroups=[];
+        if(mode==='not_control') excludeGroups=cfg.controlGroup?[cfg.controlGroup]:[];
+        else if(mode==='not_selected') excludeGroups=cfg.excludeGroups||[];
+        else if(mode==='exclusive') excludeGroups=allGroups.filter(g=>g!==featured);
+        const headers=['Rank','Protein ID','Gene Name','Mean '+featured];
+        const rows=[];
+        const items=[];
+        for(let fi=0;fi<fidx.length;fi++){
+            const fm=mean(grpVals(fi,featured,qd,fidx));if(!(fm>0)) continue;
+            let found=false;
+            for(const eg of excludeGroups){if(eg===featured) continue;if(mean(grpVals(fi,eg,qd,fidx))>0){found=true;break}}
+            if(found) continue;
+            const pi=fidx[fi];const pr=RAW.proteins[pi];
+            items.push({id:pr.majority_id||pr.id||'',gene:pr.gene_name||'',abund:fm});
+        }
+        items.sort((a,b)=>b.abund-a.abund);
+        items.forEach((it,i)=>rows.push([i+1,it.id,it.gene,it.abund]));
+        return{filename:'unique_'+_slug(featured),headers,rows,
+            note:'Unique to "'+featured+'", '+mode+(excludeGroups.length?' (excluded: '+excludeGroups.join(', ')+')':'')};
+    }
+
+    if(p.type==='pca'){
+        const groups=cfg.gx.split(',');
+        const sampleNames=[],sampleGroups=[];
+        groups.forEach(g=>{const bin=BINS.find(b=>b.label===g);if(bin)bin.samples.forEach(s=>{sampleNames.push(s);sampleGroups.push(g)})});
+        if(sampleNames.length<3) return null;
+        // Mirror buildPCAConfig's data prep
+        let useQd=qd, useFidx=fidx;
+        const requestedQt=cfg.quantType||'';
+        const wantRaw=(cfg.dataSource||'processed')==='raw';
+        if(wantRaw||(requestedQt&&requestedQt!==PROC_QT)){
+            const sourceQt=requestedQt||PROC_QT||(RAW.quant_types[0]);
+            const sourceData=RAW.quant_data[sourceQt]||{};
+            if(wantRaw){
+                useFidx=[];
+                for(let i=0;i<RAW.proteins.length;i++){
+                    const pp=RAW.proteins[i];
+                    if(pp.potential_contaminant||pp.reverse||pp.only_identified_by_site) continue;
+                    useFidx.push(i);
+                }
+                useQd={};sampleNames.forEach(s=>{useQd[s]=useFidx.map(i=>sourceData[s]?sourceData[s][i]:0)});
+            } else {
+                useQd={};sampleNames.forEach(s=>{useQd[s]=fidx.map(i=>sourceData[s]?sourceData[s][i]:0)});
+            }
+        }
+        let usePositions=null;
+        if(cfg.restrictToHighlights&&typeof hasActiveHighlights==='function'&&hasActiveHighlights()){
+            usePositions=[];
+            for(let i=0;i<useFidx.length;i++){
+                if(getHighlightColor(useFidx[i])!==null) usePositions.push(i);
+            }
+        }
+        const opts={transform:cfg.transform||'log2',scaling:cfg.scaling||'center',missing:cfg.missing||'keep',
+            topN:cfg.topN||0,pcX:cfg.pcX||1,pcY:cfg.pcY||2};
+        const pca=computePCA(sampleNames,useQd,useFidx,usePositions,opts);
+        const headers=['Sample','Group','PC'+pca.pcXIndex,'PC'+pca.pcYIndex];
+        const rows=pca.scores.map((sc,i)=>[sc.name,sampleGroups[i],sc.pcX,sc.pcY]);
+        return{filename:'pca_'+_slug(groups.join('_')),headers,rows,
+            note:'Variance explained: PC'+pca.pcXIndex+'='+pca.varExpl[0].toFixed(2)+'%, PC'+pca.pcYIndex+'='+pca.varExpl[1].toFixed(2)+'% — '+pca.nProteinsUsed+' proteins'};
+    }
+
+    if(p.type==='abundance'){
+        const src=cfg.source||'group';
+        const grp=cfg.group||'',samp=cfg.sample||'';
+        const showErr=cfg.errorBars||false,errType=cfg.errorType||'sd';
+        const sortDir=cfg.sortDir||'asc';
+        const isGroup=src==='group';
+        const label=isGroup?grp:samp;
+        const headers=['Rank','Protein ID','Gene Name','Mean '+label];
+        if(showErr&&isGroup){
+            if(errType==='sd') headers.push('SD');
+            else if(errType==='sem') headers.push('SEM');
+            else { headers.push('Min'); headers.push('Max'); }
+        }
+        const data=[];
+        for(let fi=0;fi<fidx.length;fi++){
+            let val=0,vals=[];
+            if(isGroup){vals=grpVals(fi,grp,qd,fidx);val=mean(vals)}
+            else val=qd[samp]?qd[samp][fi]:0;
+            if(!(val>0)) continue;
+            const pi=fidx[fi];const pr=RAW.proteins[pi];
+            const row={id:pr.majority_id||pr.id||'',gene:pr.gene_name||'',val,vals};
+            data.push(row);
+        }
+        data.sort((a,b)=>sortDir==='asc'?a.val-b.val:b.val-a.val);
+        const rows=data.map((d,i)=>{
+            const r=[i+1,d.id,d.gene,d.val];
+            if(showErr&&isGroup&&d.vals.length>=2){
+                if(errType==='sd') r.push(sd(d.vals));
+                else if(errType==='sem') r.push(sem(d.vals));
+                else { r.push(Math.min(...d.vals)); r.push(Math.max(...d.vals)); }
+            } else if(showErr&&isGroup) {
+                if(errType==='range'){r.push('');r.push('')} else r.push('');
+            }
+            return r;
+        });
+        return{filename:'abundance_'+_slug(label),headers,rows,
+            note:'Source: '+(isGroup?'group "'+grp+'" (mean across '+(BINS.find(b=>b.label===grp)?.samples?.length||0)+' samples)':'sample "'+samp+'"')};
+    }
+
+    return null;
+}
+
+function exportPlotDataCSV(p){
+    let data;
+    try{ data=_extractPlotData(p); }
+    catch(e){
+        console.error('Export data failed:',e);
+        alert('Failed to extract plot data: '+(e&&e.message?e.message:String(e)).slice(0,200));
+        return;
+    }
+    if(!data){alert('No exportable data for this plot type.');return}
+    // First line: a comment-style note describing what's in the file
+    const csvBody=_aoaToCSV([data.headers].concat(data.rows));
+    const csv=(data.note?'# '+data.note+'\n':'')+csvBody;
+    const blob=new Blob([csv],{type:'text/csv'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download=data.filename+'_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
 }
 
 function exportCSV(){
