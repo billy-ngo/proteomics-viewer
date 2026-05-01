@@ -28,6 +28,10 @@ class ProkerChart {
         this.callbacks = {};
         this.svg = null;
         this.tooltip = null;
+        // Track every document-level listener attached by _attachEvents so we
+        // can remove them in destroy(). Without this, each render() leaks
+        // ~6 mousemove/mouseup pairs that all fire on every mouse move.
+        this._docListeners = [];
         this._selBox = null;
         this._selState = { active: false, startX: 0, startY: 0, x0: 0, y0: 0, x1: 0, y1: 0, hasSelection: false };
         this._selPx = null;
@@ -421,7 +425,26 @@ class ProkerChart {
     }
 
     // ── Events ───────────────────────────────────────────────────
+    // Register a document-level listener AND remember it so destroy() can
+    // detach it. Use this everywhere inside _attachEvents instead of calling
+    // document.addEventListener directly.
+    _onDoc(event, handler, opts) {
+        document.addEventListener(event, handler, opts);
+        this._docListeners.push({ event, handler, opts });
+    }
+    _detachDocListeners() {
+        if (!this._docListeners) return;
+        for (const { event, handler, opts } of this._docListeners) {
+            try { document.removeEventListener(event, handler, opts); } catch (e) {}
+        }
+        this._docListeners = [];
+    }
+
     _attachEvents() {
+        // Tear down any listeners from a previous render before attaching new
+        // ones — _attachEvents is called once per render() and ProkerChart
+        // instances are typically thrown away on re-render, but defensive.
+        this._detachDocListeners();
         const svg = this.svg;
         if (!svg) return;
 
@@ -493,8 +516,8 @@ class ProkerChart {
                     else this._editAxisTitle(el);
                 }
             };
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
+            this._onDoc('mousemove', onMove);
+            this._onDoc('mouseup', onUp);
         });
 
         // Tick label click → edit range
@@ -566,8 +589,8 @@ class ProkerChart {
                     ann.ay = parseFloat(line.getAttribute('y2')) - py;
                 }
             };
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
+            this._onDoc('mousemove', onMove);
+            this._onDoc('mouseup', onUp);
         });
 
         // No scroll zoom — user explicitly requested no scroll wheel interaction
@@ -612,9 +635,9 @@ class ProkerChart {
             box.setAttribute('width', w); box.setAttribute('height', h);
             box.setAttribute('display', 'block');
         };
-        document.addEventListener('mousemove', onSelMove);
+        this._onDoc('mousemove', onSelMove);
 
-        document.addEventListener('mouseup', e => {
+        this._onDoc('mouseup', e => {
             if (e.button !== 2 || !this._selState.active) return;
             this._selState.active = false;
             const rect = svg.getBoundingClientRect();
@@ -675,7 +698,7 @@ class ProkerChart {
                     e.preventDefault();
                 });
             }
-            document.addEventListener('mousemove', e => {
+            this._onDoc('mousemove', e => {
                 if (!dragging) return;
                 const wrap = this.container.closest('.canvas-plot');
                 if (!wrap) return;
@@ -684,7 +707,7 @@ class ProkerChart {
                 wrap.style.left = (origL + (e.clientX - startMX) / scale) + 'px';
                 wrap.style.top = (origT + (e.clientY - startMY) / scale) + 'px';
             });
-            document.addEventListener('mouseup', () => {
+            this._onDoc('mouseup', () => {
                 if (dragging) {
                     dragging = false; document.body.style.cursor = '';
                     const wrap = this.container.closest('.canvas-plot');
@@ -1057,6 +1080,10 @@ class ProkerChart {
     resize() { this.render(); return this; }
 
     destroy() {
+        // Tear down every document-level listener registered by _attachEvents.
+        // Without this, each render() leaks ~6 mousemove/mouseup pairs, all of
+        // which hold a reference to the (now stale) chart instance.
+        this._detachDocListeners();
         if (this.tooltip) { this.tooltip.remove(); this.tooltip = null; }
         if (this.container) this.container.innerHTML = '';
     }

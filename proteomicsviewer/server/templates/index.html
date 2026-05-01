@@ -260,11 +260,19 @@ function handleIncoming(file){
 function handleMultipleFiles(files){
     if(!files||!files.length)return;
     if(files.length===1){handleIncoming(files[0]);return}
+    const modal=document.getElementById('file-modal');
+    const modalAlreadyOpen=modal&&!modal.classList.contains('hidden');
     if(RAW){
-        // Stash all files; modal handlers will process them
-        pendingFile=files[0];
-        pendingFileQueue=files.slice(1);
-        document.getElementById('file-modal').classList.remove('hidden');
+        if(modalAlreadyOpen&&pendingFile){
+            // A modal is already open from a previous drop. Append to the
+            // queue instead of clobbering it (which would lose the earlier
+            // files the user was about to confirm).
+            pendingFileQueue.push(...files);
+        } else {
+            pendingFile=files[0];
+            pendingFileQueue=files.slice(1);
+            if(modal) modal.classList.remove('hidden');
+        }
         return;
     }
     // Cold start: load first as fresh, then append rest sequentially
@@ -519,7 +527,7 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.10.0</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.10.1</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
             <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
             <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
@@ -838,7 +846,7 @@ var CANVAS_PLOTS=[]; // [{id,type,config,plotId}]
 var nextAnaId=1, nextPlotId=1;
 // Chart instances stored per plotId
 var CHARTS={};
-var PROKER_VERSION='4.10.0';
+var PROKER_VERSION='4.10.1';
 
 // ── Undo/Redo system ──
 var undoStack=[], redoStack=[], MAX_UNDO=50;
@@ -1272,7 +1280,19 @@ fileInput.addEventListener('change',()=>{if(fileInput.files.length){handleIncomi
 // Use Array.from on types (DOMStringList) for cross-browser compat
 function hasFileType(dt){try{return dt&&dt.types&&Array.from(dt.types).includes('Files')}catch(e){return false}}
 document.addEventListener('dragover',e=>{if(hasFileType(e.dataTransfer)){e.preventDefault();e.dataTransfer.dropEffect='copy'}},false);
-document.addEventListener('drop',e=>{if(!hasFileType(e.dataTransfer))return;e.preventDefault();e.stopPropagation();if(e.dataTransfer.files.length)handleIncoming(e.dataTransfer.files[0])},false);
+document.addEventListener('drop',e=>{
+    if(!hasFileType(e.dataTransfer)) return;
+    // Don't hijack drops onto inputs that handle their own file payloads
+    // (e.g. the peptide-coverage FASTA textarea has its own ondrop).
+    if(e.target&&e.target.closest&&e.target.closest('#cov-fasta,#session-load-input')) return;
+    e.preventDefault();e.stopPropagation();
+    if(e.dataTransfer.files.length){
+        // Honour multi-file drop: send everything to handleMultipleFiles, not
+        // just the first file. Otherwise dragging 5 files onto the page only
+        // loads the first one.
+        handleMultipleFiles([...e.dataTransfer.files]);
+    }
+},false);
 
 // handleIncoming and uploadFile defined in early script block
 function closeFileModal(){pendingFile=null;pendingFileQueue=[];document.getElementById('file-modal').classList.add('hidden')}
@@ -1316,6 +1336,15 @@ function mergeData(newData){
     if(!RAW.sample_source) RAW.sample_source={};
     const existingSamples=new Set(RAW.samples);
     const newSamples=newData.samples.filter(s=>!existingSamples.has(s));
+    // Refuse a merge that would silently corrupt the dataset: if every sample
+    // in the new file already exists (re-upload of the same file, or a
+    // collision) but the new file ALSO has proteins, appending those proteins
+    // would leave existing samples' quant arrays unpadded → row misalignment.
+    // This case is almost always the user re-uploading the same file.
+    if(!newSamples.length&&newData.proteins.length){
+        alert('This file appears to overlap entirely with the already-loaded data — every sample name (e.g. "'+newData.samples.slice(0,3).join(', ')+'") is already present.\n\nNothing was merged. If you intended to replace the current data, use the file upload modal\'s "Replace" option instead.');
+        return;
+    }
     if(!newSamples.length&&!newData.proteins.length){alert('No new samples or proteins found in file');return}
 
     const oldProteinCount=RAW.proteins.length;
@@ -2819,6 +2848,12 @@ function renamePlot(plotId,newTitle){
     if(p) p.title=newTitle;
 }
 function removePlot(plotId){
+    // Destroy the chart instance so its document-level listeners are detached,
+    // then drop the CHARTS entry — otherwise stale references accumulate.
+    if(CHARTS[plotId]){
+        try{CHARTS[plotId].destroy()}catch(e){console.warn('Chart destroy failed:',e)}
+        delete CHARTS[plotId];
+    }
     CANVAS_PLOTS=CANVAS_PLOTS.filter(p=>p.plotId!==plotId);
     document.getElementById('card-'+plotId)?.remove();
     updateStatsMethodsPanel();
@@ -2888,8 +2923,18 @@ function renderPlot(p,qd,fidx){
     // file's proteins so cross-file zero padding doesn't pollute the analysis.
     let useQd=qd, useFidx=fidx;
     if(p.config&&p.config._sourceFile&&_sourceFileCount()>1){
-        const r=_restrictData(qd,fidx,p.config._sourceFile);
-        useQd=r.qd; useFidx=r.fidx;
+        // Stale-reference guard: if the named source file is no longer loaded
+        // (user removed/replaced it), the restriction would silently filter
+        // to zero proteins and the plot would render empty. Drop the stale
+        // restriction and fall back to all proteins instead.
+        const knownSources=new Set(Object.values(RAW.sample_source||{}));
+        if(!knownSources.has(p.config._sourceFile)){
+            console.warn('Plot "'+(p.title||p.type)+'" referenced source file "'+p.config._sourceFile+'" which is no longer loaded; ignoring restriction.');
+            p.config._sourceFile=null;
+        } else {
+            const r=_restrictData(qd,fidx,p.config._sourceFile);
+            useQd=r.qd; useFidx=r.fidx;
+        }
     }
 
     if(p.type==='enrichment') buildEnrichmentConfig(chart,p,useQd,useFidx);
@@ -3556,9 +3601,10 @@ function exportAllSVG(){
     // Combine all plot SVGs into one canvas SVG
     const canvas=document.getElementById('canvas');if(!canvas)return;
     const plots=canvas.querySelectorAll('.proker-svg');
-    if(!plots.length)return;
+    if(!plots.length){alert('No plots on the canvas to export.');return}
     const sizes=[...plots].map(_measureSvg);
-    const maxW=Math.max(...sizes.map(s=>s.w));
+    // reduce(... , 0) returns 0 (not -Infinity) when sizes is empty — defensive
+    const maxW=sizes.reduce((m,s)=>Math.max(m,s.w),0);
     let totalH=0;
     const svgParts=[];
     plots.forEach((svg,idx)=>{
@@ -3566,6 +3612,7 @@ function exportAllSVG(){
         svgParts.push(`<g transform="translate(0,${totalH})">${svg.innerHTML}</g>`);
         totalH+=h+12;
     });
+    if(maxW<=0||totalH<=0){alert('Plots have zero size — nothing to export.');return}
     const combined=`<svg xmlns="http://www.w3.org/2000/svg" width="${maxW}" height="${totalH}" style="font-family:Arial,Helvetica,sans-serif">${svgParts.join('')}</svg>`;
     const blob=new Blob([combined],{type:'image/svg+xml'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='proker_canvas.svg';a.click();
@@ -3573,10 +3620,10 @@ function exportAllSVG(){
 function exportAllPNG(){
     const canvas=document.getElementById('canvas');if(!canvas)return;
     const plots=canvas.querySelectorAll('.proker-svg');
-    if(!plots.length)return;
+    if(!plots.length){alert('No plots on the canvas to export.');return}
     const scale=2;
     const sizes=[...plots].map(_measureSvg);
-    const maxW=Math.max(...sizes.map(s=>s.w));
+    const maxW=sizes.reduce((m,s)=>Math.max(m,s.w),0);
     let totalH=0;
     sizes.forEach(s=>{totalH+=s.h+12});
     // Combine SVGs then render to canvas
@@ -3586,11 +3633,13 @@ function exportAllPNG(){
         svgParts.push(`<g transform="translate(0,${yOff})">${svg.innerHTML}</g>`);
         yOff+=h+12;
     });
+    if(maxW<=0||totalH<=0){alert('Plots have zero size — nothing to export.');return}
     const combined=`<svg xmlns="http://www.w3.org/2000/svg" width="${maxW}" height="${totalH}" style="font-family:Arial,Helvetica,sans-serif">${svgParts.join('')}</svg>`;
     const cvs=document.createElement('canvas');cvs.width=maxW*scale;cvs.height=totalH*scale;
     const ctx=cvs.getContext('2d');const img=new Image();
     img.onload=()=>{ctx.drawImage(img,0,0,cvs.width,cvs.height);cvs.toBlob(blob=>{
         const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='proker_canvas.png';a.click()})};
+    img.onerror=()=>alert('PNG export failed: the SVG could not be rasterised (likely too large for a data URI). Try the SVG export instead.');
     img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(combined);
 }
 // ================================================================
@@ -3700,11 +3749,13 @@ function exportCanvasAsSVG(){
 function exportCanvasAsPNG(){
     const result=_buildCanvasCompositeSVG();
     if(!result){alert('Nothing to export');return}
+    if(result.w<=0||result.h<=0){alert('Canvas content has zero size — nothing to export.');return}
     const scale=2;
     const cvs=document.createElement('canvas');cvs.width=result.w*scale;cvs.height=result.h*scale;
     const ctx=cvs.getContext('2d');const img=new Image();
     img.onload=()=>{ctx.drawImage(img,0,0,cvs.width,cvs.height);cvs.toBlob(blob=>{
         const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='proker_canvas_layout.png';a.click()})};
+    img.onerror=()=>alert('PNG export failed: the SVG could not be rasterised (likely too large for a data URI). Try the SVG export instead.');
     img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(result.svg);
 }
 
@@ -4896,7 +4947,18 @@ function loadSession(file){
         // proteinGroups.txt. Autosave sessions skip this (file too big for
         // localStorage), so they still rely on the user uploading first.
         let embeddedRestored=false;
-        if(s.raw&&typeof s.raw==='object'&&Array.isArray(s.raw.samples)&&Array.isArray(s.raw.proteins)){
+        const hasEmbedded=s.raw&&typeof s.raw==='object'&&Array.isArray(s.raw.samples)&&Array.isArray(s.raw.proteins);
+        // Confirm before clobbering an in-progress analysis. The file-upload
+        // modal already does this for raw uploads; session load needed the same
+        // safeguard.
+        if(hasEmbedded&&RAW&&Array.isArray(RAW.proteins)&&RAW.proteins.length>0){
+            const cur=RAW.filename||'(unnamed)';
+            const incoming=s.raw.filename||s.filename||'(unnamed)';
+            if(!confirm('A dataset is already loaded:\n  • '+cur+' ('+RAW.proteins.length+' proteins)\n\nLoading this session will REPLACE it with:\n  • '+incoming+' ('+s.raw.proteins.length+' proteins)\n\nAll current groups, plots, and unsaved changes will be lost. Continue?')){
+                return;
+            }
+        }
+        if(hasEmbedded){
             tryRun('embedded dataset',()=>{
                 RAW=s.raw;
                 if(!RAW.sample_source&&s.sampleSource) RAW.sample_source=s.sampleSource;
