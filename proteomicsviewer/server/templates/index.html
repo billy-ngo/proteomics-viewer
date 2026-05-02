@@ -240,16 +240,59 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 </head>
 <body ondragover="event.preventDefault()" ondrop="event.preventDefault()">
 <script>
-window.onerror=function(msg,url,line){
-    // document.title has a hard 32 767-char limit; long error messages would
-    // make this handler itself throw, masking the original error. Truncate
-    // and wrap in try/catch so this can never be the source of a new error.
+// ── Global error containment ────────────────────────────────────────
+// The goal here: a single throw should never lock the program. Surface
+// errors visibly (so the user knows something went wrong), log them to
+// console, and offer a recovery path. Every handler below is itself
+// wrapped in try/catch so the handler can never become the new source
+// of an error.
+window.__errorCount=0;
+function _showErrorToast(msg){
     try{
+        var existing=document.getElementById('__err_toast');
+        if(existing) existing.remove();
+        var toast=document.createElement('div');
+        toast.id='__err_toast';
+        toast.style.cssText='position:fixed;bottom:14px;right:14px;max-width:420px;background:#7a1f1f;color:#fff;padding:10px 14px;border-radius:6px;font-size:12px;line-height:1.45;box-shadow:0 4px 14px rgba(0,0,0,0.5);z-index:99999;font-family:-apple-system,Segoe UI,sans-serif';
+        var safe=String(msg||'unknown error');
+        if(safe.length>320) safe=safe.slice(0,320)+'…';
+        toast.innerHTML='<div style="font-weight:700;margin-bottom:4px">An error occurred</div><div style="opacity:0.92;word-break:break-word">'+safe.replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+'</div><div style="margin-top:6px;font-size:10px;opacity:0.7">The app should still work — try the action again. Check console (F12) for details.</div><button onclick="document.getElementById(\'__err_toast\').remove()" style="position:absolute;top:4px;right:6px;background:transparent;border:none;color:#fff;cursor:pointer;font-size:16px;opacity:0.7" title="Dismiss">&times;</button>';
+        toast.style.position='fixed';
+        document.body.appendChild(toast);
+        // Auto-dismiss after 12s so the toast doesn't accumulate
+        setTimeout(()=>{try{toast.remove()}catch(e){}},12000);
+    }catch(e){/* never let the toast fail */}
+}
+window.onerror=function(msg,url,line){
+    try{
+        window.__errorCount++;
         var s=String(msg||'');
         if(s.length>500) s=s.slice(0,500)+'... (truncated)';
+        // document.title has a hard 32 767-char limit; long error messages
+        // would make this handler itself throw, masking the original error.
         document.title='JS ERROR: '+s+' line:'+line;
     }catch(e){}
-    try{console.error('INIT ERROR:',msg,'line:',line,'url:',url)}catch(e){}
+    try{console.error('[onerror]',msg,'line:',line,'url:',url)}catch(e){}
+    try{_showErrorToast(msg+' (line '+line+')')}catch(e){}
+};
+// Catch async/promise rejections that would otherwise vanish silently
+window.addEventListener('unhandledrejection',function(ev){
+    try{
+        window.__errorCount++;
+        var reason=ev.reason;
+        var msg=(reason&&reason.message)?reason.message:String(reason);
+        console.error('[unhandledrejection]',reason);
+        _showErrorToast('Async error: '+msg);
+    }catch(e){}
+});
+// Emergency reset for stuck UI state — exposed for the rare case where
+// something becomes unrecoverable. Accessible via console: `window.__reset()`.
+window.__reset=function(){
+    try{
+        if(typeof resetState==='function') resetState();
+        try{localStorage.removeItem('proker-autosave')}catch(e){}
+        location.reload();
+    }catch(e){location.reload()}
 };
 // Early-defined upload functions so inline handlers work
 var RAW=null, pendingFile=null, pendingFileQueue=[];
@@ -284,10 +327,20 @@ function handleMultipleFiles(files){
 async function uploadFile(file,append){
     document.getElementById('upload-error').textContent='';
     var form=new FormData();form.append('file',file);
+    // Snapshot the prior state so a post-upload error can't leave RAW in a
+    // half-mutated state (e.g. data assigned but initGrouping threw).
+    var priorRAW=RAW;
     try{
         var resp=await fetch('/api/upload',{method:'POST',body:form});
         if(!resp.ok){var err=await resp.json();throw new Error(err.detail||'Upload failed')}
         var data=await resp.json();
+        // Refuse a 0-protein upload outright. The parser may legitimately return
+        // a 0-protein dataset for a headers-only file, but downstream every plot
+        // is empty and the user has no idea why. A loud refusal is much kinder
+        // than a silent broken UI.
+        if(!data.proteins||data.proteins.length===0){
+            throw new Error('No protein rows found in this file. The header was parsed but the file has no data rows. Check that the file is the proteinGroups.txt output from MaxQuant and not an empty placeholder.');
+        }
         // Defensive backfill of source tags in case the backend didn't set them
         if(data.proteins) data.proteins.forEach(p=>{if(!p.source_file) p.source_file=data.filename});
         if(!data.sample_source){
@@ -302,8 +355,20 @@ async function uploadFile(file,append){
             // Cache raw file (raw_headers/raw_rows) per source for export
             RAW.raw_files=[{filename:data.filename,headers:data.raw_headers||[],rows:data.raw_rows||[]}];
         }
-        initGrouping();
-    }catch(e){document.getElementById('upload-error').textContent=e.message}
+        try{
+            initGrouping();
+        }catch(initErr){
+            // initGrouping threw after RAW was assigned. Restore prior state
+            // so the user can re-upload cleanly instead of being stuck with a
+            // half-loaded dataset and a frozen UI.
+            console.error('initGrouping failed, restoring previous state:',initErr);
+            RAW=priorRAW;
+            throw new Error('Failed to initialize grouping for this file: '+(initErr.message||initErr));
+        }
+    }catch(e){
+        document.getElementById('upload-error').textContent=e.message;
+        console.error('[uploadFile]',e);
+    }
 }
 </script>
 <!-- Modal (file conflict) -->
@@ -465,11 +530,11 @@ async function uploadFile(file,append){
         </div>
         <div style="font-size:11px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Format</div>
         <div style="display:flex;gap:8px;margin-bottom:14px">
-            <button class="hdr-btn" onclick="doExport('svg')" style="flex:1;justify-content:center">
+            <button class="hdr-btn" onclick="doExport('svg')" style="flex:1;justify-content:center" title="Vector format — zoom-safe, fully editable in Illustrator/Inkscape/Figma. Best for figures.">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" style="flex-shrink:0"><rect x="1" y="1" width="10" height="10" rx="1"/><path d="M3 8L5 4 7 7 9 3"/></svg>
                 SVG (vector)
             </button>
-            <button class="hdr-btn" onclick="doExport('png')" style="flex:1;justify-content:center">
+            <button class="hdr-btn" onclick="doExport('png')" style="flex:1;justify-content:center" title="Raster image at 2× resolution. Best for slides, posters, and quick previews.">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" style="flex-shrink:0"><rect x="1" y="1" width="10" height="10" rx="1"/><circle cx="4" cy="4" r="1.5"/><path d="M1 9l3-3 2 2 3-4 2 3"/></svg>
                 PNG (raster)
             </button>
@@ -499,13 +564,13 @@ async function uploadFile(file,append){
         </div>
         <!-- Save section -->
         <div style="font-size:11px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Save</div>
-        <button class="hdr-btn" onclick="saveSession()" style="margin-bottom:6px">Save to file</button>
+        <button class="hdr-btn" onclick="saveSession()" style="margin-bottom:6px" title="Download a JSON file containing your data, groups, analyses, and all plots — fully self-contained">Save to file</button>
         <div style="font-size:11px;color:var(--text-sec);margin-bottom:18px">Session is also auto-saved to browser storage.</div>
         <!-- Restore section -->
         <div style="font-size:11px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Restore</div>
         <div style="display:flex;gap:8px;margin-bottom:6px">
-            <button class="hdr-btn" onclick="document.getElementById('session-load-input').click()">Load from file</button>
-            <button class="hdr-btn" onclick="restoreAutoSave()">Restore last session</button>
+            <button class="hdr-btn" onclick="document.getElementById('session-load-input').click()" title="Open a previously saved session file (.json). Replaces any currently loaded data.">Load from file</button>
+            <button class="hdr-btn" onclick="restoreAutoSave()" title="Restore your most recent session from this browser's local storage (cleared when cache is wiped)">Restore last session</button>
         </div>
         <div style="font-size:11px;color:var(--text-sec);margin-bottom:18px" id="session-autosave-info"></div>
         <!-- Close -->
@@ -527,10 +592,10 @@ async function uploadFile(file,append){
         </div>
         <!-- Fields -->
         <div style="font-size:14px;line-height:2">
-            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.10.1</span></div>
+            <div><strong>Version:</strong> <span style="color:var(--text-sec)" id="info-version">4.14.0</span></div>
             <div><strong>Publisher:</strong> <span style="color:var(--text-sec)">Billy M Ngo</span></div>
-            <div><strong>Published:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
-            <div><strong>Updated:</strong> <span style="color:var(--text-sec)">April 2026</span></div>
+            <div><strong>Published:</strong> <span style="color:var(--text-sec)">February 2026</span></div>
+            <div><strong>Updated:</strong> <span style="color:var(--text-sec)">May 2026</span></div>
         </div>
         <!-- Citation box -->
         <div style="margin:16px 0;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:6px;font-size:13px;color:var(--text-sec);font-style:italic;line-height:1.5">
@@ -540,26 +605,43 @@ async function uploadFile(file,append){
         <details style="margin-bottom:16px">
             <summary style="font-size:14px;font-weight:700;cursor:pointer;padding:4px 0">References &amp; Acknowledgments</summary>
             <div style="font-size:12px;color:var(--text-sec);line-height:1.7;margin-top:8px">
-                <div>D3.js &mdash; Data visualization library</div>
-                <div>MaxQuant &mdash; Proteomics data processing</div>
-                <div>Benjamini &amp; Hochberg (1995) &mdash; FDR correction method</div>
-                <div>Tusher, Tibshirani &amp; Chu (2001) &mdash; SAM / S0 fudge factor</div>
-                <div>Tyanova et al. (2016) &mdash; Perseus computational platform</div>
+                <div style="margin-bottom:6px;color:var(--text);font-weight:600">Statistical methods</div>
+                <div>Benjamini &amp; Hochberg (1995) &mdash; <em>J. R. Stat. Soc. B</em> 57:289 &mdash; FDR correction</div>
+                <div>Tusher, Tibshirani &amp; Chu (2001) &mdash; <em>PNAS</em> 98:5116 &mdash; SAM / S0 fudge factor</div>
+                <div>Smyth (2004) &mdash; <em>Stat. Appl. Genet. Mol. Biol.</em> 3:3 &mdash; limma moderated t-statistic (empirical Bayes)</div>
+                <div>Zhu et al. (2020) &mdash; <em>Mol. Cell. Proteomics</em> 19:1047 &mdash; DEqMS peptide-count covariate</div>
+                <div>Tyanova et al. (2016) &mdash; <em>Nature Protocols</em> 11:2301 &mdash; Perseus platform &amp; default imputation</div>
+                <div>Lazar et al. (2016) &mdash; <em>J. Proteome Res.</em> 15:1116 &mdash; MinProb imputation</div>
+                <div>Wei et al. (2018) &mdash; <em>Sci. Rep.</em> 8:663 &mdash; QRILC imputation</div>
+                <div>Troyanskaya et al. (2001) &mdash; <em>Bioinformatics</em> 17:520 &mdash; kNN imputation</div>
+                <div>Kim et al. (2005) &mdash; <em>Bioinformatics</em> 21:187 &mdash; LLS imputation</div>
+                <div>Stekhoven &amp; B&uuml;hlmann (2012) &mdash; <em>Bioinformatics</em> 28:112 &mdash; MissForest imputation</div>
+                <div>Wang et al. (2020) &mdash; <em>Nucleic Acids Res.</em> 48:e83 &mdash; NAguideR benchmark of 23 methods</div>
+                <div style="margin-top:8px;margin-bottom:6px;color:var(--text);font-weight:600">Data &amp; tools</div>
+                <div>Cox &amp; Mann (2008) &mdash; <em>Nature Biotechnology</em> 26:1367 &mdash; MaxQuant proteomics processing</div>
+                <div>D3.js &mdash; Scale math (axis tick computation only)</div>
+                <div>SheetJS &mdash; XLSX export</div>
             </div>
         </details>
         <details style="margin-bottom:16px">
             <summary style="font-size:14px;font-weight:700;cursor:pointer;padding:4px 0">Statistical Methods</summary>
             <div style="font-size:12px;color:var(--text-sec);line-height:1.7;margin-top:8px">
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">Volcano Plot &mdash; Differential Expression</strong></div>
-                <div style="margin-bottom:4px"><em>Welch&rsquo;s t-test</em> &mdash; Two-sample unequal-variance t-test comparing group means. Degrees of freedom estimated via the Welch&ndash;Satterthwaite equation. P-values are computed from the regularized incomplete beta function.</div>
-                <div style="margin-bottom:4px"><em>Benjamini&ndash;Hochberg FDR</em> &mdash; Multiple-testing correction controlling the false discovery rate. Adjusted p-values (q-values) are computed by ranking raw p-values and scaling by n/rank.</div>
-                <div style="margin-bottom:4px"><em>S0 correction</em> &mdash; A fudge factor added to the t-test denominator (SE + S0) to penalize fold changes driven by low-abundance noise (Tusher et al., 2001). At S0 = 0 this is a standard t-test. Typical values range from 0.1&ndash;2.0.</div>
-                <div style="margin-bottom:4px"><em>Missing value imputation</em> &mdash; Four methods available:<br>
-                &bull; <b>Perseus-style Gaussian</b> (default): draws from a down-shifted normal distribution in log2 space (shift=1.8 SD, width=0.3 SD). Ref: Tyanova et al. (2016) <em>Nature Protocols</em> 11:2301.<br>
-                &bull; <b>MinProb</b>: draws from a Gaussian centered at the 1st percentile of the log2 distribution. Ref: Lazar et al. (2016) <em>J. Proteome Res.</em> 15:1116.<br>
-                &bull; <b>kNN</b>: imputes from k=10 nearest neighbor proteins by Euclidean distance. Ref: Troyanskaya et al. (2001) <em>Bioinformatics</em> 17:520.<br>
-                &bull; <b>Min/2</b>: replaces with half the minimum non-zero value (simple deterministic baseline).<br>
-                <em>Reproducibility:</em> Perseus and MinProb draw random values, but each protein gets a deterministic seed derived from the user-supplied <b>Random seed</b> (default 42) and the protein's filtered index, computed as <code>(seed&middot;1000003 + 2&middot;fi + 1or2) mod 2<sup>32</sup></code>. Same seed + same data &rarr; identical imputed values and an identical volcano plot. Change the seed to verify a conclusion is robust to the specific draws &mdash; a result that depends on a single seed is not robust. The seed is recorded on the <em>Volcano Settings</em> sheet of the XLSX export.</div>
+                <div style="margin-bottom:4px"><em>Statistical test</em> &mdash; Three options, selectable in the volcano configuration:<br>
+                &bull; <b>Welch&rsquo;s t-test</b> (default): two-sample unequal-variance t-test comparing group means, with Welch&ndash;Satterthwaite degrees of freedom. P-values from the regularized incomplete beta function. Standard textbook test; appropriate baseline.<br>
+                &bull; <b>Moderated t-test (limma)</b>: empirical-Bayes shrinkage of per-protein variance toward a fitted scaled-inverse-&chi;<sup>2</sup> prior (Smyth 2004). Posterior variance s&sup2;<sub>post</sub> = (d&#x2080;&middot;s&sup2;<sub>0</sub> + d<sub>g</sub>&middot;s&sup2;<sub>g</sub>) / (d&#x2080; + d<sub>g</sub>); posterior df = d<sub>g</sub> + d&#x2080;. Hyperparameters d&#x2080; (prior df) and s&sup2;<sub>0</sub> (prior variance) are estimated from the empirical distribution of per-protein log-variances via method of moments using the digamma/trigamma identities. Recommended for studies with few replicates (&le; 5/group). Ref: Smyth (2004) <em>Stat. Appl. Genet. Mol. Biol.</em> 3:3.<br>
+                &bull; <b>Peptide-count moderated (DEqMS)</b>: extends limma by replacing the single global prior with a per-protein prior that depends on peptide count. Pro-ker&rsquo;s implementation bins proteins by log&#x2082;(peptide count) and uses each bin&rsquo;s median log-variance as the per-bin prior. Estimates d&#x2080; from the residual log-variance after the binned smoother (so d&#x2080; reflects within-bin variance, not total variance). Falls back to limma if the file has no <code>Peptides</code> column. Ref: Zhu et al. (2020) <em>MCP</em> 19:1047.</div>
+                <div style="margin-bottom:4px"><em>Benjamini&ndash;Hochberg FDR</em> &mdash; Multiple-testing correction controlling the false discovery rate. Adjusted p-values (q-values) are computed by ranking raw p-values and scaling by n/rank. Applied to whichever test was selected above.</div>
+                <div style="margin-bottom:4px"><em>S0 correction</em> &mdash; A fudge factor added to the t-test denominator (SE + S0) to penalize fold changes driven by low-abundance noise (Tusher et al., 2001). At S0 = 0 this is the standard test. Typical values range from 0.1&ndash;2.0. Layered on top of any of the three tests above.</div>
+                <div style="margin-bottom:4px"><em>Missing value imputation</em> &mdash; Seven methods available, covering the main families established in the proteomics literature (NAguideR, Wang et al. 2020):<br>
+                &bull; <b>Perseus-style Gaussian</b> (default): draws from a down-shifted normal distribution in log2 space (shift = 1.8 SD, width = 0.3 SD), using the comparison-wide non-zero values to estimate &mu;/&sigma;. MNAR-aware. Ref: Tyanova et al. (2016) <em>Nature Protocols</em> 11:2301.<br>
+                &bull; <b>MinProb</b> (canonical): per-sample. Computes MinDet = the smallest observed log2 value in each sample, then for each missing cell draws from N(MinDet<sub>sample</sub>, &sigma;<sub>sample</sub>) where &sigma; is 1% of the sample's range. MNAR-aware, sample-specific. Ref: Lazar et al. (2016) <em>J. Proteome Res.</em> 15:1116; <em>imputeLCMD::impute.MinProb</em>.<br>
+                &bull; <b>QRILC</b>: draws from a Gaussian centered at the 1st percentile of the comparison's global log2 distribution. MNAR-aware, single global tail. Ref: Wei et al. (2018) <em>Sci. Rep.</em> 8:663.<br>
+                &bull; <b>kNN</b>: inverse-distance-weighted mean of the k = 10 nearest proteins (Euclidean distance on shared observed positions). MCAR-aware. Ref: Troyanskaya et al. (2001) <em>Bioinformatics</em> 17:520.<br>
+                &bull; <b>LLS (Local Least Squares)</b>: fits a linear regression of the target protein on its k = 10 nearest similar proteins (in log2 space, with a small ridge for stability), then predicts the missing values. MCAR-aware, often outperforms kNN at high dimensionality. Ref: Kim et al. (2005) <em>Bioinformatics</em> 21:187.<br>
+                &bull; <b>Random Forest (MissForest)</b>: iterative non-linear regression. For each sample column with missing values, trains a random forest on the other samples to predict it (50 trees, depth 6, m<sub>try</sub> = &radic;p); iterates with relative-change convergence (tol = 0.01, max 5 iterations). Top-ranked in multiple proteomics benchmarks. Ref: Stekhoven &amp; B&uuml;hlmann (2012) <em>Bioinformatics</em> 28:112.<br>
+                &bull; <b>Min/2</b>: replaces missing values with half the per-protein minimum non-zero value. Simple deterministic baseline; produces "bifurcate" volcano patterns at high missingness, included only as a sanity check.<br>
+                <em>Reproducibility:</em> All four stochastic methods (Perseus, MinProb, QRILC, MissForest) consume a seed for reproducibility. Per-protein methods (Perseus, MinProb, QRILC) derive a per-protein PRNG seed from the user-supplied <b>Random seed</b> (default 42) and the protein's filtered index: <code>(seed&middot;1000003 + 2&middot;fi + 1or2) mod 2<sup>32</sup></code>. Matrix-wide MissForest uses the global seed once for bootstrap and feature subsampling across the whole forest. Same seed + same data &rarr; identical imputed values and an identical volcano plot. Change the seed to verify a conclusion is robust to the specific draws &mdash; a result that depends on a single seed is not robust. The seed is recorded on the <em>Volcano Settings</em> sheet of the XLSX export. kNN, LLS, and Min/2 are deterministic and ignore the seed.</div>
                 <div style="margin-bottom:4px"><em>Log2 Fold Change</em> &mdash; Calculated as log2(mean_X / mean_Y). Positive values indicate higher abundance in Group X; negative values indicate higher abundance in Group Y.</div>
                 <div style="margin-top:10px;margin-bottom:8px"><strong style="color:var(--text)">PCA &mdash; Principal Component Analysis</strong></div>
                 <div style="margin-bottom:4px"><em>Algorithm</em> &mdash; Dual-space PCA (kernel method) optimized for datasets where the number of samples is much smaller than the number of features. Computes the n&times;n kernel matrix K = X&middot;X<sup>T</sup> from the mean-centered data matrix, then performs Jacobi eigendecomposition.</div>
@@ -569,6 +651,12 @@ async function uploadFile(file,append){
         <details style="margin-bottom:16px">
             <summary style="font-size:14px;font-weight:700;cursor:pointer;padding:4px 0">Version History</summary>
             <div style="font-size:12px;color:var(--text-sec);line-height:1.7;margin-top:8px;max-height:200px;overflow-y:auto">
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">4.14.0</strong> (May 2026)<br>Three statistical tests for the volcano plot: Welch&rsquo;s t-test (default, unchanged), moderated t-test (limma; empirical-Bayes shrinkage of per-protein variance), and peptide-count moderated (DEqMS; per-bin prior tied to peptide count). New "Statistical test" dropdown in the volcano configuration. Pure-JS digamma/trigamma special functions verified against R&rsquo;s psigamma to 1e-6.</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">4.13.0</strong> (May 2026)<br>Three new imputation methods: Random Forest (MissForest), LLS (Local Least Squares), canonical MinProb (per-sample MinDet). Old "MinProb" honestly renamed to QRILC. Seven imputation methods total spanning every NAguideR family. Seed traceability across all stochastic methods.</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">4.12.x</strong> (May 2026)<br>JS error containment (per-plot render isolation, step-isolated renderAll, visible error toast, async rejection handler, emergency reset). Desktop icon redesigned with transparent background, multi-resolution PNG-in-ICO. README rewritten to publication quality, LICENSE created.</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">4.11.0</strong> (May 2026)<br>Parser robustness: NaN/Inf collapse to 0, OverflowError caught for Inf in int fields, UTF-16 LE/BE and UTF-8 BOM auto-detection. Zero-protein uploads blocked with clear error. Format-info banner for parser adaptations. Disabled-with-explanation for column-dependent filters. Plot palette + group/analysis tooltips.</div>
+                <div style="margin-bottom:8px;color:var(--text-sec);opacity:0.6;font-size:11px">— prior versions in CHANGELOG.md —</div>
+                <div style="margin-bottom:8px"><strong style="color:var(--text)">4.2.0&ndash;4.10.1</strong> (April 2026, consolidated)<br>Multi-file workflow with cross-file guards, self-contained sessions (embedded RAW), XLSX export with cell-clipping, per-plot Prism-ready CSV export, comprehensive PCA customization, deterministic per-protein imputation seed, volcano presence-only side bands, single-number GOI input, embedded user-designed favicon, parser support for orthofinder-merged files. See CHANGELOG.md for full details.</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">4.1.0</strong> (April 2026)<br>+Shape annotations (rectangle, circle, diamond, triangle with color/fill/border), two-row toolbar with editing controls below, separate volcano FC/FDR threshold line toggles, canvas panning by click-drag on empty space</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">4.0.0</strong> (April 2026)<br>Published imputation methods (Perseus, MinProb, kNN), robust session save/load with graph positions and annotations, searchable protein dropdown with FASTA drag-drop for coverage map, amino acid-level peptide display with boundary markers, context menu color swatch, UI tooltips, upload performance fix</div>
                 <div style="margin-bottom:8px"><strong style="color:var(--text)">3.9.0</strong> (April 2026)<br>Protein Abundance ranked plot with error bars (SD, SEM, range), volcano tooltip guidance for FC threshold and S0</div>
@@ -627,6 +715,10 @@ async function uploadFile(file,append){
         <div class="upload-error" id="upload-error"></div>
     </div>
     <div id="grouping-section" class="hidden" data-tour="grouping">
+        <!-- Format notes: shown only when the parser detected something the user
+             should know about (dropped aggregate columns, missing standard
+             columns). Stays hidden when everything is normal. -->
+        <div id="format-notes" class="hidden" style="margin:8px 12px;padding:8px 10px;background:rgba(255,193,7,0.08);border-left:3px solid #ffc107;border-radius:4px;font-size:11px;line-height:1.5;color:var(--text-pri)" title="Notes about how the file was parsed. These do not block analysis."></div>
         <div class="panel-section">
             <div class="section-label">Assign Samples to Groups</div>
             <div class="unassigned-pool" id="unassigned-pool">
@@ -679,7 +771,7 @@ async function uploadFile(file,append){
                     <div id="norm-org-list" style="max-height:160px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:4px;margin-top:4px"></div>
                 </div>
                 <div class="proc-sub" style="margin-top:10px">
-                    <label class="proc-option-header" style="padding:6px 0"><input type="checkbox" id="norm-rm-contam" onchange="updateProcPreview()" title="Exclude potential contaminants from the normalization calculation"><div><div class="proc-option-label" style="font-size:12px">Remove contaminants before normalizing</div></div></label>
+                    <label class="proc-option-header" id="norm-rm-contam-row" style="padding:6px 0"><input type="checkbox" id="norm-rm-contam" onchange="updateProcPreview()" title="Exclude potential contaminants from the normalization calculation"><div><div class="proc-option-label" style="font-size:12px">Remove contaminants before normalizing</div><div class="proc-option-desc" id="norm-rm-contam-hint" style="display:none;font-size:10px;color:var(--text-sec);font-style:italic">No "Potential contaminant" column in this file.</div></div></label>
                 </div>
             </div>
         </div>
@@ -708,14 +800,14 @@ async function uploadFile(file,append){
         <button class="btn-primary" onclick="showAnaForm()" style="margin-top:6px">+ New Analysis</button>
     </div>
     <div class="collapse-sec open" style="border-top:1px solid var(--border)">
-        <div class="collapse-hdr" onclick="this.parentElement.classList.toggle('open')">Derived Groups <span class="chev">&#9656;</span></div>
+        <div class="collapse-hdr" onclick="this.parentElement.classList.toggle('open')" title="Build a virtual group by combining two existing groups (e.g. ratio of IP / Input). Derived groups can be used in any comparison.">Derived Groups <span class="chev">&#9656;</span></div>
         <div class="collapse-body">
             <div style="display:flex;gap:6px;margin-bottom:6px">
-                <select id="dg-left" style="flex:1"></select>
-                <select id="dg-op" style="width:50px;flex:none"><option value="divide">/</option><option value="subtract">-</option><option value="add">+</option><option value="multiply">*</option></select>
-                <select id="dg-right" style="flex:1"></select>
+                <select id="dg-left" style="flex:1" title="Left operand (numerator for divide, minuend for subtract)"></select>
+                <select id="dg-op" style="width:50px;flex:none" title="Per-protein operation applied between the two groups' mean intensities"><option value="divide">/</option><option value="subtract">-</option><option value="add">+</option><option value="multiply">*</option></select>
+                <select id="dg-right" style="flex:1" title="Right operand (denominator for divide, subtrahend for subtract)"></select>
             </div>
-            <div style="display:flex;gap:6px"><input type="text" id="dg-name" placeholder="Name" style="flex:1"><button class="btn-sm" onclick="createDerived()">Create</button></div>
+            <div style="display:flex;gap:6px"><input type="text" id="dg-name" placeholder="Name" style="flex:1" title="Display name for the derived group; defaults to 'Left op Right' if blank"><button class="btn-sm" onclick="createDerived()" title="Create the derived group; it appears in the analysis dropdowns immediately">Create</button></div>
             <div id="dg-list" style="margin-top:8px"></div>
         </div>
     </div>
@@ -732,11 +824,11 @@ async function uploadFile(file,append){
         <div class="collapse-body">
             <div style="font-size:11px;color:var(--text-sec);margin-bottom:8px">Highlight specific proteins by locus tag with a custom color, shape, and size on all graphs. Enter a single number for one protein, or a start–end range.</div>
             <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
-                <select id="goi-prefix" style="flex:1;min-width:80px;font-size:11px;font-family:monospace"></select>
+                <select id="goi-prefix" style="flex:1;min-width:80px;font-size:11px;font-family:monospace" title="Locus tag prefix (e.g. CT_, MTB_, TM7x_) — auto-detected from your data"></select>
                 <input type="text" id="goi-start" placeholder="#" title="Locus number (or range start)" style="width:60px;font-size:11px;padding:3px 6px;font-family:monospace;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:3px">
                 <span style="font-size:11px;color:var(--text-sec)">to</span>
                 <input type="text" id="goi-end" placeholder="(opt)" title="Range end — leave blank for a single protein" style="width:60px;font-size:11px;padding:3px 6px;font-family:monospace;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:3px">
-                <button class="btn-sm" onclick="addGroupOfInterest()">Add</button>
+                <button class="btn-sm" onclick="addGroupOfInterest()" title="Add this protein (or range) as a highlighted group">Add</button>
             </div>
             <div id="goi-list" style="max-height:200px;overflow-y:auto"></div>
         </div>
@@ -764,10 +856,10 @@ async function uploadFile(file,append){
         <div class="collapse-body" style="font-size:11px;color:var(--text-sec);line-height:1.6">
             <div id="stats-volcano-info" class="hidden" style="margin-bottom:10px">
                 <div style="font-weight:700;color:var(--text);margin-bottom:4px">Volcano Plot</div>
-                <div><strong>Test:</strong> Welch&rsquo;s t-test (two-sample, unequal variance). Degrees of freedom via Welch&ndash;Satterthwaite approximation.</div>
-                <div><strong>Multiple testing:</strong> Benjamini&ndash;Hochberg FDR correction. Adjusted p-values = raw_p &times; n / rank.</div>
-                <div><strong>S0 correction:</strong> When enabled, a fudge factor S0 is added to the standard error denominator (SE + S0) to penalize noisy fold changes at low abundance (Tusher et al., 2001; Perseus).</div>
-                <div><strong>Imputation:</strong> Four methods available &mdash; Perseus-style Gaussian (Tyanova et al. 2016), MinProb (Lazar et al. 2016), kNN (Troyanskaya et al. 2001), or Min/2 (simple). Default: Perseus-style. Stochastic methods (Perseus, MinProb) use a per-protein seeded PRNG &mdash; same seed + same data produces identical imputation. Set the seed in the volcano config; the value is recorded in the XLSX Volcano Settings sheet.</div>
+                <div><strong>Test:</strong> Three options &mdash; Welch&rsquo;s t-test (default; unequal-variance, Welch&ndash;Satterthwaite df), moderated t-test (limma; empirical-Bayes shrinkage of per-protein variance toward a fitted prior, Smyth 2004), or peptide-count moderated (DEqMS; per-bin prior tied to peptide count, Zhu et al. 2020).</div>
+                <div><strong>Multiple testing:</strong> Benjamini&ndash;Hochberg FDR correction applied to whichever test was selected. Adjusted p-values = raw_p &times; n / rank.</div>
+                <div><strong>S0 correction:</strong> When enabled, a fudge factor S0 is added to the standard error denominator (SE + S0) to penalize noisy fold changes at low abundance (Tusher et al., 2001; Perseus). Layered on top of any of the three tests.</div>
+                <div><strong>Imputation:</strong> Seven methods spanning every NAguideR family &mdash; Perseus-style Gaussian (Tyanova et al. 2016, default), MinProb per-sample MinDet (Lazar et al. 2016), QRILC (Wei et al. 2018), kNN (Troyanskaya et al. 2001), LLS (Kim et al. 2005), Random Forest / MissForest (Stekhoven &amp; B&uuml;hlmann 2012), or Min/2 (simple). Stochastic methods (Perseus, MinProb, QRILC, MissForest) use a seeded PRNG &mdash; same seed + same data produces identical imputation. Set the seed in the volcano config; the value is recorded in the XLSX Volcano Settings sheet.</div>
                 <div><strong>Fold change:</strong> log2(mean_GroupX / mean_GroupY).</div>
             </div>
             <div id="stats-pca-info" class="hidden">
@@ -794,12 +886,12 @@ async function uploadFile(file,append){
     <div class="panel-section">
         <div class="section-label">Add Visualization</div>
         <div id="viz-palette">
-            <div class="viz-card" draggable="true" data-vtype="enrichment" onclick="showVizConfig('enrichment')"><div class="vc-icon"><svg width="32" height="28" viewBox="0 0 32 28"><line x1="4" y1="24" x2="28" y2="24" stroke="var(--text-sec)" stroke-width="1"/><line x1="4" y1="4" x2="4" y2="24" stroke="var(--text-sec)" stroke-width="1"/><circle cx="8" cy="20" r="1.5" fill="var(--accent)"/><circle cx="12" cy="18" r="1.5" fill="var(--accent)"/><circle cx="15" cy="14" r="1.5" fill="var(--accent)"/><circle cx="18" cy="13" r="1.5" fill="var(--accent)"/><circle cx="21" cy="10" r="1.5" fill="var(--accent)"/><circle cx="25" cy="7" r="1.5" fill="var(--accent)"/></svg></div><div><div class="vc-name">Ranked Enrichment</div><div class="vc-desc">Log2 fold enrichment, rank order</div></div></div>
-            <div class="viz-card" draggable="true" data-vtype="unique" onclick="showVizConfig('unique')"><div class="vc-icon"><svg width="32" height="28" viewBox="0 0 32 28"><line x1="16" y1="4" x2="16" y2="24" stroke="var(--text-sec)" stroke-width="1"/><line x1="4" y1="24" x2="28" y2="24" stroke="var(--text-sec)" stroke-width="1"/><circle cx="16" cy="8" r="1.5" fill="var(--accent)"/><circle cx="14" cy="12" r="1.5" fill="var(--accent)"/><circle cx="18" cy="11" r="1.5" fill="var(--accent)"/><circle cx="15" cy="16" r="1.5" fill="var(--accent)"/><circle cx="17" cy="15" r="1.5" fill="var(--accent)"/><circle cx="13" cy="19" r="1.5" fill="var(--accent)"/><circle cx="16" cy="20" r="1.5" fill="var(--accent)"/><circle cx="19" cy="18" r="1.5" fill="var(--accent)"/></svg></div><div><div class="vc-name">Unique Proteins</div><div class="vc-desc">Proteins in one group but not others</div></div></div>
-            <div class="viz-card" draggable="true" data-vtype="volcano" onclick="showVizConfig('volcano')"><div class="vc-icon"><svg width="32" height="28" viewBox="0 0 32 28"><line x1="4" y1="24" x2="28" y2="24" stroke="var(--text-sec)" stroke-width="1"/><line x1="4" y1="4" x2="4" y2="24" stroke="var(--text-sec)" stroke-width="1"/><circle cx="10" cy="20" r="1.3" fill="var(--text-sec)" opacity=".5"/><circle cx="14" cy="19" r="1.3" fill="var(--text-sec)" opacity=".5"/><circle cx="16" cy="21" r="1.3" fill="var(--text-sec)" opacity=".5"/><circle cx="18" cy="18" r="1.3" fill="var(--text-sec)" opacity=".5"/><circle cx="13" cy="22" r="1.3" fill="var(--text-sec)" opacity=".5"/><circle cx="20" cy="20" r="1.3" fill="var(--text-sec)" opacity=".5"/><circle cx="7" cy="9" r="1.5" fill="#58a6ff"/><circle cx="9" cy="12" r="1.5" fill="#58a6ff"/><circle cx="24" cy="8" r="1.5" fill="#f85149"/><circle cx="26" cy="11" r="1.5" fill="#f85149"/></svg></div><div><div class="vc-name">Volcano Plot</div><div class="vc-desc">Fold-change vs FDR-adjusted P-value</div></div></div>
-            <div class="viz-card" draggable="true" data-vtype="dotplot" onclick="showVizConfig('dotplot')"><div class="vc-icon"><svg width="32" height="28" viewBox="0 0 32 28"><line x1="4" y1="24" x2="28" y2="24" stroke="var(--text-sec)" stroke-width="1"/><line x1="4" y1="4" x2="4" y2="24" stroke="var(--text-sec)" stroke-width="1"/><line x1="4" y1="24" x2="28" y2="4" stroke="var(--text-sec)" stroke-width=".5" stroke-dasharray="2,2" opacity=".4"/><circle cx="9" cy="18" r="1.5" fill="var(--accent)"/><circle cx="12" cy="14" r="1.5" fill="var(--accent)"/><circle cx="17" cy="11" r="1.5" fill="var(--accent)"/><circle cx="22" cy="9" r="1.5" fill="var(--accent)"/><circle cx="14" cy="17" r="1.5" fill="var(--accent)"/><circle cx="20" cy="13" r="1.5" fill="var(--accent)"/></svg></div><div><div class="vc-name">Dot Plot</div><div class="vc-desc">Abundance in group X vs group Y</div></div></div>
-            <div class="viz-card" draggable="true" data-vtype="pca" onclick="showVizConfig('pca')"><div class="vc-icon"><svg width="32" height="28" viewBox="0 0 32 28"><line x1="4" y1="14" x2="28" y2="14" stroke="var(--text-sec)" stroke-width=".5"/><line x1="16" y1="2" x2="16" y2="26" stroke="var(--text-sec)" stroke-width=".5"/><circle cx="9" cy="9" r="2" fill="#58a6ff" opacity=".7"/><circle cx="11" cy="11" r="2" fill="#58a6ff" opacity=".7"/><circle cx="8" cy="12" r="2" fill="#58a6ff" opacity=".7"/><circle cx="22" cy="18" r="2" fill="#f85149" opacity=".7"/><circle cx="24" cy="16" r="2" fill="#f85149" opacity=".7"/><circle cx="21" cy="20" r="2" fill="#f85149" opacity=".7"/></svg></div><div><div class="vc-name">PCA</div><div class="vc-desc">Principal component analysis of samples</div></div></div>
-            <div class="viz-card" draggable="true" data-vtype="abundance" onclick="showVizConfig('abundance')"><div class="vc-icon"><svg width="32" height="28" viewBox="0 0 32 28"><line x1="4" y1="24" x2="28" y2="24" stroke="var(--text-sec)" stroke-width="1"/><line x1="4" y1="4" x2="4" y2="24" stroke="var(--text-sec)" stroke-width="1"/><circle cx="8" cy="21" r="1.5" fill="var(--accent)"/><circle cx="12" cy="19" r="1.5" fill="var(--accent)"/><circle cx="16" cy="16" r="1.5" fill="var(--accent)"/><circle cx="20" cy="12" r="1.5" fill="var(--accent)"/><circle cx="24" cy="7" r="1.5" fill="var(--accent)"/><line x1="20" y1="10" x2="20" y2="14" stroke="var(--accent)" stroke-width=".8" opacity=".5"/><line x1="24" y1="5" x2="24" y2="9" stroke="var(--accent)" stroke-width=".8" opacity=".5"/></svg></div><div><div class="vc-name">Protein Abundance</div><div class="vc-desc">Ranked abundance in a group or sample</div></div></div>
+            <div class="viz-card" draggable="true" data-vtype="enrichment" onclick="showVizConfig('enrichment')" title="Ranked enrichment: every protein plotted by log2 fold-change between two groups, sorted ascending. Use to spot the strongest up/down candidates."><div class="vc-icon"><svg width="32" height="28" viewBox="0 0 32 28"><line x1="4" y1="24" x2="28" y2="24" stroke="var(--text-sec)" stroke-width="1"/><line x1="4" y1="4" x2="4" y2="24" stroke="var(--text-sec)" stroke-width="1"/><circle cx="8" cy="20" r="1.5" fill="var(--accent)"/><circle cx="12" cy="18" r="1.5" fill="var(--accent)"/><circle cx="15" cy="14" r="1.5" fill="var(--accent)"/><circle cx="18" cy="13" r="1.5" fill="var(--accent)"/><circle cx="21" cy="10" r="1.5" fill="var(--accent)"/><circle cx="25" cy="7" r="1.5" fill="var(--accent)"/></svg></div><div><div class="vc-name">Ranked Enrichment</div><div class="vc-desc">Log2 fold enrichment, rank order</div></div></div>
+            <div class="viz-card" draggable="true" data-vtype="unique" onclick="showVizConfig('unique')" title="Unique proteins: proteins detected in one group but absent (or near-zero) in another. Useful for IP/co-IP enrichment hits."><div class="vc-icon"><svg width="32" height="28" viewBox="0 0 32 28"><line x1="16" y1="4" x2="16" y2="24" stroke="var(--text-sec)" stroke-width="1"/><line x1="4" y1="24" x2="28" y2="24" stroke="var(--text-sec)" stroke-width="1"/><circle cx="16" cy="8" r="1.5" fill="var(--accent)"/><circle cx="14" cy="12" r="1.5" fill="var(--accent)"/><circle cx="18" cy="11" r="1.5" fill="var(--accent)"/><circle cx="15" cy="16" r="1.5" fill="var(--accent)"/><circle cx="17" cy="15" r="1.5" fill="var(--accent)"/><circle cx="13" cy="19" r="1.5" fill="var(--accent)"/><circle cx="16" cy="20" r="1.5" fill="var(--accent)"/><circle cx="19" cy="18" r="1.5" fill="var(--accent)"/></svg></div><div><div class="vc-name">Unique Proteins</div><div class="vc-desc">Proteins in one group but not others</div></div></div>
+            <div class="viz-card" draggable="true" data-vtype="volcano" onclick="showVizConfig('volcano')" title="Volcano plot: log2 fold-change (X) vs −log10 FDR-adjusted p-value (Y). Top corners = significant hits."><div class="vc-icon"><svg width="32" height="28" viewBox="0 0 32 28"><line x1="4" y1="24" x2="28" y2="24" stroke="var(--text-sec)" stroke-width="1"/><line x1="4" y1="4" x2="4" y2="24" stroke="var(--text-sec)" stroke-width="1"/><circle cx="10" cy="20" r="1.3" fill="var(--text-sec)" opacity=".5"/><circle cx="14" cy="19" r="1.3" fill="var(--text-sec)" opacity=".5"/><circle cx="16" cy="21" r="1.3" fill="var(--text-sec)" opacity=".5"/><circle cx="18" cy="18" r="1.3" fill="var(--text-sec)" opacity=".5"/><circle cx="13" cy="22" r="1.3" fill="var(--text-sec)" opacity=".5"/><circle cx="20" cy="20" r="1.3" fill="var(--text-sec)" opacity=".5"/><circle cx="7" cy="9" r="1.5" fill="#58a6ff"/><circle cx="9" cy="12" r="1.5" fill="#58a6ff"/><circle cx="24" cy="8" r="1.5" fill="#f85149"/><circle cx="26" cy="11" r="1.5" fill="#f85149"/></svg></div><div><div class="vc-name">Volcano Plot</div><div class="vc-desc">Fold-change vs FDR-adjusted P-value</div></div></div>
+            <div class="viz-card" draggable="true" data-vtype="dotplot" onclick="showVizConfig('dotplot')" title="Dot plot: mean abundance in group X vs group Y, log-scaled. Diagonal = equal expression; off-diagonal = differentially abundant."><div class="vc-icon"><svg width="32" height="28" viewBox="0 0 32 28"><line x1="4" y1="24" x2="28" y2="24" stroke="var(--text-sec)" stroke-width="1"/><line x1="4" y1="4" x2="4" y2="24" stroke="var(--text-sec)" stroke-width="1"/><line x1="4" y1="24" x2="28" y2="4" stroke="var(--text-sec)" stroke-width=".5" stroke-dasharray="2,2" opacity=".4"/><circle cx="9" cy="18" r="1.5" fill="var(--accent)"/><circle cx="12" cy="14" r="1.5" fill="var(--accent)"/><circle cx="17" cy="11" r="1.5" fill="var(--accent)"/><circle cx="22" cy="9" r="1.5" fill="var(--accent)"/><circle cx="14" cy="17" r="1.5" fill="var(--accent)"/><circle cx="20" cy="13" r="1.5" fill="var(--accent)"/></svg></div><div><div class="vc-name">Dot Plot</div><div class="vc-desc">Abundance in group X vs group Y</div></div></div>
+            <div class="viz-card" draggable="true" data-vtype="pca" onclick="showVizConfig('pca')" title="Principal component analysis: each point is one sample, projected onto axes that capture the largest variance. Replicates from the same group should cluster."><div class="vc-icon"><svg width="32" height="28" viewBox="0 0 32 28"><line x1="4" y1="14" x2="28" y2="14" stroke="var(--text-sec)" stroke-width=".5"/><line x1="16" y1="2" x2="16" y2="26" stroke="var(--text-sec)" stroke-width=".5"/><circle cx="9" cy="9" r="2" fill="#58a6ff" opacity=".7"/><circle cx="11" cy="11" r="2" fill="#58a6ff" opacity=".7"/><circle cx="8" cy="12" r="2" fill="#58a6ff" opacity=".7"/><circle cx="22" cy="18" r="2" fill="#f85149" opacity=".7"/><circle cx="24" cy="16" r="2" fill="#f85149" opacity=".7"/><circle cx="21" cy="20" r="2" fill="#f85149" opacity=".7"/></svg></div><div><div class="vc-name">PCA</div><div class="vc-desc">Principal component analysis of samples</div></div></div>
+            <div class="viz-card" draggable="true" data-vtype="abundance" onclick="showVizConfig('abundance')" title="Protein abundance: every protein in a group or single sample, ranked from most to least abundant. Quick way to scan dynamic range."><div class="vc-icon"><svg width="32" height="28" viewBox="0 0 32 28"><line x1="4" y1="24" x2="28" y2="24" stroke="var(--text-sec)" stroke-width="1"/><line x1="4" y1="4" x2="4" y2="24" stroke="var(--text-sec)" stroke-width="1"/><circle cx="8" cy="21" r="1.5" fill="var(--accent)"/><circle cx="12" cy="19" r="1.5" fill="var(--accent)"/><circle cx="16" cy="16" r="1.5" fill="var(--accent)"/><circle cx="20" cy="12" r="1.5" fill="var(--accent)"/><circle cx="24" cy="7" r="1.5" fill="var(--accent)"/><line x1="20" y1="10" x2="20" y2="14" stroke="var(--accent)" stroke-width=".8" opacity=".5"/><line x1="24" y1="5" x2="24" y2="9" stroke="var(--accent)" stroke-width=".8" opacity=".5"/></svg></div><div><div class="vc-name">Protein Abundance</div><div class="vc-desc">Ranked abundance in a group or sample</div></div></div>
         </div>
         <div id="viz-config-area"></div>
     </div>
@@ -1426,7 +1518,22 @@ function mergeData(newData){
     }
 }
 
-(async function(){try{const r=await fetch('/api/data');if(r.ok){RAW=await r.json();if(RAW.proteins)initGrouping()}}catch(e){}})();
+// Boot autoload. Wrapped so a failure here (network glitch, init error,
+// stale server data) never blocks the rest of the app from loading.
+(async function(){
+    try{
+        const r=await fetch('/api/data');
+        if(!r.ok)return;
+        const data=await r.json();
+        if(!data||!data.proteins||data.proteins.length===0)return;
+        RAW=data;
+        try{initGrouping()}
+        catch(initErr){
+            console.error('Autoload initGrouping failed:',initErr);
+            RAW=null;  // Don't leave a half-loaded RAW lying around
+        }
+    }catch(e){console.warn('Autoload skipped:',e)}
+})();
 
 // ================================================================
 // GROUPING
@@ -1444,10 +1551,68 @@ function initGrouping(){
     document.getElementById('grouping-section').classList.remove('hidden');
     document.getElementById('compact-upload').classList.remove('hidden');
     document.getElementById('cu-filename').textContent=RAW.filename;
+    renderFormatNotes();
     renderAll();startHeartbeat();
 }
 
-function renderAll(){renderUnassigned();renderBins();updateStatus();updateContinueBtn();buildProcessedData();populateCovProteins();populateSpeciesHighlights();populateGOIPrefixes();refreshAllPlots();autoSaveSession()}
+// Render parser-detected format notes so the user knows when columns were
+// dropped or aren't present in the file. Silent if everything looks normal.
+function renderFormatNotes(){
+    const el=document.getElementById('format-notes');
+    if(!el) return;
+    const fi=RAW&&RAW.format_info;
+    if(!fi){el.classList.add('hidden');el.innerHTML='';return}
+    const notes=[];
+    if(fi.dropped_aggregate_columns&&fi.dropped_aggregate_columns.length){
+        notes.push('Per-group aggregate columns ignored as samples: <b>'+fi.dropped_aggregate_columns.join(', ')+'</b>. Only per-replicate columns are used for analysis.');
+    }
+    if(!fi.has_peptide_counts){
+        notes.push('No peptide-count column found — peptide-based filters (e.g. "prune below N peptides") will not work for this file. All proteins are treated as having 1 peptide.');
+    }
+    if(!fi.has_contaminant_column){
+        notes.push('No "Potential contaminant" column found — contaminant filtering is unavailable for this file.');
+    }
+    if(!fi.has_reverse_column){
+        notes.push('No "Reverse" column found — decoy filtering is unavailable for this file.');
+    }
+    if(!fi.id_column){
+        notes.push('No protein-ID column found. Synthetic IDs (row_1, row_2, …) were assigned so the UI has something to display.');
+    }
+    if(!notes.length){el.classList.add('hidden');el.innerHTML='';return}
+    el.innerHTML='<div style="font-weight:600;margin-bottom:4px">File parsed with notes:</div><ul style="margin:0;padding-left:18px">'+notes.map(n=>'<li>'+n+'</li>').join('')+'</ul>';
+    el.classList.remove('hidden');
+    // Toggle dependent UI elements based on which columns are present
+    const cb=document.getElementById('norm-rm-contam');
+    const hint=document.getElementById('norm-rm-contam-hint');
+    if(cb){
+        const hasContam=fi.has_contaminant_column!==false;
+        cb.disabled=!hasContam;
+        if(!hasContam){cb.checked=false;cb.title='Disabled: this file has no Potential contaminant column.'}
+        else{cb.title='Exclude potential contaminants from the normalization calculation'}
+        if(hint) hint.style.display=hasContam?'none':'block';
+    }
+}
+
+function renderAll(){
+    // Each step is isolated so a failure in one (e.g. populateCovProteins on
+    // an unusual file) does not block the others — autosave especially must
+    // run even if a render step throws, otherwise the user loses their work.
+    const steps=[
+        ['renderUnassigned',renderUnassigned],
+        ['renderBins',renderBins],
+        ['updateStatus',updateStatus],
+        ['updateContinueBtn',updateContinueBtn],
+        ['buildProcessedData',buildProcessedData],
+        ['populateCovProteins',populateCovProteins],
+        ['populateSpeciesHighlights',populateSpeciesHighlights],
+        ['populateGOIPrefixes',populateGOIPrefixes],
+        ['refreshAllPlots',refreshAllPlots],
+        ['autoSaveSession',autoSaveSession],
+    ];
+    for(const[name,fn]of steps){
+        try{fn()}catch(e){console.error('[renderAll] '+name+' failed:',e)}
+    }
+}
 
 function createChip(sample){
     const c=document.createElement('div');c.className='sample-chip'+(SELECTED.has(sample)?' selected':'');c.dataset.sample=sample;c.draggable=true;
@@ -1465,7 +1630,7 @@ function renderUnassigned(){const a=document.getElementById('unassigned-area');a
 function renderBins(){const c=document.getElementById('bins-container');c.innerHTML='';BINS.forEach(bin=>{
     const card=document.createElement('div');card.className='bin-card';card.dataset.binId=bin.id;
     const hdr=document.createElement('div');hdr.className='bin-header';
-    hdr.innerHTML=`<span class="bin-color" style="background:${bin.color}" tabindex="0"></span><input class="bin-label" value="${bin.label}" spellcheck="false"><span class="bin-sample-count">${bin.samples.length}</span><button class="bin-delete">&times;</button>`;
+    hdr.innerHTML=`<span class="bin-color" style="background:${bin.color}" tabindex="0" title="Click to pick a color from the palette; double-click for a custom picker"></span><input class="bin-label" value="${bin.label}" spellcheck="false" title="Edit group name — used as the label on every plot"><span class="bin-sample-count" title="${bin.samples.length} samples in this group">${bin.samples.length}</span><button class="bin-delete" title="Delete this group (samples return to Unassigned)">&times;</button>`;
     card.appendChild(hdr);
     const binColorEl=hdr.querySelector('.bin-color');
     binColorEl.addEventListener('click',()=>{showColorSwatch(binColorEl,bin.color,c=>{bin.color=c;binColorEl.style.background=c})});
@@ -1553,10 +1718,10 @@ function showAnaForm(){
     DERIVED.forEach(d=>names.push(d.name));
     const opts=names.map(n=>`<option value="${n}">${n}</option>`).join('');
     document.getElementById('ana-form-wrap').innerHTML=`<div class="ana-form">
-        <div class="af-row"><span class="af-lbl">Analysis Name</span><input type="text" id="af-name" placeholder="e.g. IP vs Control"></div>
-        <div class="af-row"><span class="af-lbl">Group X</span><select id="af-gx">${opts}</select></div>
-        <div class="af-row"><span class="af-lbl">Group Y</span><select id="af-gy">${opts}</select></div>
-        <div style="display:flex;gap:6px;margin-top:10px"><button class="btn-primary" onclick="saveAna()" style="flex:1">Save</button><button class="btn-sm" onclick="document.getElementById('ana-form-wrap').innerHTML=''">Cancel</button></div></div>`;
+        <div class="af-row"><span class="af-lbl">Analysis Name</span><input type="text" id="af-name" placeholder="e.g. IP vs Control" title="Name for this comparison; appears as the plot title and in exports"></div>
+        <div class="af-row"><span class="af-lbl">Group X</span><select id="af-gx" title="Reference group. On volcano/dot plots this is the X-axis group; positive log2FC means higher in Group Y.">${opts}</select></div>
+        <div class="af-row"><span class="af-lbl">Group Y</span><select id="af-gy" title="Comparison group. log2FC is calculated as log2(Y/X), so positive values are enriched here.">${opts}</select></div>
+        <div style="display:flex;gap:6px;margin-top:10px"><button class="btn-primary" onclick="saveAna()" style="flex:1" title="Save this comparison so it can be selected when building plots">Save</button><button class="btn-sm" onclick="document.getElementById('ana-form-wrap').innerHTML=''">Cancel</button></div></div>`;
     if(names.length>=2)document.getElementById('af-gy').value=names[1];
 }
 function saveAna(){
@@ -2286,6 +2451,184 @@ function lnGamma(z){const c=[.99999999999980993,676.5203681218851,-1259.13921672
 function betacf(x,a,b){let qab=a+b,qap=a+1,qam=a-1,c=1,d=1-qab*x/qap;if(Math.abs(d)<1e-30)d=1e-30;d=1/d;let h=d;for(let m=1;m<=200;m++){let m2=2*m,aa=m*(b-m)*x/((qam+m2)*(a+m2));d=1+aa*d;if(Math.abs(d)<1e-30)d=1e-30;c=1+aa/c;if(Math.abs(c)<1e-30)c=1e-30;d=1/d;h*=d*c;aa=-(a+m)*(qab+m)*x/((a+m2)*(qap+m2));d=1+aa*d;if(Math.abs(d)<1e-30)d=1e-30;c=1+aa/c;if(Math.abs(c)<1e-30)c=1e-30;d=1/d;let del=d*c;h*=del;if(Math.abs(del-1)<3e-7)break}return h}
 function betainc(x,a,b){if(x<=0)return 0;if(x>=1)return 1;const f=Math.exp(lnGamma(a+b)-lnGamma(a)-lnGamma(b)+a*Math.log(x)+b*Math.log(1-x));if(x<(a+1)/(a+b+2))return f*betacf(x,a,b)/a;return 1-f*betacf(1-x,b,a)/b}
 function ttest(a1,a2,s0){if(a1.length<2||a2.length<2)return 1;const m1=mean(a1),m2=mean(a2),v1=variance(a1),v2=variance(a2),n1=a1.length,n2=a2.length,se=Math.sqrt(v1/n1+v2/n2);const denom=s0?se+s0:se;if(denom===0)return 1;const t=Math.abs(m1-m2)/denom,df=(v1/n1+v2/n2)**2/((v1/n1)**2/(n1-1)+(v2/n2)**2/(n2-1));if(isNaN(df)||df<1)return 1;return betainc(df/(df+t*t),df/2,.5)}
+// ─── Empirical-Bayes moderated t-test (limma / DEqMS) ───────────────
+// Digamma function: ψ(x) = d/dx ln Γ(x). Asymptotic series for x ≥ 6,
+// recurrence ψ(x) = ψ(x+1) − 1/x to push small x into the asymptotic range.
+// Reference values: ψ(1) = −γ ≈ −0.5772, ψ(2) ≈ 0.4228, ψ(0.5) ≈ −1.9635.
+function digamma(x){
+    if(x<=0||!isFinite(x)) return NaN;
+    let r=0;
+    while(x<6){r-=1/x;x+=1}
+    const xx=1/(x*x);
+    let p=xx;
+    r+=Math.log(x)-0.5/x-p/12;
+    p*=xx; r+=p/120;
+    p*=xx; r-=p/252;
+    p*=xx; r+=p/240;
+    return r;
+}
+// Trigamma function: ψ'(x) = d/dx ψ(x). Asymptotic series + recurrence.
+// Reference values: ψ'(1) = π²/6 ≈ 1.6449, ψ'(0.5) = π²/2 ≈ 4.9348.
+function trigamma(x){
+    if(x<=0||!isFinite(x)) return NaN;
+    let r=0;
+    while(x<6){r+=1/(x*x);x+=1}
+    const xi=1/x;
+    let p=xi;
+    r+=p+0.5*p*p; p=p*p*p;
+    r+=p/6;       p*=xi*xi;
+    r-=p/30;      p*=xi*xi;
+    r+=p/42;      p*=xi*xi;
+    r-=p/30;
+    return r;
+}
+// Solve trigamma(x) = y for x, using Newton's method with numerical
+// derivative. trigamma is monotonically decreasing and smooth, so Newton
+// converges quickly from a sensible starting guess (Smyth 2004).
+function inverseTrigamma(y){
+    if(y<=0||!isFinite(y)) return Infinity;
+    // Initial guess: from asymptotic trigamma(x) ≈ 1/x for x large
+    let x=y>1e-3?(0.5+1/y):(1/Math.sqrt(y));
+    for(let i=0;i<60;i++){
+        const tx=trigamma(x);
+        const err=tx-y;
+        if(Math.abs(err)<1e-10*Math.max(1,Math.abs(y))) return x;
+        const h=Math.max(1e-6,x*1e-6);
+        const dt=(trigamma(x+h)-tx)/h;
+        if(!isFinite(dt)||dt===0) break;
+        let step=err/dt;
+        // Damp huge steps
+        if(Math.abs(step)>x) step=Math.sign(step)*x*0.5;
+        x-=step;
+        if(x<=0.001) x=0.001;
+        if(x>1e6) x=1e6;
+    }
+    return x;
+}
+// Limma's empirical Bayes prior estimation (Smyth 2004, fitFDistRobustly).
+// Given per-protein sample variances and a common df, fit a scaled
+// inverse-chi-squared prior σ²_g ~ s₀² · d₀ / χ²_{d₀} via method of moments
+// on log-variances. Returns {d0, s0Squared}.
+function fitLimmaPrior(variances,df){
+    const z=[];
+    for(const v of variances) if(v>0&&isFinite(v)) z.push(Math.log(v));
+    if(z.length<5||df<1){
+        // Not enough data or no df — no shrinkage; use a degenerate prior
+        return {d0:0,s0Squared:0,nUsed:z.length};
+    }
+    // e_g = log s²_g − ψ(d_g/2) + log(d_g/2). Common df simplifies.
+    const offset=digamma(df/2)-Math.log(df/2);
+    const e=z.map(zi=>zi-offset);
+    let mE=0; for(const v of e) mE+=v; mE/=e.length;
+    let vE=0; for(const v of e) vE+=(v-mE)*(v-mE); vE/=(e.length-1);
+    // Var(e) = trigamma(d_g/2) + trigamma(d_0/2)
+    const triDg=trigamma(df/2);
+    const triD0=vE-triDg;
+    if(triD0<=1e-12){
+        // Empirical variance is at or below what's expected from sampling
+        // alone — no benefit from shrinkage; return a weak prior centred on
+        // the geometric mean of variances.
+        return {d0:0,s0Squared:Math.exp(mE+offset),nUsed:e.length};
+    }
+    const d0=2*inverseTrigamma(triD0);
+    if(!isFinite(d0)||d0>1e5){
+        // Effectively infinite df → strong prior, all proteins share s²
+        return {d0:1e6,s0Squared:Math.exp(mE+offset-digamma(d0/2)+Math.log(d0/2)),nUsed:e.length};
+    }
+    // log s²₀ = mean(e) + ψ(d₀/2) − log(d₀/2)
+    // (recovers s²₀ from E[e] = log s²₀ − ψ(d₀/2) + log(d₀/2) − [offset for d_g])
+    // Using the simplification with common df, the "offset for d_g" cancels.
+    const logS0Sq=mE+digamma(d0/2)-Math.log(d0/2);
+    const s0Squared=Math.exp(logS0Sq);
+    return {d0,s0Squared,nUsed:e.length};
+}
+// DEqMS extension (Zhu et al. 2020). Replace limma's single global prior s₀²
+// with a per-protein prior that depends on peptide count: log(s²_g) is
+// regressed on log(peptide_count_g). We use a simple binned-median estimator
+// — equivalent in spirit to a smoothing spline but tractable in pure JS.
+// d₀ is estimated by limma's method on the residuals from the smoother.
+// Returns {priorByCount: function(count)->s0Sq, d0}.
+function fitDEqMSPriors(variances,peptideCounts,df){
+    // Group by log2(peptide count) bins
+    const bins=new Map();
+    for(let i=0;i<variances.length;i++){
+        const v=variances[i],c=peptideCounts[i];
+        if(!(v>0&&isFinite(v))||!(c>0)) continue;
+        const bin=Math.max(0,Math.floor(Math.log2(c)));
+        if(!bins.has(bin)) bins.set(bin,[]);
+        bins.get(bin).push(Math.log(v));
+    }
+    if(bins.size===0||df<1) return {priorByCount:()=>0,d0:0,binCount:0};
+    // Per-bin median log-variance → per-bin s0Squared
+    const binPriors=new Map();
+    let allBins=[...bins.keys()].sort((a,b)=>a-b);
+    for(const b of allBins){
+        const arr=bins.get(b);
+        if(arr.length<3){
+            // Not enough proteins in this bin — fall back to neighbour bins
+            binPriors.set(b,null);
+            continue;
+        }
+        arr.sort((a,b)=>a-b);
+        const med=arr[Math.floor(arr.length/2)];
+        binPriors.set(b,Math.exp(med));
+    }
+    // Fill empty bins from nearest non-empty neighbour, then global median
+    const allLogVars=[];
+    for(const arr of bins.values()) for(const v of arr) allLogVars.push(v);
+    allLogVars.sort((a,b)=>a-b);
+    const globalMed=allLogVars.length?Math.exp(allLogVars[Math.floor(allLogVars.length/2)]):1;
+    for(const b of allBins){
+        if(binPriors.get(b)!=null) continue;
+        // Linear-search nearest non-empty bin
+        let nearest=null,nearestDist=Infinity;
+        for(const b2 of allBins){
+            if(binPriors.get(b2)==null) continue;
+            const d=Math.abs(b-b2);
+            if(d<nearestDist){nearestDist=d;nearest=b2}
+        }
+        binPriors.set(b,nearest!=null?binPriors.get(nearest):globalMed);
+    }
+    // Estimate d0 by fitting a scaled-F to residuals from the smoother
+    // (so d0 reflects within-bin variance of log s²_g, not total variance)
+    const residuals=[];
+    for(let i=0;i<variances.length;i++){
+        const v=variances[i],c=peptideCounts[i];
+        if(!(v>0&&isFinite(v))||!(c>0)) continue;
+        const bin=Math.max(0,Math.floor(Math.log2(c)));
+        const prior=binPriors.get(bin)||globalMed;
+        // Standardise: log s² − log s²_prior(count). Variance ≈ trigamma(d_g/2) + trigamma(d_0/2)
+        residuals.push(variances[i]/prior);  // ratio var
+    }
+    const limFit=fitLimmaPrior(residuals,df);
+    const d0=limFit.d0;
+    const priorByCount=(c)=>{
+        if(!(c>0)) return globalMed;
+        const bin=Math.max(0,Math.floor(Math.log2(c)));
+        return binPriors.get(bin)!=null?binPriors.get(bin):globalMed;
+    };
+    return {priorByCount,d0,binCount:binPriors.size,globalMed};
+}
+// Compute a moderated p-value using a posterior variance + posterior df.
+// Optional s0 fudge factor (Tusher 2001) is added to the standard error,
+// matching the same semantics as our regular Welch's t-test ttest(s0).
+function moderatedPValue(meanX,meanY,varX,varY,nX,nY,priorVar,priorDf,s0){
+    if(nX<2||nY<2) return 1;
+    const dg=nX+nY-2;
+    if(dg<1) return 1;
+    // Pooled within-group variance (limma uses pooled, not Welch separated)
+    const sgSq=((nX-1)*varX+(nY-1)*varY)/dg;
+    const d0=Math.max(0,priorDf||0);
+    const sPostSq=(d0*priorVar+dg*sgSq)/(d0+dg);
+    if(sPostSq<=0) return 1;
+    const se=Math.sqrt(sPostSq*(1/nX+1/nY));
+    const denom=s0?se+s0:se;
+    if(denom===0) return 1;
+    const t=Math.abs(meanX-meanY)/denom;
+    const dfPost=dg+d0;
+    if(dfPost<1) return 1;
+    return betainc(dfPost/(dfPost+t*t),dfPost/2,0.5);
+}
 function bhFDR(pvals){const n=pvals.length;const idx=pvals.map((p,i)=>({p,i})).sort((a,b)=>a.p-b.p);const adj=new Array(n);let prev=1;for(let r=n;r>=1;r--){const j=idx[r-1].i;adj[j]=Math.min(prev,idx[r-1].p*n/r);prev=adj[j]}return adj}
 function imputeZeros(vals){const nz=vals.filter(v=>v>0);const minV=nz.length?Math.min(...nz)/2:1;return vals.map(v=>v>0?v:minV)}
 // Box-Muller normal random
@@ -2319,9 +2662,12 @@ function imputePerseus(vals,allVals,width,shift,seed){
     const rng=seed!=null?_seededRng(seed):null;
     return vals.map(v=>v>0?v:Math.pow(2,impMu+impSd*_randn(rng)));
 }
-// MinProb: draw from Gaussian centered at q-th quantile of log2 distribution
-// Ref: Lazar et al. (2016) J. Proteome Res. 15:1116
-function imputeMinProb(vals,q,seed){
+// QRILC: Quantile Regression Imputation of Left-Censored data.
+// Draws missing values from a truncated Gaussian fit to the leftmost tail of
+// the log2 distribution across the comparison's non-zero values. Equivalent
+// in spirit to drawing from N(q-th quantile, small sigma) where q ≈ 1%.
+// Ref: Lazar et al. (2016) J. Proteome Res. 15:1116, Wei et al. (2018).
+function imputeQRILC(vals,q,seed){
     q=q||0.01;
     const nz=vals.filter(v=>v>0).map(v=>Math.log2(v));
     if(!nz.length)return imputeZeros(vals);
@@ -2331,6 +2677,48 @@ function imputeMinProb(vals,q,seed){
     const sigma=sd(nz)*0.3||0.5;
     const rng=seed!=null?_seededRng(seed):null;
     return vals.map(v=>v>0?v:Math.pow(2,qVal+sigma*_randn(rng)));
+}
+// Canonical MinProb (Lazar 2016, imputeLCMD R package).
+// For each sample s: compute MinDet_s = the minimum observed log2 value in s.
+// For each missing cell in sample s: draw from N(MinDet_s, sigma_s) where
+// sigma_s is a small spread tied to the sample's distribution.
+// Differs from QRILC: per-SAMPLE MinDet rather than a single global quantile.
+// Ref: Lazar et al. (2016) J. Proteome Res. 15:1116; imputeLCMD::impute.MinProb.
+function _precomputeMinProbStats(samples,qd,fidx){
+    // Per-sample stats keyed by sample name. Returns {sample: {minDet, sigma}}.
+    const stats={};
+    for(const s of samples){
+        if(!qd[s]) continue;
+        const nz=fidx.map(fi=>qd[s][fi]).filter(v=>v>0).map(v=>Math.log2(v));
+        if(!nz.length) continue;
+        nz.sort((a,b)=>a-b);
+        // MinDet ≈ smallest observed log2 value in this sample (1st percentile
+        // robustifies against a single anomalously low outlier).
+        const idx=Math.max(0,Math.floor(0.01*nz.length));
+        const minDet=nz[idx];
+        // Spread: 1% of the per-sample range (Lazar uses a small fixed sigma;
+        // we tie it to the data range so it generalises across instruments).
+        const range=nz[nz.length-1]-nz[0];
+        const sigma=Math.max(0.01,range*0.01);
+        stats[s]={minDet,sigma};
+    }
+    return stats;
+}
+function imputeMinProb_canonical(vals,sampleNames,stats,seed){
+    // vals: this protein's values for one group's samples (length = n samples)
+    // sampleNames: parallel array of sample names (so we know each cell's sample)
+    // stats: precomputed per-sample {minDet, sigma}
+    const rng=seed!=null?_seededRng(seed):null;
+    return vals.map((v,i)=>{
+        if(v>0) return v;
+        const st=stats[sampleNames[i]];
+        if(!st){
+            // Fallback: protein-local min/2 if this sample has no per-sample stats
+            const nz=vals.filter(x=>x>0);
+            return nz.length?Math.min(...nz)/2:1;
+        }
+        return Math.pow(2,st.minDet+st.sigma*_randn(rng));
+    });
 }
 // kNN imputation: for each missing value, find k nearest proteins by Euclidean distance
 // Ref: Troyanskaya et al. (2001) Bioinformatics 17:520
@@ -2370,17 +2758,355 @@ function imputeKNN_volcano(vA,vB,allSamples,qd,fidx,fi,k){
     const aLen=vA.length;
     return{a:imputed.slice(0,aLen),b:imputed.slice(aLen)};
 }
+// ─── Matrix-wide imputation helpers (LLS, MissForest) ──────────────
+// Matrix-wide methods need the full proteins × samples matrix in one call;
+// they're precomputed once per volcano comparison and looked up per protein.
+
+// Solve A·w = b by Gaussian elimination with partial pivoting.
+// Returns the solution vector w, or null if A is singular.
+function _gaussianSolve(A,b){
+    const n=b.length;
+    const M=A.map((row,i)=>[...row,b[i]]);
+    for(let k=0;k<n;k++){
+        // Pivot: largest |M[r][k]| for r ≥ k
+        let maxRow=k,maxVal=Math.abs(M[k][k]);
+        for(let r=k+1;r<n;r++){
+            if(Math.abs(M[r][k])>maxVal){maxVal=Math.abs(M[r][k]);maxRow=r}
+        }
+        if(maxVal<1e-12) return null;
+        if(maxRow!==k){const tmp=M[k];M[k]=M[maxRow];M[maxRow]=tmp}
+        for(let r=k+1;r<n;r++){
+            const f=M[r][k]/M[k][k];
+            for(let c=k;c<=n;c++) M[r][c]-=f*M[k][c];
+        }
+    }
+    const w=new Array(n).fill(0);
+    for(let r=n-1;r>=0;r--){
+        let s=M[r][n];
+        for(let c=r+1;c<n;c++) s-=M[r][c]*w[c];
+        w[r]=s/M[r][r];
+    }
+    return w;
+}
+// Solve over-determined X·w = y in the least-squares sense via the normal
+// equations with a small ridge for numerical stability.
+function _solveLeastSquares(X,y,ridge){
+    const m=X.length, n=X[0].length;
+    const XtX=Array.from({length:n},()=>new Array(n).fill(0));
+    for(let i=0;i<m;i++){
+        for(let a=0;a<n;a++){
+            for(let b=a;b<n;b++) XtX[a][b]+=X[i][a]*X[i][b];
+        }
+    }
+    for(let a=0;a<n;a++){
+        for(let b=0;b<a;b++) XtX[a][b]=XtX[b][a];
+        XtX[a][a]+=ridge||1e-6;
+    }
+    const Xty=new Array(n).fill(0);
+    for(let i=0;i<m;i++){
+        for(let a=0;a<n;a++) Xty[a]+=X[i][a]*y[i];
+    }
+    return _gaussianSolve(XtX,Xty);
+}
+
+// LLS imputation (Kim et al. 2005, Bioinformatics 21:187).
+// For each protein with missing values, find k similar proteins (by L2
+// distance on shared observed positions), then fit a linear regression of
+// the target on the neighbours and predict the missing values.
+// Operates on a single matrix M[protein][sample] in log2 space.
+// Returns a new matrix with missing values (≤0) filled.
+function imputeLLS_matrix(M,k){
+    k=k||10;
+    const nRows=M.length;
+    if(!nRows) return M;
+    const nCols=M[0].length;
+    // Convert to log2 internally; store any positive value, leave zeros marked.
+    // Note: caller passes raw intensities. We log2-transform here so distances
+    // and regression operate in the proper proteomics-statistics space, then
+    // convert back. Track the original values so non-missing cells round-trip
+    // EXACTLY (a naive log2→pow loop loses ~14 ULPs of precision).
+    const L=M.map(row=>row.map(v=>v>0?Math.log2(v):0));
+    const out=L.map(row=>row.slice());
+    const wasMissing=M.map(row=>row.map(v=>!(v>0)));
+    for(let i=0;i<nRows;i++){
+        const target=L[i];
+        const missing=[],observed=[];
+        for(let j=0;j<nCols;j++){
+            if(target[j]>0) observed.push(j); else missing.push(j);
+        }
+        if(!missing.length||!observed.length) continue;
+        // Find candidate neighbours: rows that have values at ALL of target's
+        // missing positions AND ≥2 shared observed positions for distance.
+        const cands=[];
+        for(let r=0;r<nRows;r++){
+            if(r===i) continue;
+            let ok=true;
+            for(const c of missing){if(!(L[r][c]>0)){ok=false;break}}
+            if(!ok) continue;
+            let d2=0,n=0;
+            for(const c of observed){
+                if(L[r][c]>0){d2+=(L[r][c]-target[c])**2;n++}
+            }
+            if(n<2) continue;
+            cands.push({r,dist:Math.sqrt(d2/n)});
+        }
+        cands.sort((a,b)=>a.dist-b.dist);
+        const nbrs=cands.slice(0,k);
+        if(nbrs.length<2){
+            // Fallback to per-protein min/2 (in linear space then back to log2)
+            const nz=target.filter(v=>v>0);
+            const half=nz.length?Math.min(...nz)-1:0;  // log2(min/2) = log2(min)-1
+            for(const c of missing) out[i][c]=half;
+            continue;
+        }
+        // Build over-determined system: target_observed = X · w
+        // X is (n_observed × n_neighbours): each col = a neighbour's values
+        // restricted to the observed positions of the target.
+        const X=observed.map(c=>nbrs.map(nb=>L[nb.r][c]));
+        const y=observed.map(c=>target[c]);
+        const w=_solveLeastSquares(X,y,1e-4);
+        if(!w){
+            const nz=target.filter(v=>v>0);
+            const half=nz.length?Math.min(...nz)-1:0;
+            for(const c of missing) out[i][c]=half;
+            continue;
+        }
+        for(const c of missing){
+            let pred=0;
+            for(let j=0;j<nbrs.length;j++) pred+=L[nbrs[j].r][c]*w[j];
+            // Clamp to a sane log2 range so a runaway regression can't produce
+            // an absurd back-transformed value (e.g. log2 = 60 → 1e18).
+            const minObs=Math.min(...observed.map(c2=>target[c2]));
+            const maxObs=Math.max(...observed.map(c2=>target[c2]));
+            out[i][c]=Math.max(minObs-3,Math.min(maxObs+3,pred));
+        }
+    }
+    // Convert back to linear intensities. Originally non-missing cells are
+    // restored exactly from M (avoids log2→pow round-trip drift that would
+    // change observed values by ~1e-14 — small but breaks bit-exact tests).
+    return out.map((row,i)=>row.map((v,j)=>{
+        if(!wasMissing[i][j]) return M[i][j];
+        return v>0?Math.pow(2,v):0;
+    }));
+}
+
+// ─── Random Forest (MissForest, Stekhoven & Bühlmann 2012) ──────────
+// Pure-JS regression decision tree + bagged ensemble. The forest is
+// constructed with a seeded RNG so the imputation is reproducible.
+
+// Sum of squared deviations from the mean (variance × n).
+function _rfSSE(y){
+    if(y.length<2) return 0;
+    let s=0;for(const v of y) s+=v;
+    const m=s/y.length;
+    let r=0;for(const v of y){const d=v-m;r+=d*d}
+    return r;
+}
+// Find the best (feature, threshold) split that maximises variance reduction.
+function _rfBestSplit(X,y,featureIdxs,minLeaf){
+    const totalSSE=_rfSSE(y);
+    let best=null,bestRed=0;
+    for(const fi of featureIdxs){
+        // Sort indices by this feature's value
+        const order=y.map((_,i)=>i).sort((a,b)=>X[a][fi]-X[b][fi]);
+        let leftSum=0,leftSqSum=0,leftN=0;
+        let rightSum=0,rightSqSum=0,rightN=y.length;
+        for(const i of order){rightSum+=y[i];rightSqSum+=y[i]*y[i]}
+        for(let k=0;k<order.length-1;k++){
+            const yi=y[order[k]];
+            leftSum+=yi;leftSqSum+=yi*yi;leftN++;
+            rightSum-=yi;rightSqSum-=yi*yi;rightN--;
+            if(leftN<minLeaf||rightN<minLeaf) continue;
+            const xCur=X[order[k]][fi], xNext=X[order[k+1]][fi];
+            if(xCur===xNext) continue;  // can't split between equal values
+            const leftSSE=leftSqSum-leftSum*leftSum/leftN;
+            const rightSSE=rightSqSum-rightSum*rightSum/rightN;
+            const red=totalSSE-leftSSE-rightSSE;
+            if(red>bestRed){
+                bestRed=red;
+                best={fi,thr:(xCur+xNext)/2,leftIdx:order.slice(0,k+1),rightIdx:order.slice(k+1)};
+            }
+        }
+    }
+    return best;
+}
+// Recursively build a regression tree.
+function _rfBuildTree(X,y,depth,maxDepth,minLeaf,mtry,rng){
+    if(depth>=maxDepth||y.length<2*minLeaf){
+        let s=0;for(const v of y) s+=v;
+        return{leaf:y.length?s/y.length:0};
+    }
+    // Random feature subset (mtry features picked without replacement)
+    const nFeat=X[0].length;
+    const allFeats=Array.from({length:nFeat},(_,i)=>i);
+    // Fisher-Yates partial shuffle for sampling
+    for(let i=allFeats.length-1;i>allFeats.length-1-mtry;i--){
+        const j=Math.floor(rng()*(i+1));
+        const t=allFeats[i];allFeats[i]=allFeats[j];allFeats[j]=t;
+    }
+    const featSubset=allFeats.slice(-mtry);
+    const split=_rfBestSplit(X,y,featSubset,minLeaf);
+    if(!split){
+        let s=0;for(const v of y) s+=v;
+        return{leaf:s/y.length};
+    }
+    return{
+        fi:split.fi, thr:split.thr,
+        left:_rfBuildTree(split.leftIdx.map(i=>X[i]),split.leftIdx.map(i=>y[i]),depth+1,maxDepth,minLeaf,mtry,rng),
+        right:_rfBuildTree(split.rightIdx.map(i=>X[i]),split.rightIdx.map(i=>y[i]),depth+1,maxDepth,minLeaf,mtry,rng),
+    };
+}
+function _rfPredict(tree,x){
+    let n=tree;
+    while(n.leaf===undefined) n=x[n.fi]<=n.thr?n.left:n.right;
+    return n.leaf;
+}
+// Build a random forest by bagging: each tree gets a bootstrap sample.
+function _rfBuildForest(X,y,nTrees,maxDepth,mtry,rng){
+    const forest=[];
+    const n=X.length;
+    for(let t=0;t<nTrees;t++){
+        const bX=new Array(n),bY=new Array(n);
+        for(let i=0;i<n;i++){
+            const idx=Math.floor(rng()*n);
+            bX[i]=X[idx];bY[i]=y[idx];
+        }
+        forest.push(_rfBuildTree(bX,bY,0,maxDepth,1,mtry,rng));
+    }
+    return forest;
+}
+function _rfForestPredict(forest,x){
+    let s=0;for(const tree of forest) s+=_rfPredict(tree,x);
+    return s/forest.length;
+}
+// MissForest matrix imputation (Stekhoven & Bühlmann 2012, Bioinformatics 28:112).
+// Iterative: for each sample column with missing values, train an RF on the
+// other columns to predict it; repeat until the change between iterations is
+// small. Operates on a proteins × samples matrix in log2 space.
+function imputeMissForest_matrix(M,maxIter,nTrees,seed){
+    maxIter=maxIter||5;
+    nTrees=nTrees||50;
+    const nRows=M.length;
+    if(!nRows) return M;
+    const nCols=M[0].length;
+    // Log2 transform; track originally-missing cells (zeros)
+    const L=M.map(row=>row.map(v=>v>0?Math.log2(v):0));
+    const wasMissing=L.map(row=>row.map(v=>v<=0));
+    const filled=L.map(row=>row.slice());
+    // Initial fill: per-column mean of observed values (in log2 space)
+    const colMean=new Array(nCols).fill(0), colCnt=new Array(nCols).fill(0);
+    for(let i=0;i<nRows;i++) for(let j=0;j<nCols;j++){
+        if(L[i][j]>0){colMean[j]+=L[i][j];colCnt[j]++}
+    }
+    for(let j=0;j<nCols;j++) colMean[j]=colCnt[j]?colMean[j]/colCnt[j]:0;
+    for(let i=0;i<nRows;i++) for(let j=0;j<nCols;j++){
+        if(wasMissing[i][j]) filled[i][j]=colMean[j];
+    }
+    const rng=_seededRng((seed||1)>>>0);
+    let prev=null;
+    const otherColsCache=[];
+    for(let c=0;c<nCols;c++){
+        const others=[];for(let j=0;j<nCols;j++) if(j!==c) others.push(j);
+        otherColsCache.push(others);
+    }
+    for(let iter=0;iter<maxIter;iter++){
+        prev=filled.map(row=>row.slice());
+        for(let c=0;c<nCols;c++){
+            const observedRows=[],missingRows=[];
+            for(let i=0;i<nRows;i++){
+                (wasMissing[i][c]?missingRows:observedRows).push(i);
+            }
+            if(!missingRows.length||observedRows.length<5) continue;
+            const others=otherColsCache[c];
+            const X_train=observedRows.map(i=>others.map(j=>filled[i][j]));
+            const y_train=observedRows.map(i=>L[i][c]);
+            const X_pred=missingRows.map(i=>others.map(j=>filled[i][j]));
+            const mtry=Math.max(1,Math.floor(Math.sqrt(others.length)));
+            // Cap training rows to keep each forest cheap on huge datasets
+            // (random subset; reproducible via the seeded RNG).
+            const TRAIN_CAP=400;
+            let trX=X_train,trY=y_train;
+            if(X_train.length>TRAIN_CAP){
+                const order=X_train.map((_,i)=>i);
+                for(let k=order.length-1;k>order.length-1-TRAIN_CAP;k--){
+                    const j=Math.floor(rng()*(k+1));
+                    const t=order[k];order[k]=order[j];order[j]=t;
+                }
+                const pick=order.slice(-TRAIN_CAP);
+                trX=pick.map(i=>X_train[i]);trY=pick.map(i=>y_train[i]);
+            }
+            const forest=_rfBuildForest(trX,trY,nTrees,6,mtry,rng);
+            for(let k=0;k<missingRows.length;k++){
+                filled[missingRows[k]][c]=_rfForestPredict(forest,X_pred[k]);
+            }
+        }
+        // Convergence check: relative Frobenius-norm change
+        let diff=0,prevSq=0;
+        for(let i=0;i<nRows;i++) for(let j=0;j<nCols;j++){
+            const d=filled[i][j]-prev[i][j];
+            diff+=d*d;prevSq+=prev[i][j]*prev[i][j];
+        }
+        if(prevSq>0&&Math.sqrt(diff/prevSq)<0.01) break;
+    }
+    // Convert back to linear intensities; restore originally-observed cells
+    // exactly from M so they round-trip without log2→pow drift.
+    return filled.map((row,i)=>row.map((v,j)=>{
+        if(!wasMissing[i][j]) return M[i][j];
+        return v>0?Math.pow(2,v):0;
+    }));
+}
+
+// Build a proteins × samples matrix from qd / fidx for a list of samples.
+// Used by matrix-wide imputers as the input format.
+function _buildVolcanoMatrix(samples,qd,fidx){
+    const n=fidx.length, m=samples.length;
+    const M=new Array(n);
+    for(let i=0;i<n;i++){
+        const row=new Array(m);
+        const fi=fidx[i];
+        for(let j=0;j<m;j++) row[j]=qd[samples[j]]?(qd[samples[j]][fi]||0):0;
+        M[i]=row;
+    }
+    return M;
+}
+
 // Dispatcher
-function imputeValues(vA,vB,method,allVals,allSamples,qd,fidx,fi,baseSeed){
+function imputeValues(vA,vB,method,allVals,allSamples,qd,fidx,fi,baseSeed,ctx){
     // Per-protein seeds derived from the user-supplied baseSeed so re-renders
     // produce identical imputation. Same baseSeed + same data → identical plot.
     // Different baseSeeds let users verify their conclusions are robust.
+    //
+    // ctx is an optional precomputation object built ONCE per volcano render
+    // and reused for every protein. It can carry:
+    //   - minProbStats: {sample: {minDet, sigma}} for canonical MinProb
+    //   - matrixImputed: full proteins × samples matrix for LLS / MissForest
+    //   - gxSamples, gySamples: parallel arrays so we know each cell's sample
     const bs=(baseSeed==null?42:baseSeed)>>>0;
     const seedA=fi!=null?((bs*1000003+fi*2+1)>>>0):null;
     const seedB=fi!=null?((bs*1000003+fi*2+2)>>>0):null;
     if(method==='min2'){return{a:imputeZeros(vA),b:imputeZeros(vB)}}
     if(method==='perseus'){return{a:imputePerseus(vA,allVals,undefined,undefined,seedA),b:imputePerseus(vB,allVals,undefined,undefined,seedB)}}
-    if(method==='minprob'){return{a:imputeMinProb(vA,undefined,seedA),b:imputeMinProb(vB,undefined,seedB)}}
+    if(method==='qrilc'){return{a:imputeQRILC(vA,undefined,seedA),b:imputeQRILC(vB,undefined,seedB)}}
+    if(method==='minprob'){
+        // Canonical MinProb: per-sample MinDet stats (precomputed)
+        if(ctx&&ctx.minProbStats&&ctx.gxSamples&&ctx.gySamples){
+            return{
+                a:imputeMinProb_canonical(vA,ctx.gxSamples,ctx.minProbStats,seedA),
+                b:imputeMinProb_canonical(vB,ctx.gySamples,ctx.minProbStats,seedB),
+            };
+        }
+        // Without precomputed stats, fall back to QRILC (the old behaviour)
+        return{a:imputeQRILC(vA,undefined,seedA),b:imputeQRILC(vB,undefined,seedB)};
+    }
+    if(method==='lls'||method==='missforest'){
+        // Look up the precomputed row for this protein
+        if(ctx&&ctx.matrixImputed){
+            const row=ctx.matrixImputed[ctx.protRowIdx?ctx.protRowIdx[fi]:fi]||[];
+            const aLen=vA.length;
+            return{a:row.slice(0,aLen),b:row.slice(aLen,aLen+vB.length)};
+        }
+        return{a:imputeZeros(vA),b:imputeZeros(vB)};
+    }
     if(method==='knn'){return imputeKNN_volcano(vA,vB,allSamples,qd,fidx,fi)}
     return{a:imputeZeros(vA),b:imputeZeros(vB)};
 }
@@ -2607,12 +3333,37 @@ function showVizConfig(type){
         html+=`<label class="checkbox-row" style="margin-top:6px"><input type="checkbox" id="vc-impute" checked onchange="vcImputeToggled()"> Impute missing values</label>`;
         html+=`<div class="af-row" id="vc-impute-method-row"><span class="af-lbl">Imputation method</span><select id="vc-impute-method" onchange="vcImputeToggled()" title="Method used to replace missing/zero intensity values before statistical testing">
             <option value="perseus">Perseus-style Gaussian (recommended)</option>
-            <option value="minprob">MinProb (left-censored)</option>
-            <option value="knn">kNN (k-nearest neighbors)</option>
-            <option value="min2">Min/2 (simple)</option>
+            <option value="minprob">MinProb (per-sample MinDet)</option>
+            <option value="qrilc">QRILC (left-censored quantile)</option>
+            <option value="knn">kNN (k-nearest neighbours)</option>
+            <option value="lls">LLS (local least squares)</option>
+            <option value="missforest">Random Forest (MissForest)</option>
+            <option value="min2">Min/2 (simple baseline)</option>
         </select></div>`;
-        html+=`<div class="af-row" id="vc-impute-seed-row"><span class="af-lbl">Random seed</span><input type="number" id="vc-impute-seed" value="42" min="0" max="2147483647" step="1" style="width:100px" title="Seed for the per-protein PRNG. Same seed + same data → identical imputation. Change the seed to verify your results are robust to the random draws (a stable conclusion shouldn't depend on the specific seed)."></div>`;
-        html+=`<div style="font-size:10px;color:var(--text-sec);margin-top:2px;margin-bottom:4px;line-height:1.4"><b>Perseus</b>: draw from down-shifted normal (Tyanova et al. 2016). <b>MinProb</b>: draw near 1st percentile (Lazar et al. 2016). <b>kNN</b>: weighted mean of similar proteins (Troyanskaya et al. 2001). <b>Min/2</b>: half of minimum non-zero value. The first three are stochastic — the seed makes results reproducible per protein. kNN and Min/2 are deterministic and ignore the seed.</div>`;
+        html+=`<div class="af-row" id="vc-impute-seed-row"><span class="af-lbl">Random seed</span><input type="number" id="vc-impute-seed" value="42" min="0" max="2147483647" step="1" style="width:100px" title="Seed for the imputation PRNG. Same seed + same data → identical imputation. Change the seed to verify your results are robust to the random draws (a stable conclusion shouldn't depend on the specific seed)."></div>`;
+        html+=`<div style="font-size:10px;color:var(--text-sec);margin-top:2px;margin-bottom:4px;line-height:1.4">
+            <b>Perseus</b>: draw from down-shifted normal in log2 space (Tyanova et al. 2016).
+            <b>MinProb</b>: per-sample minimum-detected; draw from N(MinDet_sample, σ) (Lazar et al. 2016).
+            <b>QRILC</b>: draw near the 1st percentile of the global log2 distribution (Wei et al. 2018).
+            <b>kNN</b>: inverse-distance-weighted mean of k=10 nearest proteins (Troyanskaya et al. 2001).
+            <b>LLS</b>: linear regression on k=10 similar proteins (Kim et al. 2005).
+            <b>Random Forest</b>: iterative non-linear regression à la MissForest (Stekhoven &amp; Bühlmann 2012).
+            <b>Min/2</b>: half of the per-protein minimum non-zero value (deterministic baseline).<br>
+            Stochastic methods (Perseus, MinProb, QRILC, Random Forest) use the seed for reproducibility — same seed + same data → identical plot. kNN, LLS, and Min/2 are deterministic and ignore the seed.</div>`;
+        // DEqMS needs the Peptides column. If the file is missing peptide
+        // counts, disable that option in the dropdown so the user is told
+        // upfront, instead of silently falling back to limma at render time.
+        const _hasPepUI=RAW&&RAW.format_info&&RAW.format_info.has_peptide_counts!==false;
+        html+=`<div class="af-row"><span class="af-lbl">Statistical test</span><select id="vc-test" title="Method for computing per-protein p-values. Welch is the standard textbook two-sample t-test (unequal variance). Limma applies empirical-Bayes shrinkage of per-protein variance toward a fitted prior — recommended for studies with few replicates (≤ 5 per group). DEqMS extends limma by tying the prior to peptide count, so proteins quantified from many peptides are weighted differently from those quantified from few.">
+            <option value="welch">Welch&#39;s t-test (default)</option>
+            <option value="limma">Moderated t-test (limma)</option>
+            <option value="deqms"${_hasPepUI?'':' disabled'}>Peptide-count moderated (DEqMS)${_hasPepUI?'':' — requires Peptides column'}</option>
+        </select></div>`;
+        html+=`<div style="font-size:10px;color:var(--text-sec);margin-top:2px;margin-bottom:4px;line-height:1.4">
+            <b>Welch</b>: per-protein two-sample t with Welch&ndash;Satterthwaite df.
+            <b>limma</b>: empirical-Bayes shrinks each protein&rsquo;s variance toward a fitted prior &mdash; bigger gains with smaller N. Ref: Smyth (2004) <em>Stat. Appl. Genet. Mol. Biol.</em> 3:3.
+            <b>DEqMS</b>: limma + per-peptide-count prior; uses the proteinGroups <code>Peptides</code> column. Falls back to limma if the file has no peptide counts. Ref: Zhu et al. (2020) <em>MCP</em> 19:1047.<br>
+            S0 (below) is layered on top of any of these as an additional dampening of the denominator (Tusher 2001).</div>`;
         html+=`<div class="af-row"><span class="af-lbl">FDR threshold</span><select id="vc-fdr"><option value="0.05">0.05</option><option value="0.01">0.01</option><option value="0.001">0.001</option></select></div>`;
         html+=`<div class="af-row"><span class="af-lbl">|Log2 FC| threshold</span><input type="number" id="vc-fc" value="1" min="0" step="0.25" style="width:80px" title="Minimum absolute log2 fold change to classify a protein as significantly regulated. Common values: 0.5 (lenient, 1.4-fold), 1.0 (standard, 2-fold), 1.5 (stringent, 2.8-fold), 2.0 (very stringent, 4-fold)."></div>`;
         html+=`<div style="font-size:10px;color:var(--text-sec);margin-top:2px;line-height:1.4">1.0 = 2-fold change, 0.58 = 1.5-fold, 1.58 = 3-fold, 2.0 = 4-fold.</div>`;
@@ -2654,7 +3405,10 @@ function vcImputeToggled(){
     if(methodRow) methodRow.style.display=on?'':'none';
     if(!seedRow) return;
     const method=document.getElementById('vc-impute-method')?.value||'perseus';
-    const stochastic=on&&(method==='perseus'||method==='minprob');
+    // Stochastic methods that consume the seed: Perseus, MinProb (canonical),
+    // QRILC, and MissForest (forest construction). kNN, LLS, and Min/2 are
+    // deterministic — hide the seed input to avoid suggesting it has effect.
+    const stochastic=on&&(method==='perseus'||method==='minprob'||method==='qrilc'||method==='missforest');
     seedRow.style.display=stochastic?'':'none';
 }
 function toggleAbSource(){
@@ -2724,7 +3478,7 @@ function addPlotToCanvas(type){
         config.style=document.getElementById('vc-enr-style')?.value||'dot';
         config.log2=document.getElementById('vc-enr-log2')?.checked||false;
     }
-    if(type==='volcano'){config.impute=document.getElementById('vc-impute')?.checked;config.fdr=+(document.getElementById('vc-fdr')?.value||.05);config.fc=+(document.getElementById('vc-fc')?.value||1);config.s0=+(document.getElementById('vc-s0')?.value||0);config.imputeMethod=document.getElementById('vc-impute-method')?.value||'perseus';config.imputeSeed=Math.max(0,Math.floor(+(document.getElementById('vc-impute-seed')?.value||42)))}
+    if(type==='volcano'){config.impute=document.getElementById('vc-impute')?.checked;config.fdr=+(document.getElementById('vc-fdr')?.value||.05);config.fc=+(document.getElementById('vc-fc')?.value||1);config.s0=+(document.getElementById('vc-s0')?.value||0);config.imputeMethod=document.getElementById('vc-impute-method')?.value||'perseus';config.imputeSeed=Math.max(0,Math.floor(+(document.getElementById('vc-impute-seed')?.value||42)));config.test=document.getElementById('vc-test')?.value||'welch'}
     if(type==='unique'){
         config.featuredGroup=document.getElementById('vc-uniq-grp')?.value||'';
         config.mode=document.getElementById('vc-uniq-mode')?.value||'not_control';
@@ -2915,7 +3669,13 @@ function renderPlot(p,qd,fidx){
     p._forceUpdate=false;
 
     const div=document.getElementById(p.plotId);if(!div)return;
-    if(CHARTS[p.plotId]){CHARTS[p.plotId].destroy();delete CHARTS[p.plotId]}
+    if(CHARTS[p.plotId]){
+        // Destroy guard: if the previous chart's destroy() throws (stale DOM
+        // ref, missing tooltip, etc.), don't let it block creating the new
+        // chart. Always clear the entry so memory doesn't pile up.
+        try{CHARTS[p.plotId].destroy()}catch(e){console.warn('Chart destroy threw, continuing:',e)}
+        delete CHARTS[p.plotId];
+    }
     const chart=new ProkerChart(div,{theme:getChartTheme()});
     CHARTS[p.plotId]=chart;
 
@@ -3002,9 +3762,27 @@ function updateFrozenPlot(plotId){
 
 function refreshAllPlots(){
     if(!RAW||!CANVAS_PLOTS.length)return;
-    buildProcessedData();
-    const{data:qd}=getQData();const fidx=getFilteredIdx();
-    CANVAS_PLOTS.forEach(p=>renderPlot(p,qd,fidx));
+    try{buildProcessedData()}catch(e){console.error('[refreshAllPlots] buildProcessedData failed:',e);_showErrorToast('Data processing failed: '+(e.message||e));return}
+    let qd,fidx;
+    try{const r=getQData();qd=r.data;fidx=getFilteredIdx()}
+    catch(e){console.error('[refreshAllPlots] getQData/getFilteredIdx failed:',e);_showErrorToast('Cannot prepare plot data: '+(e.message||e));return}
+    // Per-plot isolation: if one plot errors, the others still render.
+    // Render an in-place error placeholder so the user sees what failed.
+    CANVAS_PLOTS.forEach(p=>{
+        try{renderPlot(p,qd,fidx)}
+        catch(e){
+            console.error('[renderPlot]',p&&p.type,p&&p.plotId,e);
+            try{
+                const div=document.getElementById(p.plotId);
+                if(div){
+                    div.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-sec);font-size:11px;padding:14px;text-align:center;line-height:1.5">'
+                        +'<div><div style="color:var(--danger);font-weight:600;margin-bottom:4px">Plot render error</div>'
+                        +'<div style="opacity:0.8">'+String(e.message||e).slice(0,200).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+'</div>'
+                        +'<div style="margin-top:6px;font-size:10px;opacity:0.6">Try changing this plot\'s settings, or remove it via the × button.</div></div></div>';
+                }
+            }catch(_){}
+        }
+    });
 }
 
 function buildEnrichmentConfig(chart,p,qd,fidx){
@@ -3130,9 +3908,17 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     const canTTest=nRepX>=2&&nRepY>=2;
     const impMethod=p.config.imputeMethod||'perseus';
     const impSeed=p.config.imputeSeed!=null?p.config.imputeSeed:42;
+    // Statistical test: 'welch' (default Welch's t), 'limma' (empirical-Bayes
+    // moderated t), or 'deqms' (limma + peptide-count covariate).
+    let testMethod=p.config.test||'welch';
+    // DEqMS gracefully degrades to limma if the file has no peptide counts
+    const hasPeptides=RAW&&RAW.format_info&&RAW.format_info.has_peptide_counts!==false;
+    if(testMethod==='deqms'&&!hasPeptides) testMethod='limma';
     // For kNN: build sample list for both groups
     const _binGx=BINS.find(b=>b.label===gx),_binGy=BINS.find(b=>b.label===gy);
-    const _allSamples=(_binGx?_binGx.samples:[]).concat(_binGy?_binGy.samples:[]);
+    const _gxSamples=_binGx?_binGx.samples:[];
+    const _gySamples=_binGy?_binGy.samples:[];
+    const _allSamples=_gxSamples.concat(_gySamples);
     // For Perseus: collect all non-zero values across both groups
     let _allValsForPerseus=null;
     if(impMethod==='perseus'&&doImpute){
@@ -3140,6 +3926,22 @@ function buildVolcanoConfig(chart,p,qd,fidx){
         for(let fi=0;fi<fidx.length;fi++){
             const vals=grpVals(fi,gx,qd,fidx).concat(grpVals(fi,gy,qd,fidx));
             vals.forEach(v=>{if(v>0)_allValsForPerseus.push(v)});
+        }
+    }
+    // Build the precomputation context for matrix-wide and per-sample-stat
+    // imputation methods. This runs ONCE per render, not per protein.
+    const _impCtx={gxSamples:_gxSamples,gySamples:_gySamples};
+    if(doImpute){
+        if(impMethod==='minprob'){
+            _impCtx.minProbStats=_precomputeMinProbStats(_allSamples,qd,fidx);
+        }
+        if(impMethod==='lls'){
+            const M=_buildVolcanoMatrix(_allSamples,qd,fidx);
+            _impCtx.matrixImputed=imputeLLS_matrix(M,10);
+        }
+        if(impMethod==='missforest'){
+            const M=_buildVolcanoMatrix(_allSamples,qd,fidx);
+            _impCtx.matrixImputed=imputeMissForest_matrix(M,5,50,impSeed);
         }
     }
     // Categorize proteins: detected in both, only in gx, only in gy, neither
@@ -3158,19 +3960,25 @@ function buildVolcanoConfig(chart,p,qd,fidx){
         const meta={fi,pidx,label:pLabel(fidx,fi),full:pFullLabel(fidx,fi),hover:pHoverLabel(fidx,fi)};
         if(inA&&inB){
             if(doImpute){
-                const imp=imputeValues(vA,vB,impMethod,_allValsForPerseus,_allSamples,qd,fidx,fi,impSeed);
+                const imp=imputeValues(vA,vB,impMethod,_allValsForPerseus,_allSamples,qd,fidx,fi,impSeed,_impCtx);
                 vA=imp.a;vB=imp.b;
             }
             const fcVal=Math.log2(mean(vA)/mean(vB));
             if(!isFinite(fcVal))continue;
-            both.push({...meta,fc:fcVal,p:canTTest?ttest(vA,vB,s0):1,mA:mA0,mB:mB0});
+            // Capture sufficient stats so the second pass can compute moderated
+            // p-values without re-imputing or re-traversing the matrix.
+            both.push({...meta,fc:fcVal,p:canTTest?ttest(vA,vB,s0):1,mA:mA0,mB:mB0,
+                meanX:mean(vA),meanY:mean(vB),varX:variance(vA),varY:variance(vB),nX:vA.length,nY:vB.length,
+                peptides:(RAW.proteins[pidx]||{}).peptides||0});
         } else if(doImpute){
             // Presence-only \u2014 impute the missing side and treat as a regular point
-            const imp=imputeValues(vA,vB,impMethod,_allValsForPerseus,_allSamples,qd,fidx,fi,impSeed);
+            const imp=imputeValues(vA,vB,impMethod,_allValsForPerseus,_allSamples,qd,fidx,fi,impSeed,_impCtx);
             vA=imp.a;vB=imp.b;
             const fcVal=Math.log2(mean(vA)/mean(vB));
             if(!isFinite(fcVal))continue;
-            both.push({...meta,fc:fcVal,p:canTTest?ttest(vA,vB,s0):1,mA:mA0,mB:mB0,imputed:true});
+            both.push({...meta,fc:fcVal,p:canTTest?ttest(vA,vB,s0):1,mA:mA0,mB:mB0,imputed:true,
+                meanX:mean(vA),meanY:mean(vB),varX:variance(vA),varY:variance(vB),nX:vA.length,nY:vB.length,
+                peptides:(RAW.proteins[pidx]||{}).peptides||0});
         } else if(inA){
             upOnly.push({...meta,mA:mA0});
         } else {
@@ -3180,6 +3988,35 @@ function buildVolcanoConfig(chart,p,qd,fidx){
     if(!both.length&&!upOnly.length&&!downOnly.length){
         chart.setData([]).setXTitle('').setYTitle('No proteins detected').render();
         return;
+    }
+
+    // \u2500\u2500 SECOND PASS: moderated p-values (limma / DEqMS) \u2500\u2500
+    // If a moderated test was selected and we have enough proteins to fit a
+    // prior (\u2265 5 with valid variance), recompute p-values using empirical
+    // Bayes shrinkage. Pure-Welch is the default and skips this entirely.
+    if(canTTest&&(testMethod==='limma'||testMethod==='deqms')&&both.length>=5){
+        const dg=nRepX+nRepY-2;
+        // Pooled per-protein variance, as limma uses (not Welch's separated)
+        const pooledVar=both.map(b=>((b.nX-1)*b.varX+(b.nY-1)*b.varY)/(b.nX+b.nY-2));
+        let priorFn,d0;
+        if(testMethod==='deqms'){
+            const peps=both.map(b=>b.peptides||1);
+            const fit=fitDEqMSPriors(pooledVar,peps,dg);
+            priorFn=(i)=>fit.priorByCount(peps[i]);
+            d0=fit.d0;
+        } else {
+            const fit=fitLimmaPrior(pooledVar,dg);
+            priorFn=()=>fit.s0Squared;
+            d0=fit.d0;
+        }
+        // Replace each protein's raw Welch p with the moderated p
+        for(let i=0;i<both.length;i++){
+            const b=both[i];
+            const pv=moderatedPValue(b.meanX,b.meanY,b.varX,b.varY,b.nX,b.nY,priorFn(i),d0,s0);
+            b.p=pv;
+        }
+        // Stash the prior info on the chart for the user (debugging / hover)
+        chart._modTest={method:testMethod,d0,nProteinsUsed:both.length};
     }
 
     // FDR correction across the both[] subset only \u2014 presence-only have no p-value
@@ -4071,7 +4908,8 @@ function _buildPerProteinRows(){
         const fcT=vc.fc||1,fdrT=vc.fdr||0.05;
         const _bx=BINS.find(b=>b.label===pr.gx),_by=BINS.find(b=>b.label===pr.gy);
         const _canT=(_bx?_bx.samples.length:0)>=2&&(_by?_by.samples.length:0)>=2;
-        const _allSamples=(_bx?_bx.samples:[]).concat(_by?_by.samples:[]);
+        const _gxS=_bx?_bx.samples:[];const _gyS=_by?_by.samples:[];
+        const _allSamples=_gxS.concat(_gyS);
         let _allVals=null;
         if(impMethod==='perseus'&&doImpute){
             _allVals=[];
@@ -4079,22 +4917,67 @@ function _buildPerProteinRows(){
                 grpVals(fi,pr.gx,ctx.qd,ctx.fidx).concat(grpVals(fi,pr.gy,ctx.qd,ctx.fidx)).forEach(v=>{if(v>0)_allVals.push(v)});
             }
         }
+        // Build the same precomputation context the volcano render uses, so
+        // the exported stats match what's plotted on screen exactly.
+        const _impCtx={gxSamples:_gxS,gySamples:_gyS};
+        if(doImpute){
+            if(impMethod==='minprob') _impCtx.minProbStats=_precomputeMinProbStats(_allSamples,ctx.qd,ctx.fidx);
+            if(impMethod==='lls'){const M=_buildVolcanoMatrix(_allSamples,ctx.qd,ctx.fidx);_impCtx.matrixImputed=imputeLLS_matrix(M,10);}
+            if(impMethod==='missforest'){const M=_buildVolcanoMatrix(_allSamples,ctx.qd,ctx.fidx);_impCtx.matrixImputed=imputeMissForest_matrix(M,5,50,impSeed);}
+        }
+        // Statistical-test selection (must match the on-screen volcano)
+        let testMethod=vc.test||'welch';
+        const _hasPep=RAW&&RAW.format_info&&RAW.format_info.has_peptide_counts!==false;
+        if(testMethod==='deqms'&&!_hasPep) testMethod='limma';
+        const nRX=_bx?_bx.samples.length:0,nRY=_by?_by.samples.length:0;
+        // First pass: collect imputed sufficient stats per protein
+        const collected=[];  // parallel to fcArr/rawPArr — null entries for skipped
         for(let fi=0;fi<ctx.fidx.length;fi++){
             let vA=grpVals(fi,pr.gx,ctx.qd,ctx.fidx),vB=grpVals(fi,pr.gy,ctx.qd,ctx.fidx);
             const mA=mean(vA),mB=mean(vB);
-            if(mA===0||mB===0){fcArr.push(NaN);rawPArr.push(NaN);continue}
+            if(mA===0||mB===0){fcArr.push(NaN);rawPArr.push(NaN);collected.push(null);continue}
             if(doImpute){
-                const imp=imputeValues(vA,vB,impMethod,_allVals,_allSamples,ctx.qd,ctx.fidx,fi,impSeed);
+                const imp=imputeValues(vA,vB,impMethod,_allVals,_allSamples,ctx.qd,ctx.fidx,fi,impSeed,_impCtx);
                 vA=imp.a;vB=imp.b;
             }
             const fcVal=Math.log2(mean(vA)/mean(vB));
-            if(!isFinite(fcVal)){fcArr.push(NaN);rawPArr.push(NaN);continue}
+            if(!isFinite(fcVal)){fcArr.push(NaN);rawPArr.push(NaN);collected.push(null);continue}
             fcArr.push(fcVal);
-            rawPArr.push(_canT?ttest(vA,vB,s0):NaN);
+            const rawP=_canT?ttest(vA,vB,s0):NaN;
+            rawPArr.push(rawP);
+            collected.push({
+                meanX:mean(vA),meanY:mean(vB),varX:variance(vA),varY:variance(vB),
+                nX:vA.length,nY:vB.length,
+                peptides:(RAW.proteins[ctx.fidx[fi]]||{}).peptides||0,
+            });
+        }
+        // Second pass: moderated p-values (limma / DEqMS) for every entry that
+        // had a valid Welch p — overwrites rawPArr, then BH-FDR is recomputed.
+        const validIdxs=collected.map((c,i)=>c?i:-1).filter(i=>i>=0);
+        if(_canT&&(testMethod==='limma'||testMethod==='deqms')&&validIdxs.length>=5){
+            const dg=nRX+nRY-2;
+            const pooled=validIdxs.map(i=>{
+                const c=collected[i];return((c.nX-1)*c.varX+(c.nY-1)*c.varY)/(c.nX+c.nY-2);
+            });
+            let priorFn,d0;
+            if(testMethod==='deqms'){
+                const peps=validIdxs.map(i=>collected[i].peptides||1);
+                const fit=fitDEqMSPriors(pooled,peps,dg);
+                priorFn=(k)=>fit.priorByCount(peps[k]);
+                d0=fit.d0;
+            } else {
+                const fit=fitLimmaPrior(pooled,dg);
+                priorFn=()=>fit.s0Squared;
+                d0=fit.d0;
+            }
+            for(let k=0;k<validIdxs.length;k++){
+                const idx=validIdxs[k];const c=collected[idx];
+                rawPArr[idx]=moderatedPValue(c.meanX,c.meanY,c.varX,c.varY,c.nX,c.nY,priorFn(k),d0,s0);
+            }
         }
         const validP=rawPArr.map(pv=>isNaN(pv)?1:pv);
         const adjP=bhFDR(validP);
-        volcanoStats[vk]={fc:fcArr,rawP:rawPArr,adjP,fcT,fdrT};
+        volcanoStats[vk]={fc:fcArr,rawP:rawPArr,adjP,fcT,fdrT,test:testMethod};
     });
 
     for(let fi=0;fi<ctx.fidx.length;fi++){
@@ -4131,12 +5014,18 @@ function _buildVolcanoSettingsRows(){
     const{volcanoByPair}=_collectGroupPairs();
     const entries=Object.entries(volcanoByPair);
     if(!entries.length) return null;
-    const rows=[['Group X','Group Y','FDR Threshold','|Log2 FC| Threshold','Imputation','Imputation Method','Imputation Seed','Stochastic','S0']];
+    const rows=[['Group X','Group Y','Statistical Test','FDR Threshold','|Log2 FC| Threshold','Imputation','Imputation Method','Imputation Seed','Imputation Stochastic','S0']];
+    const TEST_NAMES={welch:"Welch's t-test",limma:'Moderated t-test (limma)',deqms:'Peptide-count moderated (DEqMS)'};
+    const STOCHASTIC=new Set(['perseus','minprob','qrilc','missforest']);
     entries.forEach(([key,vc])=>{
         const[gx,gy]=key.split('|||');
         const m=vc.imputeMethod||'perseus';
-        const stoch=vc.impute&&(m==='perseus'||m==='minprob');
-        rows.push([gx,gy,vc.fdr,vc.fc,vc.impute?'Yes':'No',m,vc.imputeSeed!=null?vc.imputeSeed:42,stoch?'Yes (per-protein deterministic from seed)':'No (deterministic)',vc.s0||0]);
+        const stoch=vc.impute&&STOCHASTIC.has(m);
+        // DEqMS is recorded as the chosen test; downstream consumers see what
+        // was actually run (it falls back to limma at render time if peptide
+        // counts are missing — that fallback isn't reflected here).
+        const t=vc.test||'welch';
+        rows.push([gx,gy,TEST_NAMES[t]||t,vc.fdr,vc.fc,vc.impute?'Yes':'No',m,vc.imputeSeed!=null?vc.imputeSeed:42,stoch?'Yes (deterministic from seed)':'No (deterministic)',vc.s0||0]);
     });
     return rows;
 }
@@ -4340,7 +5229,8 @@ function _extractPlotData(p){
         const impSeed=cfg.imputeSeed!=null?cfg.imputeSeed:42;
         const _bx=BINS.find(b=>b.label===gx),_by=BINS.find(b=>b.label===gy);
         const _canT=(_bx?_bx.samples.length:0)>=2&&(_by?_by.samples.length:0)>=2;
-        const _allSamples=(_bx?_bx.samples:[]).concat(_by?_by.samples:[]);
+        const _gxS=_bx?_bx.samples:[];const _gyS=_by?_by.samples:[];
+        const _allSamples=_gxS.concat(_gyS);
         let _allVals=null;
         if(impMethod==='perseus'&&doImpute){
             _allVals=[];
@@ -4348,9 +5238,22 @@ function _extractPlotData(p){
                 grpVals(fi,gx,qd,fidx).concat(grpVals(fi,gy,qd,fidx)).forEach(v=>{if(v>0)_allVals.push(v)});
             }
         }
+        // Match the volcano render's precomputation context exactly so the
+        // exported CSV matches what's plotted on screen.
+        const _impCtx={gxSamples:_gxS,gySamples:_gyS};
+        if(doImpute){
+            if(impMethod==='minprob') _impCtx.minProbStats=_precomputeMinProbStats(_allSamples,qd,fidx);
+            if(impMethod==='lls'){const M=_buildVolcanoMatrix(_allSamples,qd,fidx);_impCtx.matrixImputed=imputeLLS_matrix(M,10);}
+            if(impMethod==='missforest'){const M=_buildVolcanoMatrix(_allSamples,qd,fidx);_impCtx.matrixImputed=imputeMissForest_matrix(M,5,50,impSeed);}
+        }
         const headers=['Protein ID','Gene Name','Mean '+gx,'Mean '+gy,
             'Log2('+gx+' / '+gy+')','-Log10(P)','-Log10(FDR)','P-value','FDR adj. P-value','Detection','Significance'];
-        // First pass: collect & impute
+        // Statistical-test selection (matches the on-screen volcano)
+        let testMethod=cfg.test||'welch';
+        const _hasPep=RAW&&RAW.format_info&&RAW.format_info.has_peptide_counts!==false;
+        if(testMethod==='deqms'&&!_hasPep) testMethod='limma';
+        const nRX=_bx?_bx.samples.length:0,nRY=_by?_by.samples.length:0;
+        // First pass: collect & impute (also capture sufficient stats for moderation)
         const collected=[];
         for(let fi=0;fi<fidx.length;fi++){
             let vA=grpVals(fi,gx,qd,fidx),vB=grpVals(fi,gy,qd,fidx);
@@ -4360,21 +5263,45 @@ function _extractPlotData(p){
             const pi=fidx[fi];const pr=RAW.proteins[pi];
             if(inA&&inB){
                 if(doImpute){
-                    const imp=imputeValues(vA,vB,impMethod,_allVals,_allSamples,qd,fidx,fi,impSeed);
+                    const imp=imputeValues(vA,vB,impMethod,_allVals,_allSamples,qd,fidx,fi,impSeed,_impCtx);
                     vA=imp.a;vB=imp.b;
                 }
                 const fcVal=Math.log2(mean(vA)/mean(vB));
                 if(!isFinite(fcVal)) continue;
                 const pv=_canT?ttest(vA,vB,s0):NaN;
-                collected.push({id:pr.majority_id||pr.id||'',gene:pr.gene_name||'',mA:mA0,mB:mB0,fc:fcVal,p:pv,detection:'both'});
+                collected.push({id:pr.majority_id||pr.id||'',gene:pr.gene_name||'',mA:mA0,mB:mB0,fc:fcVal,p:pv,detection:'both',
+                    meanX:mean(vA),meanY:mean(vB),varX:variance(vA),varY:variance(vB),nX:vA.length,nY:vB.length,
+                    peptides:(pr||{}).peptides||0});
             } else if(inA){
                 collected.push({id:pr.majority_id||pr.id||'',gene:pr.gene_name||'',mA:mA0,mB:0,fc:NaN,p:NaN,detection:'only '+gx});
             } else {
                 collected.push({id:pr.majority_id||pr.id||'',gene:pr.gene_name||'',mA:0,mB:mB0,fc:NaN,p:NaN,detection:'only '+gy});
             }
         }
-        // FDR over the both-detected subset
+        // Second pass: moderated p-values (limma / DEqMS) — same as on-screen
         const bothIdx=collected.map((r,i)=>r.detection==='both'?i:-1).filter(i=>i>=0);
+        if(_canT&&(testMethod==='limma'||testMethod==='deqms')&&bothIdx.length>=5){
+            const dg=nRX+nRY-2;
+            const pooled=bothIdx.map(i=>{
+                const c=collected[i];return((c.nX-1)*c.varX+(c.nY-1)*c.varY)/(c.nX+c.nY-2);
+            });
+            let priorFn,d0;
+            if(testMethod==='deqms'){
+                const peps=bothIdx.map(i=>collected[i].peptides||1);
+                const fit=fitDEqMSPriors(pooled,peps,dg);
+                priorFn=(k)=>fit.priorByCount(peps[k]);
+                d0=fit.d0;
+            } else {
+                const fit=fitLimmaPrior(pooled,dg);
+                priorFn=()=>fit.s0Squared;
+                d0=fit.d0;
+            }
+            for(let k=0;k<bothIdx.length;k++){
+                const idx=bothIdx[k];const c=collected[idx];
+                collected[idx].p=moderatedPValue(c.meanX,c.meanY,c.varX,c.varY,c.nX,c.nY,priorFn(k),d0,s0);
+            }
+        }
+        // FDR over the both-detected subset
         const validP=bothIdx.map(i=>isNaN(collected[i].p)?1:collected[i].p);
         const adjP=validP.length?bhFDR(validP):[];
         bothIdx.forEach((idx,j)=>{collected[idx].adjP=adjP[j]});
@@ -5104,7 +6031,7 @@ function loadSession(file){
                     } else {
                         pw.style.height='420px';
                     }
-                    pw.innerHTML=`<button class="cp-close" onclick="removePlot('${plotId}')">&times;</button><div id="${plotId}" style="width:100%;height:100%"></div>`;
+                    pw.innerHTML=`<button class="cp-close" onclick="removePlot('${plotId}')" title="Remove this plot from the canvas">&times;</button><div id="${plotId}" style="width:100%;height:100%"></div>`;
                     canvas.appendChild(pw);
                     if(typeof setupPlotResize==='function') setupPlotResize(pw,plotId);
                     setTimeout(()=>{

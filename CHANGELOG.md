@@ -3,6 +3,35 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.14.0] — 2026-05-02
+
+### Added — limma & DEqMS moderated t-tests
+The volcano plot now offers three statistical tests, selectable from a new "Statistical test" dropdown:
+
+- **Welch's t-test** (default, unchanged): standard two-sample unequal-variance t-test with Welch–Satterthwaite degrees of freedom.
+- **Moderated t-test (limma)**: empirical-Bayes shrinkage of per-protein variance toward a fitted scaled-inverse-χ² prior. Posterior variance s²_post = (d₀·s²₀ + d_g·s²_g) / (d₀ + d_g); posterior df = d_g + d₀. Hyperparameters d₀ and s²₀ estimated from the empirical distribution of per-protein log-variances using digamma/trigamma method-of-moments identities (Smyth 2004). Recommended for studies with few replicates per group (≤5).
+- **Peptide-count moderated (DEqMS)**: extends limma by binning proteins by `floor(log₂(peptide_count))` and using each bin's median log-variance as a per-bin prior. Captures that proteins quantified from many peptides have inherently lower measurement variance (Zhu et al. 2020). Falls back to limma automatically when the file has no `Peptides` column.
+
+### Implementation
+- New pure-JS special functions: `digamma(x)`, `trigamma(x)`, `inverseTrigamma(y)` — verified against R's `psigamma` to 1e-6.
+- New `fitLimmaPrior(variances, df)` returns `{d0, s0Squared}` via method of moments. Verified on 1000-protein simulation: true d₀=4, s₀²=2 → recovered d₀=3.95, s₀²=2.05.
+- New `fitDEqMSPriors(variances, peptideCounts, df)` returns `{priorByCount, d0}`. Verified: 200 proteins with 1 peptide each (high variance) and 200 with 10 peptides each (low variance) produced priors of 17.5 and 1.78 respectively.
+- New `moderatedPValue()` — pooled-variance moderated t with optional S0.
+- Volcano builder refactored into a clean two-pass structure.
+- The volcano render attaches a `_modTest = {method, d0, nProteinsUsed}` to the chart instance for inspection.
+
+### Cumulative front-end work from v4.11.0 onward
+This commit also lands the front-end implementation of the v4.11.0–v4.13.0 release notes (which described the contracts; this commit ships the JavaScript that fulfils them):
+
+- v4.11.0: Format-info banner for parser adaptations (dropped aggregate columns, missing peptide/contaminant column, etc.); disabled-with-explanation for column-dependent filters; plot palette + group/analysis tooltips; zero-protein upload guard.
+- v4.12.0: Per-plot try/catch isolation in `refreshAllPlots`; step-isolated `renderAll`; chart-destroy guard; upload state-rollback (priorRAW); defended boot autoload; visible error toast for sync errors and async rejections; emergency `window.__reset()` recovery hatch.
+- v4.12.1: README.md publication-quality rewrite; in-app Info-panel docs updated.
+- v4.13.0: Three new imputation methods (Random Forest / MissForest, LLS, canonical per-sample MinProb); old "MinProb" renamed to QRILC; matrix-precomputation context for matrix-wide methods; UI dropdown expanded to 7 options; seed traceability across all stochastic methods.
+- v4.14.0: Statistical-test dropdown; Volcano Settings XLSX sheet adds "Statistical Test" column; in-app Statistical Methods section documents all three tests + the digamma/trigamma derivations; References list adds Smyth (2004), Zhu et al. (2020), Wei et al. (2018), Kim et al. (2005), Stekhoven & Bühlmann (2012), Wang et al. (2020).
+
+### Verification
+Pure-JS unit tests (Node) confirm bit-identical reproducibility for stochastic imputation methods, recovery of known statistical-prior parameters, and dispatcher correctness across all 7 imputation methods. End-to-end `curl` against the live server confirms all 7 imputation options + 3 statistical-test options serialise and render correctly on a real 1492-protein × 10-sample MaxQuant file.
+
 ## [4.13.0] — 2026-05-02
 
 ### Added — three new imputation methods (front-end implementation lands in v4.14.0 cumulative commit)
