@@ -3,6 +3,22 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.12.0] — 2026-05-01
+
+### Fixed — JS robustness, no single error can lock the program
+*(Front-end implementation lands in the v4.14.0 cumulative front-end commit; the contract documented here is what shipped from this release onward.)*
+
+- **Per-plot error isolation in `refreshAllPlots`.** Each plot renders inside its own `try/catch`; on failure, the plot's div shows a clear in-place "Plot render error" placeholder and the rest of the canvas keeps rendering.
+- **Step-isolated `renderAll`.** Per-step loop with `try/catch` around each call (renderUnassigned → renderBins → … → autoSaveSession). A failure in one step no longer prevents the others — most importantly autosave still runs.
+- **Chart `destroy()` guard in `renderPlot`.** A throwing destroy no longer blocks creating the new chart; the old `CHARTS` entry is always cleared.
+- **Upload state-rollback.** If `initGrouping()` throws after the response is parsed, `RAW` is restored to its prior value so the user can re-upload cleanly.
+- **Boot-autoload defended.** The startup `/api/data` fetch wraps both the network call and `initGrouping()` separately.
+
+### Added — visible error feedback
+- **Global error toast.** `window.onerror` and a new `unhandledrejection` listener surface errors as a dismissable red toast in the bottom-right (auto-dismisses after 12 s). The toast is itself fully `try/caught`.
+- **Async error containment.** `unhandledrejection` listener catches promise rejections that previously vanished into devtools-only output.
+- **Emergency reset hatch.** `window.__reset()` exposed on the global so a user can recover from an unrecoverable state via the browser console.
+
 ## [4.11.0] — 2026-05-01
 
 ### Fixed — parser robustness
