@@ -3,6 +3,21 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.13.0] — 2026-05-02
+
+### Added — three new imputation methods (front-end implementation lands in v4.14.0 cumulative commit)
+The volcano-plot imputation menu now covers seven methods spanning the four families established in the proteomics literature (NAguideR, Wang et al. 2020), instead of four:
+
+- **Random Forest (MissForest)** — pure-JS implementation of the iterative random-forest imputer (Stekhoven & Bühlmann 2012, *Bioinformatics* 28:112). For each sample column with missing values, trains a 50-tree forest of depth-6 regression trees with m_try = √p, then iterates until relative-change tolerance (0.01) or max 5 iterations. Top-ranked across multiple proteomics benchmarks.
+- **LLS (Local Least Squares)** — pure-JS implementation of Kim et al. (2005, *Bioinformatics* 21:187). Per protein, finds k = 10 nearest neighbours, fits a regularised linear regression of the target on the neighbours, and predicts the missing values.
+- **QRILC** — exposed as its own option (Wei et al. 2018). This is what Pro-ker's previous "MinProb" actually computed — a Gaussian centred at the 1st percentile of the comparison's global log2 distribution.
+
+### Changed — MinProb is now the canonical per-sample form
+The "MinProb" option now implements the canonical algorithm from Lazar et al. (2016, *J. Proteome Res.* 15:1116) and the `imputeLCMD` R package: per-sample MinDet computation, with each missing cell drawn from a Gaussian centred on its own sample's MinDet. Previously Pro-ker's "MinProb" computed a global 1st-percentile distribution (which is actually QRILC's algorithm) — now exposed as the separate "QRILC" option.
+
+### Improved — seed traceability across all stochastic methods
+All four stochastic methods (Perseus, MinProb, QRILC, MissForest) now consume the user-supplied **Random seed** and produce bit-identical output for the same seed + same data. Per-protein methods derive a per-protein seed; matrix-wide MissForest uses the global seed once for bootstrap and feature subsampling. Deterministic methods (kNN, LLS, Min/2) ignore the seed; the seed input is hidden in the UI when one of these is selected.
+
 ## [4.12.2] — 2026-05-02
 
 ### Fixed — desktop icon
