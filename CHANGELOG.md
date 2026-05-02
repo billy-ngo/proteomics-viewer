@@ -3,6 +3,15 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.12.2] — 2026-05-02
+
+### Fixed — desktop icon
+- **Transparent background.** The previous `icon.ico` was rendered as 8-bpp BMP entries with a fully opaque white square filling the canvas (0 transparent pixels, ~82 % white). On macOS Dock and Windows desktop the icon visibly sat inside a white tile. The new icon has a properly transparent background (~51 % transparent, ~48 % opaque, ~1 % anti-aliased edges).
+- **No more pixelation when scaled up.** The old ICO topped out at 48 × 48, so on modern displays (Retina, 4K) the desktop launcher was scaled up from 48 px and looked blocky. The new ICO ships seven sizes — 16, 24, 32, 48, 64, 128, 256 — encoded as PNG-in-ICO so each one renders crisp at its native resolution.
+- **No more stretched/awkward proportions.** The icon is rendered into a true 1 : 1 square canvas with the cards centred and proportionally scaled.
+- **Sized-down variants drop unreadable detail.** At 16, 24, and 32 px the corner "2" marks become unreadable specks; the small-size renders omit those and keep just the centre "2".
+- **`icon.py` docstring** updated to reflect that PNG-in-ICO is now the primary case (BMP-conversion fallback retained).
+
 ## [4.12.1] — 2026-05-01
 
 ### Documentation

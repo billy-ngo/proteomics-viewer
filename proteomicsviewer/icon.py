@@ -32,11 +32,16 @@ def generate_ico(sizes=None):
 
 
 def _extract_bmp_to_png(ico_bytes, index):
-    """Extract image *index* from an ICO and convert BMP→PNG.
+    """Extract image *index* from an ICO and return it as PNG bytes.
 
-    Handles the common case of uncompressed 8-bpp BMP DIBs stored
-    inside ICO files (which is what most icon editors produce).
-    Falls back to returning raw data if it's already PNG.
+    Modern ICOs (including the bundled one) store each entry as a PNG
+    payload directly — that's the standard for sizes ≥ 64 px and works
+    on every platform from Windows Vista onward. In that case this
+    function just returns the embedded PNG verbatim.
+
+    The fallback (BMP DIB → PNG conversion) is retained so the package
+    keeps working if the ICO is ever swapped for one produced by a
+    legacy icon editor.
     """
     # Parse ICO directory
     _reserved, _type, count = struct.unpack_from("<HHH", ico_bytes, 0)
