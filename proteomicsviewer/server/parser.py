@@ -17,6 +17,7 @@ Robustness goals:
 """
 
 import csv
+import math
 import re
 from collections import defaultdict
 
@@ -48,16 +49,21 @@ GENE_NAME_COLUMNS = [
 
 
 def _float(val):
+    """Parse a cell as float. NaN, +/-Inf, and parse failures all collapse to 0.0
+    so downstream JSON serialisation (Starlette rejects non-finite floats) and
+    plotting (D3 scales blow up on Inf) stay safe."""
     try:
-        return float(val) if val else 0.0
+        f = float(val) if val else 0.0
     except (ValueError, TypeError):
         return 0.0
+    return f if math.isfinite(f) else 0.0
 
 
 def _int(val):
+    """Parse a cell as int. Inf via overflow path is also coerced to 0."""
     try:
         return int(float(val)) if val else 0
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return 0
 
 
@@ -169,11 +175,30 @@ def _pick_first_present(row, candidates, default=""):
     return default
 
 
+def _detect_encoding(filepath):
+    """Sniff for a BOM at the start of the file. Common case: Excel "Save As
+    Tab-delimited Text" emits UTF-16 LE with BOM, which fails to parse as
+    UTF-8. Returns the encoding name to pass to ``open()``."""
+    try:
+        with open(filepath, "rb") as f:
+            head = f.read(4)
+    except OSError:
+        return "utf-8"
+    if head[:2] == b"\xff\xfe":
+        return "utf-16"        # UTF-16 LE BOM
+    if head[:2] == b"\xfe\xff":
+        return "utf-16"        # UTF-16 BE BOM
+    if head[:3] == b"\xef\xbb\xbf":
+        return "utf-8-sig"     # UTF-8 BOM — strip it transparently
+    return "utf-8"
+
+
 def parse_protein_groups(filepath):
     """Parse a MaxQuant proteinGroups.txt (or variant) and return structured data."""
     csv.field_size_limit(10_000_000)
+    encoding = _detect_encoding(filepath)
 
-    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+    with open(filepath, "r", encoding=encoding, errors="replace") as f:
         reader = csv.DictReader(f, delimiter="\t")
         headers = reader.fieldnames
         if not headers:

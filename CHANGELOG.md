@@ -1,6 +1,14 @@
 # Changelog
 
 All notable changes to Pro-ker Proteomics Analysis are documented here.
+Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
+
+## [4.11.0] — 2026-05-01
+
+### Fixed — parser robustness
+- **NaN / Infinity in quant cells no longer breaks uploads.** `_float()` now collapses non-finite values to `0.0`. Previously a file with `"NaN"` or `"Inf"` in any intensity column parsed but Starlette refused to JSON-serialize the response, returning an opaque 500 error.
+- **Inf in integer fields no longer crashes the parser.** `_int()` also catches `OverflowError` from cells like `"Inf"` or `"1.5e500"` in `Peptides` / `Sequence length`.
+- **UTF-16 (LE/BE) and UTF-8 BOM auto-detected.** Excel's "Save As Tab-delimited Text" emits UTF-16 LE with BOM, which previously failed to parse. Files are now opened with the correct encoding based on the BOM bytes.
 
 ## [4.1.0] - 2026-04-09
 
