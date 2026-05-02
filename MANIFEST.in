@@ -1,7 +1,31 @@
-include pyproject.toml
+# MANIFEST.in — controls what ends up in the source distribution (sdist)
+# tarball. Wheels are built from package-data declared in pyproject.toml.
+
+# Top-level metadata files
+include LICENSE
 include README.md
+include CHANGELOG.md
+include pyproject.toml
+include MANIFEST.in
+
+# All Python sources + bundled assets in the package
+recursive-include proteomicsviewer *.py
+recursive-include proteomicsviewer *.ico
 recursive-include proteomicsviewer/server/templates *
-recursive-exclude Test\ data *
-exclude proker_logo.jpg
-exclude *.bat
-exclude *.command
+
+# Bundled installers (helpful for users who download the source archive
+# directly from GitHub instead of installing from PyPI)
+include Install_Windows.bat
+include Install_macOS.command
+
+# Exclude developer/CI/test scaffolding from the published source
+prune .github
+prune .claude
+prune Test data
+prune dist
+prune build
+global-exclude *.egg-info
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude .DS_Store
+global-exclude Thumbs.db

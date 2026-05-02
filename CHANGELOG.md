@@ -3,6 +3,19 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.14.1] — 2026-05-02
+
+### Removed — stale assets
+- **`proker_logo.jpg`** (top-level, 30 KB): old "BN" branding from v2.0.0, never referenced by any code. The current logo design (two-of-diamonds cards) is fully owned by `proteomicsviewer/icon.ico` and the inline SVG in `index.html`.
+- **`proteomicsviewer/server/templates/logo.svg`** (2 KB): also old "BN" SVG, also never referenced.
+
+### Changed — repo hygiene
+- **`.gitignore`** restructured (was 22 lines with three duplicate patterns; now 39 lines organised by category — Python build, virtual envs, test data, tooling caches, editor/IDE, OS junk, Claude workspace). Adds common patterns that were missing: `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`, `.coverage`, `htmlcov/`, `.idea/`, `.vscode/`, `*.swp`, `~$*`.
+- **`MANIFEST.in`** rewritten with explicit includes/prunes. Now includes `LICENSE` and `CHANGELOG.md` in the sdist (was missing). Also includes the bundled installers for source-archive users. Prunes `.github/`, `.claude/`, `Test data/`, `dist/`, `build/`. `global-exclude` for `*.egg-info`, `__pycache__`, `*.py[cod]`, `.DS_Store`, `Thumbs.db`. Verified by building the sdist locally — clean 32-entry tarball with all expected files.
+
+### Added — CI auto-creates GitHub Releases on tag push
+- **`.github/workflows/publish.yml`** extended to (1) verify the package version matches the pushed tag, (2) extract the matching changelog section from `CHANGELOG.md`, (3) call `softprops/action-gh-release@v2` to create a GitHub Release entry with the changelog body and the built wheel + sdist as release assets. Requires `contents: write` permission (added). Going forward, every `v*` tag push produces both a PyPI release and a GitHub Release entry — no more manual `gh release create` needed.
+
 ## [4.14.0] — 2026-05-02
 
 ### Added — limma & DEqMS moderated t-tests

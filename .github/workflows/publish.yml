@@ -1,4 +1,4 @@
-name: Publish to PyPI
+name: Publish to PyPI and create GitHub Release
 
 on:
   push:
@@ -11,10 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
+      # Required for OIDC trusted publishing to PyPI
       id-token: write
-      contents: read
+      # Required so the release-creation step can write to the Releases page
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Fetch full history so the changelog-extraction step can read CHANGELOG.md
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -26,10 +31,47 @@ jobs:
       - name: Build package
         run: python -m build
 
-      - name: Show built version
+      - name: Verify built version matches the tag
         run: |
           pip install dist/*.whl --quiet
-          python -c "from proteomicsviewer import __version__; print(f'Package version: {__version__}')"
+          PKG_VERSION=$(python -c "from proteomicsviewer import __version__; print(__version__)")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "Package version: $PKG_VERSION"
+          echo "Tag version:     $TAG_VERSION"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package version $PKG_VERSION"
+            exit 1
+          fi
+
+      - name: Extract release notes from CHANGELOG
+        id: changelog
+        run: |
+          # Pull the section between the matching ## [vX.Y.Z] header and the next ## header.
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES=$(awk -v ver="$VERSION" '
+            BEGIN { in_section = 0 }
+            /^## \[/ {
+              if (in_section) exit
+              if (index($0, "[" ver "]")) in_section = 1
+              else next
+            }
+            in_section { print }
+          ' CHANGELOG.md)
+          if [ -z "$NOTES" ]; then
+            NOTES="See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/master/CHANGELOG.md) for full release notes."
+          fi
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body: ${{ steps.changelog.outputs.notes }}
+          files: dist/*
+          draft: false
+          prerelease: false

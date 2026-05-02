@@ -1,21 +1,44 @@
+# Byte-compiled Python
 __pycache__/
 *.py[cod]
 *$py.class
-*.egg-info/
-dist/
+
+# Build artifacts
 build/
-.eggs/
+dist/
 *.egg
+*.egg-info/
+.eggs/
+
+# Virtual environments
 .venv/
 venv/
 env/
 .env
-*.log
+
+# Test data (user's MaxQuant output — confidential, don't ship)
+Test data/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS junk
 .DS_Store
 Thumbs.db
+~$*
 *.tmp
+*.log
+
+# Claude Code workspace
 .claude/
-Test data/
-dist/
-build/
-*.egg-info/
