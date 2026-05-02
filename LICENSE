@@ -1,0 +1,52 @@
+Pro-ker Proteomics Analysis
+Copyright (c) 2026 Billy M Ngo
+All rights reserved.
+
+This software and associated documentation files (the "Software") are
+proprietary and confidential. The Software is licensed, not sold.
+
+PERMITTED USE
+
+Subject to the conditions below, the copyright holder grants any
+individual or non-commercial research group a non-exclusive, royalty-free,
+non-transferable license to install and use the Software for the purpose
+of analyzing proteomics data, including in support of academic research
+and publication. Use in support of a publication should cite the
+Software as described in README.md.
+
+CONDITIONS
+
+1. The Software may not be redistributed, in whole or in part, in source
+   or binary form, without prior written permission from the copyright
+   holder.
+
+2. The Software may not be modified, reverse-engineered, decompiled, or
+   disassembled, except to the extent that such activity is expressly
+   permitted by applicable law.
+
+3. The Software may not be used as the basis of, or incorporated into, a
+   commercial product or commercial service without prior written
+   permission from the copyright holder. Use of the Software's output
+   (figures, exported data) in commercial settings is not restricted.
+
+4. All copies of the Software must retain this license notice in full.
+
+NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES,
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR
+OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR
+THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+The Software's results are intended to support, not replace, scientific
+judgment. The copyright holder makes no representation that the
+Software's statistical outputs are appropriate for any particular
+experimental design.
+
+CONTACT
+
+For licensing inquiries beyond the permitted use above, contact:
+    Billy M Ngo · billy.ngo0108@gmail.com

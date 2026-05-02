@@ -3,6 +3,14 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.12.1] — 2026-05-01
+
+### Documentation
+- **LICENSE** file created (referenced by `pyproject.toml` and the README but previously missing). Proprietary terms with explicit permission for academic / non-commercial research use.
+- **README.md** rewrite — covers the imputation methods, multi-file workflows, deterministic seeds, XLSX/per-plot-CSV exports, robustness guarantees, and troubleshooting. *(Lands cumulatively in the v4.14.0 commit.)*
+- **CHANGELOG.md** consolidated and consistent style throughout.
+- **In-app Info panel** updated: version display, version history, References list expanded to include Lazar et al. 2016 and Troyanskaya et al. 2001. *(Lands cumulatively in the v4.14.0 commit.)*
+
 ## [4.12.0] — 2026-05-01
 
 ### Fixed — JS robustness, no single error can lock the program
