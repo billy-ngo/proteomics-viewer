@@ -2150,7 +2150,7 @@ function addGroupOfInterest(){
         return;
     }
     const ci=(GROUPS_OF_INTEREST.length)%GOI_COLORS.length;
-    GROUPS_OF_INTEREST.push({id:_goiNextId++,prefix,start,end,color:GOI_COLORS[ci],symbol:'circle',size:8,proteins});
+    GROUPS_OF_INTEREST.push({id:_goiNextId++,prefix,start,end,name:'',color:GOI_COLORS[ci],symbol:'circle',size:8,proteins});
     document.getElementById('goi-start').value='';
     document.getElementById('goi-end').value='';
     renderGOIList();
@@ -2174,6 +2174,16 @@ function goiSymbol(id,sym){
 function goiSize(id,sz){
     const g=GROUPS_OF_INTEREST.find(g=>g.id===id);if(g){g.size=+sz;refreshAllPlots();if(typeof refreshGOILegends==='function') refreshGOILegends()}
 }
+// Editable display name. Empty string means "use the auto-generated locus
+// label" (prefix+start, or prefix+start–prefix+end for a range). Setting a
+// name here propagates to every legend on the canvas.
+function goiName(id,name){
+    const g=GROUPS_OF_INTEREST.find(g=>g.id===id);
+    if(!g) return;
+    g.name=(name||'').trim();
+    if(typeof refreshGOILegends==='function') refreshGOILegends();
+    try{autoSaveSession()}catch(_){}
+}
 
 function renderGOIList(){
     const c=document.getElementById('goi-list');if(!c)return;
@@ -2182,9 +2192,11 @@ function renderGOIList(){
         const label=g.start===g.end?(g.prefix+g.start):(g.prefix+g.start+'–'+g.prefix+g.end);
         const shapes=['circle','square','diamond','triangle-up','star','cross'].map(s=>
             `<option value="${s}" ${g.symbol===s?'selected':''}>${s==='triangle-up'?'triangle':s}</option>`).join('');
+        const nameVal=(g.name||'').replace(/[<>"]/g,'');
         return `<div style="display:flex;align-items:center;gap:5px;padding:4px;border-bottom:1px solid var(--border);flex-wrap:wrap">
             <span class="goi-color-swatch" data-goiid="${g.id}" style="width:18px;height:18px;border-radius:50%;background:${g.color};cursor:pointer;flex-shrink:0;border:1px solid var(--border)" title="Click: swatches, Double-click: picker"></span>
-            <span style="font-size:11px;font-family:monospace;color:${g.color};flex:1;min-width:100px" title="${g.proteins.length} proteins">${label} <span style="color:var(--text-sec)">(${g.proteins.length})</span></span>
+            <span style="font-size:11px;font-family:monospace;color:${g.color};flex:0 0 auto;min-width:60px" title="${g.proteins.length} proteins">${label} <span style="color:var(--text-sec)">(${g.proteins.length})</span></span>
+            <input type="text" value="${nameVal}" placeholder="Custom label (optional)" onchange="goiName(${g.id},this.value)" style="flex:1;min-width:90px;font-size:10px;padding:2px 4px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:2px" title="Custom display label — used in legends in place of the locus tag. Leave blank to use the locus tag.">
             <select onchange="goiSymbol(${g.id},this.value)" style="font-size:10px;padding:1px 2px;width:70px">${shapes}</select>
             <input type="number" value="${g.size}" min="2" max="20" step="1" onchange="goiSize(${g.id},this.value)" style="width:38px;font-size:10px;padding:1px 3px;text-align:center" title="Size">
             <button onclick="removeGOI(${g.id})" style="background:none;border:none;color:var(--text-sec);cursor:pointer;font-size:14px;padding:0 2px" title="Remove">&times;</button>
@@ -3758,6 +3770,21 @@ function setupPlotResize(wrap,plotId){
         if(!dragging)return;dragging=false;corner='';
         document.body.style.cursor='';document.body.style.userSelect='';
         if(CHARTS[plotId])CHARTS[plotId].resize();
+        // Persist the new size + grow the canvas if the resize pushed past
+        // the current bounds. Same rationale as the drag handler in
+        // proker-charts.js: a user who only resizes (never drags) was
+        // losing the new dimensions on refresh because autoSaveSession was
+        // only called from renderAll, which resize doesn't trigger.
+        try{
+            const canvas=document.getElementById('canvas');
+            if(canvas){
+                const wrapL=parseFloat(wrap.style.left)||0, wrapT=parseFloat(wrap.style.top)||0;
+                const needH=wrapT+wrap.offsetHeight+50, needW=wrapL+wrap.offsetWidth+50;
+                if(canvas.offsetHeight<needH) canvas.style.minHeight=needH+'px';
+                if(canvas.offsetWidth<needW)  canvas.style.minWidth=needW+'px';
+            }
+            if(typeof autoSaveSession==='function') autoSaveSession();
+        }catch(_){}
     });
 }
 
@@ -3802,8 +3829,12 @@ function _goiMarkerSVG(color,symbol,sizeRaw){
     return `<svg width="${box}" height="${box}" viewBox="0 0 ${box} ${box}">${inner}</svg>`;
 }
 
-// Default label for a GOI (matches the sidebar list format).
+// Default label for a GOI in the legend. Honours the user's custom name if
+// they set one in the sidebar; otherwise falls back to the locus tag (or
+// locus-tag range for multi-protein GOIs).
 function _goiDefaultLabel(g){
+    const custom=(g.name||'').trim();
+    if(custom) return custom;
     return g.start===g.end?(g.prefix+g.start):(g.prefix+g.start+'–'+g.prefix+g.end);
 }
 
@@ -6090,7 +6121,21 @@ function buildSessionObject(opts){
         theme:typeof currentThemeName!=='undefined'?currentThemeName:'dark',
         customTheme:typeof customTheme!=='undefined'?customTheme:{},
         canvasScale:typeof canvasScale==='number'?canvasScale:1,
-        groupsOfInterest:_safeMap(GROUPS_OF_INTEREST,g=>({prefix:g.prefix,start:g.start,end:g.end,color:g.color,symbol:g.symbol,size:g.size,proteins:g.proteins})),
+        // Capture the canvas-level layout state so the inner scrolling area
+        // restores at the exact size and scroll position the user left it in.
+        // Without these, plots whose top/left was beyond the viewport's
+        // natural height land outside the scrollable region after reload.
+        canvasLayout:(function(){
+            const c=document.getElementById('canvas');
+            const vp=document.getElementById('canvas-viewport');
+            return{
+                minHeight:c?(c.style.minHeight||''):'',
+                minWidth :c?(c.style.minWidth ||''):'',
+                scrollLeft:vp?vp.scrollLeft:0,
+                scrollTop :vp?vp.scrollTop :0,
+            };
+        })(),
+        groupsOfInterest:_safeMap(GROUPS_OF_INTEREST,g=>({prefix:g.prefix,start:g.start,end:g.end,name:g.name||'',color:g.color,symbol:g.symbol,size:g.size,proteins:g.proteins})),
         speciesHighlights:_safeMap(SPECIES_HIGHLIGHTS,h=>({prefix:h.prefix,color:h.color,enabled:h.enabled})),
         canvasAnnotations:_serializeCanvasAnnotations(),
     };
@@ -6274,6 +6319,13 @@ function loadSession(file){
             const wrap=document.getElementById('canvas-wrap');if(wrap){wrap.classList.remove('hidden');wrap.style.display='flex'}
             const canvas=document.getElementById('canvas');canvas?.classList.remove('empty-canvas');
             const hint=document.getElementById('canvas-drop');if(hint)hint.remove();
+            // Restore the canvas's saved size BEFORE plots are positioned, so a
+            // plot whose top/left was beyond the viewport's natural height can
+            // actually land on a scrollable region rather than "off-canvas".
+            if(canvas&&s.canvasLayout&&typeof s.canvasLayout==='object'){
+                if(s.canvasLayout.minHeight) canvas.style.minHeight=s.canvasLayout.minHeight;
+                if(s.canvasLayout.minWidth)  canvas.style.minWidth =s.canvasLayout.minWidth;
+            }
 
             // Build a lookup: which group labels currently exist?
             const existingGroups=new Set(BINS.map(b=>b.label));
@@ -6357,6 +6409,25 @@ function loadSession(file){
                 const lbl=document.getElementById('canvas-zoom-label');
                 if(lbl)lbl.textContent=Math.round(canvasScale*100)+'%';
             }
+        });
+
+        // ── Canvas viewport scroll position ──
+        // Plots restore on staggered timeouts (the longest is ~100 + N*50 ms);
+        // wait until they've all mounted before snapping the viewport to the
+        // saved scroll. Otherwise the viewport's content height is still small
+        // and the scroll silently clamps to 0.
+        tryRun('canvas scroll position',()=>{
+            if(!s.canvasLayout||typeof s.canvasLayout!=='object') return;
+            const sl=+s.canvasLayout.scrollLeft||0;
+            const st=+s.canvasLayout.scrollTop ||0;
+            if(!sl&&!st) return;
+            const delay=200+(Array.isArray(s.canvasPlots)?s.canvasPlots.length:0)*50;
+            setTimeout(()=>{
+                const vp=document.getElementById('canvas-viewport');
+                if(!vp) return;
+                vp.scrollLeft=sl;
+                vp.scrollTop =st;
+            },delay);
         });
 
         // ── Canvas annotations (text boxes, lines, shapes) ──

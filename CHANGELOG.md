@@ -3,6 +3,34 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.1] — 2026-05-04
+
+### Added — Groups-of-Interest custom labels (sidebar)
+Each GOI in the Analysis-tab sidebar now has an editable **Custom label** text input. Whatever you type there propagates to every legend on the canvas as the row's default label. Leave it blank to fall back to the auto-generated locus tag (`CT_456`, `CT_120–CT_135`, etc.).
+
+This means you can edit a GOI's display name in two complementary places:
+
+- **In the sidebar** (this release): the canonical custom name. Affects every legend everywhere.
+- **In any individual legend** (since v4.15.0): a per-legend override that takes precedence over the sidebar name. Useful when you want a different label in one figure than another.
+
+The new `goiName(id, name)` function persists the name in the session save so it round-trips through reload.
+
+### Fixed — session save now tracks plot positions accurately
+
+Three sources of position drift on save/load are addressed:
+
+1. **Plot drag now triggers an autosave.** The chart's drag-to-move handler in `proker-charts.js` previously only updated `wrap.style.left/top` and pushed an undo entry — it never called `autoSaveSession()`. Combined with the user-facing autosave only running from `renderAll()` (which group/processing changes trigger but plot-drag doesn't), this meant a user who dragged a plot then refreshed would see the plot snap back to where it was the last time settings changed. Drag-end now calls `autoSaveSession()`.
+
+2. **Plot resize now triggers an autosave.** Same root cause — `setupPlotResize`'s `mouseup` only resized the chart; no session write. Same fix: `mouseup` now persists.
+
+3. **Canvas-level layout state is now saved and restored.** Sessions previously didn't capture:
+   - `canvas.style.minHeight` / `minWidth` — set inline by `addPlotToCanvas`/drag/resize when plots extend past the natural canvas bounds. Without these, a reloaded session would have a small canvas, and plots positioned at e.g. `top: 1500px` would land outside the scrollable area.
+   - `canvas-viewport.scrollLeft` / `scrollTop` — the viewer's current scroll position.
+   
+   Both are now in the new `canvasLayout` block of the session JSON. On restore, `minHeight`/`minWidth` are applied **before** plots are positioned (so they have room to land), and `scrollLeft`/`scrollTop` are applied **after** plots paint (delayed by `200 + N×50 ms`, matching the staggered render timeline).
+
+Drag and resize handlers also auto-grow the canvas's `min-height`/`min-width` if the user drags or resizes a plot past the current bounds — keeping the plot inside the scrollable region for next time.
+
 ## [4.15.0] — 2026-05-04
 
 ### Added — Groups-of-Interest legend (right-click → "Add GOI legend")

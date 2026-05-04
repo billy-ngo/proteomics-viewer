@@ -746,6 +746,24 @@ class ProkerChart {
                         const newL = parseFloat(wrap.style.left)||0, newT = parseFloat(wrap.style.top)||0;
                         if (newL !== origL || newT !== origT) {
                             pushUndo('moveGraph', { plotId: this.container.id, oldL: origL, oldT: origT, newL, newT });
+                            // Persist the new position immediately so a refresh
+                            // doesn't snap the plot back to where it was when
+                            // session-save last ran (which used to be only
+                            // when groups/processing settings changed).
+                            try { if (typeof autoSaveSession === 'function') autoSaveSession(); } catch (_) {}
+                            // Grow the canvas's min-height/min-width if the user
+                            // dragged a plot beyond the current canvas bounds —
+                            // otherwise the plot ends up outside the scrollable
+                            // area and the layout breaks on reload.
+                            try {
+                                const canvas = document.getElementById('canvas');
+                                if (canvas) {
+                                    const needH = newT + wrap.offsetHeight + 50;
+                                    const needW = newL + wrap.offsetWidth + 50;
+                                    if (canvas.offsetHeight < needH) canvas.style.minHeight = needH + 'px';
+                                    if (canvas.offsetWidth < needW) canvas.style.minWidth = needW + 'px';
+                                }
+                            } catch (_) {}
                         }
                     }
                 }
