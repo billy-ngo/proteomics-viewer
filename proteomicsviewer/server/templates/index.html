@@ -3616,6 +3616,82 @@ function removePlot(plotId){
         canvas.innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>';
     }
 }
+// Duplicate a plot in place — preserves config, frozen state, pinned labels,
+// and per-point color overrides. Triggered from the chart's right-click menu
+// "Duplicate plot (with labels)" item.
+function duplicatePlot(plotId){
+    const orig=CANVAS_PLOTS.find(p=>p.plotId===plotId);
+    if(!orig){console.warn('duplicatePlot: source plot not found:',plotId);return}
+    const origCard=document.getElementById('card-'+plotId);
+    const origChart=CHARTS[plotId];
+
+    // New plot entry — deep-clone the config so the duplicate is fully independent
+    const newPlotId='plot-'+(nextPlotId++);
+    const newConfig=JSON.parse(JSON.stringify(orig.config||{}));
+    const newPlot={
+        id:nextPlotId-1,
+        type:orig.type,
+        config:newConfig,
+        plotId:newPlotId,
+        title:(orig.title||orig.type)+' (copy)',
+        frozen:orig.frozen||false,
+    };
+    CANVAS_PLOTS.push(newPlot);
+
+    // Build the card with the same dimensions, offset down/right by 30 px so
+    // it doesn't fully overlap the original. If the offset would push the
+    // duplicate off the bottom of the canvas, grow the canvas to fit.
+    const canvas=document.getElementById('canvas');
+    const newCard=document.createElement('div');
+    newCard.className='canvas-plot';
+    newCard.id='card-'+newPlotId;
+    newCard.style.position='absolute';
+    const w=(origCard&&origCard.style.width)||'700px';
+    const h=(origCard&&origCard.style.height)||'420px';
+    newCard.style.width=w;
+    newCard.style.height=h;
+    const origLeft=origCard?(parseFloat(origCard.style.left)||0):60;
+    const origTop=origCard?(parseFloat(origCard.style.top)||0):60;
+    const offset=30;
+    newCard.style.left=(origLeft+offset)+'px';
+    newCard.style.top=(origTop+offset)+'px';
+    newCard.innerHTML=`<button class="cp-close" onclick="removePlot('${newPlotId}')" title="Remove this plot from the canvas">&times;</button><div id="${newPlotId}" style="width:100%;height:100%"></div><div class="cp-handle se" data-corner="se"></div><div class="cp-handle sw" data-corner="sw"></div><div class="cp-handle ne" data-corner="ne"></div><div class="cp-handle nw" data-corner="nw"></div>`;
+    canvas.appendChild(newCard);
+    // Grow canvas if needed
+    const newH=parseFloat(h)||420;
+    const needH=parseFloat(newCard.style.top)+newH+50;
+    if(canvas.offsetHeight<needH) canvas.style.minHeight=needH+'px';
+    setupPlotResize(newCard,newPlotId);
+
+    // Render the duplicate, then transfer the labels and color overrides from
+    // the original chart instance. Force-update so a frozen duplicate still
+    // populates initially (otherwise renderPlot bails on frozen plots).
+    setTimeout(()=>{
+        try{
+            const{data:qd}=getQData();
+            const fidx=getFilteredIdx();
+            newPlot._forceUpdate=true;
+            renderPlot(newPlot,qd,fidx);
+            const newChart=CHARTS[newPlotId];
+            if(newChart&&origChart){
+                if(Array.isArray(origChart.annotations)&&origChart.annotations.length){
+                    newChart.annotations=JSON.parse(JSON.stringify(origChart.annotations));
+                }
+                if(Array.isArray(origChart._colorOverrides)&&origChart._colorOverrides.length){
+                    newChart._colorOverrides=JSON.parse(JSON.stringify(origChart._colorOverrides));
+                }
+                // Re-render so the transferred labels + colors actually paint
+                if(origChart.annotations.length||(origChart._colorOverrides||[]).length){
+                    newChart.render();
+                }
+            }
+            updateStatsMethodsPanel();
+        }catch(e){
+            console.error('duplicatePlot: render failed for',newPlotId,e);
+            _showErrorToast('Plot duplication failed: '+(e&&e.message||e));
+        }
+    },100);
+}
 // ================================================================
 // PLOT SYSTEM (ProkerChart — custom SVG engine)
 // ================================================================
@@ -3709,6 +3785,7 @@ function renderPlot(p,qd,fidx){
     chart.on('freeze',()=>freezePlot(p.plotId));
     chart.on('updatefrozen',()=>updateFrozenPlot(p.plotId));
     chart.on('exportdata',()=>exportPlotDataCSV(p));
+    chart.on('duplicate',()=>duplicatePlot(p.plotId));
     chart.on('pointselect',d=>{d.plotId=p.plotId;updateToolbar(null,d)});
     chart.on('pointdeselect',()=>updateToolbar(null));
     chart.on('titleselect',d=>updateToolbar(d.element));

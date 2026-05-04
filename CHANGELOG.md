@@ -3,6 +3,21 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.14.3] — 2026-05-04
+
+### Added — duplicate plot (right-click → "Duplicate plot (with labels)")
+Right-clicking a chart on the canvas now offers a **Duplicate plot (with labels)** option that creates an independent copy of the plot in place. The new copy preserves:
+
+- The plot type and full configuration (group selections, thresholds, imputation method, statistical test, axis ranges, etc. — everything stored in `config`).
+- All pinned point labels with their text, anchor positions, and leader-line offsets.
+- All per-point color overrides (custom colors set via right-click → "Color selected" or the toolbar swatch).
+- The frozen state (a duplicate of a frozen plot is also frozen, with the same data snapshot).
+- The card's width and height; positioned 30 px down/right of the original so it's immediately visible without overlapping completely.
+
+The duplicate is fully independent — modifying one (e.g. adding more labels, changing settings) does not affect the other. Useful for trying out alternative settings without losing the original, or producing two side-by-side variants of the same data for figure layouts.
+
+Implementation: `chart.on('duplicate')` event from the context menu invokes `duplicatePlot(plotId)`, which deep-clones the plot's `config`, allocates a fresh `plotId`, builds an offset card, calls `renderPlot()`, then transfers `annotations` and `_colorOverrides` from the source chart instance to the new one and re-renders. Force-update is set so a frozen duplicate still populates initially.
+
 ## [4.14.2] — 2026-05-04
 
 ### Changed — pinned-label leader lines
