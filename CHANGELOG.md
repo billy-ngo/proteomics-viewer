@@ -3,6 +3,13 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.14.4] — 2026-05-04
+
+### Fixed — canvas zoom controls now stay glued to the bottom-right corner
+Before this release, the zoom controls (`−` `100%` `+` `Fit` `1:1`) lived inside `#canvas-viewport`, which is a `position: relative; overflow: auto` container. With `position: absolute; bottom: 12px; right: 12px`, that anchored them to the **content box** of the scrollable canvas, not the visible viewport. As soon as the canvas grew beyond the viewport (i.e. after zooming in or adding a few plots), the controls drifted to the bottom-right of the entire scrollable region — so panning could move them anywhere on screen, including the middle.
+
+Fix: moved the `.canvas-zoom-controls` element out of `#canvas-viewport` and into `#canvas-wrap`, then added `position: relative` to `#canvas-wrap`. The wrap has `overflow: hidden` and is the same fixed size as the visible viewport area, so the absolutely-positioned controls now anchor to its bottom-right corner permanently — independent of zoom level, scroll position, or canvas size.
+
 ## [4.14.3] — 2026-05-04
 
 ### Added — duplicate plot (right-click → "Duplicate plot (with labels)")

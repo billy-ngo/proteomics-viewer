@@ -904,19 +904,24 @@ async function uploadFile(file,append){
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         <div class="wc-text">Data visualization will appear here</div>
     </div>
-    <div id="canvas-wrap" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+    <div id="canvas-wrap" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative">
         <div id="canvas-toolbar"></div>
         <div id="canvas-viewport">
             <div id="canvas" class="empty-canvas">
                 <div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>
             </div>
-            <div class="canvas-zoom-controls">
-                <button class="canvas-zoom-btn" onclick="canvasZoom(-0.1)" title="Zoom out">&minus;</button>
-                <span class="canvas-zoom-level" id="canvas-zoom-label">100%</span>
-                <button class="canvas-zoom-btn" onclick="canvasZoom(0.1)" title="Zoom in">+</button>
-                <button class="canvas-zoom-btn" onclick="canvasZoomFit()" title="Fit all" style="font-size:10px">Fit</button>
-                <button class="canvas-zoom-btn" onclick="canvasZoomReset()" title="Reset to 100%" style="font-size:10px">1:1</button>
-            </div>
+        </div>
+        <!-- Zoom controls live OUTSIDE #canvas-viewport so they anchor to the
+             wrap's non-scrolling box. Inside the viewport they would scroll
+             with the canvas content (overflow: auto + position: absolute pins
+             to the content box, not the visible area), and zooming + panning
+             would make them drift away from the bottom-right corner. -->
+        <div class="canvas-zoom-controls">
+            <button class="canvas-zoom-btn" onclick="canvasZoom(-0.1)" title="Zoom out">&minus;</button>
+            <span class="canvas-zoom-level" id="canvas-zoom-label">100%</span>
+            <button class="canvas-zoom-btn" onclick="canvasZoom(0.1)" title="Zoom in">+</button>
+            <button class="canvas-zoom-btn" onclick="canvasZoomFit()" title="Fit all" style="font-size:10px">Fit</button>
+            <button class="canvas-zoom-btn" onclick="canvasZoomReset()" title="Reset to 100%" style="font-size:10px">1:1</button>
         </div>
     </div>
     </div>
