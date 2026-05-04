@@ -384,7 +384,38 @@ class ProkerChart {
             const textH = lines.length * lineH + 10;
 
             svg += `<g class="ann" data-key="${this._esc(ann.key)}" data-ai="${ai}">`;
-            svg += `<line x1="${px}" y1="${py}" x2="${lx}" y2="${ly}" stroke="${T.textSec}" stroke-width="0.8" stroke-dasharray="3,2"/>`;
+            // Stop the leader line at the edge of the text's bounding box (with
+            // a small gap) so it doesn't visibly cross into the label glyphs.
+            // The text is rendered with text-anchor="middle" centred horizontally
+            // on (lx, ly+li*lineH) where ly is the BASELINE of the first line.
+            // Box geometry, accounting for ascender (~9px) and descender (~3px)
+            // for a 10.5px font, plus a 3px breathing-room padding.
+            const _pad = 3;
+            const _bw = textW / 2 + _pad;
+            const _bh = ((lines.length - 1) * lineH + 12) / 2 + _pad;
+            const _bcy = ly + (lines.length - 1) * lineH / 2 - 3;  // visual centre of text block
+            const _bcx = lx;
+            // Slab-method ray–AABB intersection: find tEnter where the line
+            // (px,py)→(_bcx,_bcy) first hits the box boundary. Clip to [0,1].
+            const _dx = _bcx - px, _dy = _bcy - py;
+            let _tEnter = 0, _tExit = 1;
+            if (_dx !== 0) {
+                let _t1 = (_bcx - _bw - px) / _dx, _t2 = (_bcx + _bw - px) / _dx;
+                if (_t1 > _t2) { const _tmp = _t1; _t1 = _t2; _t2 = _tmp; }
+                _tEnter = Math.max(_tEnter, _t1);
+                _tExit  = Math.min(_tExit, _t2);
+            }
+            if (_dy !== 0) {
+                let _t1 = (_bcy - _bh - py) / _dy, _t2 = (_bcy + _bh - py) / _dy;
+                if (_t1 > _t2) { const _tmp = _t1; _t1 = _t2; _t2 = _tmp; }
+                _tEnter = Math.max(_tEnter, _t1);
+                _tExit  = Math.min(_tExit, _t2);
+            }
+            // If the ray doesn't actually hit the box (degenerate), or the data
+            // point is already inside the box, fall back to the original endpoint.
+            const _useT = (_tEnter > _tExit || _tEnter <= 0) ? 1 : Math.min(1, _tEnter);
+            const _lex = px + _useT * _dx, _ley = py + _useT * _dy;
+            svg += `<line x1="${px}" y1="${py}" x2="${_lex}" y2="${_ley}" stroke="${T.textSec}" stroke-width="0.8" opacity="0.85"/>`;
             svg += `<circle cx="${px}" cy="${py}" r="2.5" fill="${T.accent}" opacity="0.7"/>`;
             lines.forEach((line, li) => {
                 svg += `<text x="${lx}" y="${ly + li * lineH}" text-anchor="middle" fill="${T.text}" font-size="10.5" font-weight="400">${this._esc(line)}</text>`;

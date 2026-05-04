@@ -3,6 +3,13 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.14.2] — 2026-05-04
+
+### Changed — pinned-label leader lines
+- **Solid by default** instead of dashed (`stroke-dasharray="3,2"` removed). Cleaner look in figures and reduces visual noise when many labels are pinned.
+- **Stops at the text bounding-box edge** instead of running into the centre of the label. The leader line now terminates at a 3 px gap before the text glyphs, computed via slab-method ray–AABB intersection on the text's bounding rectangle. No more lines visibly crossing into letters.
+- Slight opacity (0.85) added so a long line behind a busy chart isn't visually overwhelming.
+
 ## [4.14.1] — 2026-05-02
 
 ### Removed — stale assets
