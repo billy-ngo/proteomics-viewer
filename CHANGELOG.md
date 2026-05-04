@@ -3,6 +3,32 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.0] — 2026-05-04
+
+### Added — Groups-of-Interest legend (right-click → "Add GOI legend")
+Right-clicking a chart on the canvas now offers an **Add GOI legend** option that drops an editable, draggable legend onto the plot. The legend renders one row per Group of Interest with:
+
+- **A real marker swatch** that matches the GOI's actual rendering on the plot — same colour, same shape (`circle` / `square` / `diamond` / `triangle-up` / `star` / `cross`), and same size as the markers in the chart. SVG, so it stays crisp at any zoom level and exports cleanly with the figure.
+- **An inline-editable label.** The default text is the GOI's identifier (e.g. `CT_456` or `CT_120–CT_135`); click the text and type to override. Press <kbd>Enter</kbd> to commit, <kbd>Escape</kbd> to revert. Custom labels persist with the session.
+- **A per-row hide button (×).** Hides that single row from this legend without touching the underlying GOI definition. Useful when you want a focused legend that mentions only some of the highlighted groups.
+- **A background-toggle (◉ / ◯)** in the top-left corner — switches between an opaque dark panel (default, good for screen) and a transparent overlay (good for figure overlays where you want the plot to show through).
+- **A close button (×)** in the top-right corner removes the legend from the plot.
+
+The legend is **fully draggable** anywhere within the plot card. It lives inside the `.canvas-plot` element so it travels with the plot when the plot is duplicated, exported, or restored from a saved session. Position, custom labels, hidden rows, and background-toggle state all round-trip through session save/load.
+
+The legend stays **reactive** to the GOI sidebar: adding, removing, recolouring, resizing, or changing the symbol of a GOI immediately updates every legend on the canvas — both the marker and the default label.
+
+### Implementation
+- `proker-charts.js`: new `Add GOI legend` context-menu item that emits a `goilegend` event.
+- `index.html`:
+  - `_goiMarkerSVG(color, symbol, size)` — pure-JS SVG generator matching every shape the plot engine renders.
+  - `addGOILegend(plotId)` — initialises per-plot legend state (`p.goiLegend = {x, y, transparent, hidden, labels}`) and renders.
+  - `renderGOILegend(plotId)` — idempotent DOM rendering with mouse-drag, blur-to-save inline editing, per-row hide, and per-legend close.
+  - `refreshGOILegends()` — called from `addGroupOfInterest`, `removeGOI`, `goiColor`, `goiSymbol`, `goiSize`.
+  - `renderPlot` calls `renderGOILegend(plotId)` at the end so session-restored and duplicated plots show their legends without extra wiring.
+  - Session save/load and duplicate-plot both deep-clone `goiLegend`.
+- CSS: new `.canvas-goi-legend` block with hover-revealed buttons.
+
 ## [4.14.4] — 2026-05-04
 
 ### Fixed — canvas zoom controls now stay glued to the bottom-right corner

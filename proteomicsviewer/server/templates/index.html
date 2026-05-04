@@ -188,6 +188,26 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .canvas-anno-wrap:hover .canvas-line-handle{opacity:1}
 .canvas-anno-close{position:absolute;top:-8px;right:-8px;width:16px;height:16px;border-radius:50%;background:var(--danger);color:#fff;font-size:10px;border:none;cursor:pointer;display:none;align-items:center;justify-content:center;z-index:7}
 .canvas-anno-wrap:hover .canvas-anno-close{display:flex}
+/* GOI legend — draggable per-plot overlay; one row per Group of Interest with
+   marker swatch + editable label. Lives inside .canvas-plot so it duplicates
+   and exports with the plot. */
+.canvas-goi-legend{position:absolute;background:rgba(13,17,23,0.92);border:1px solid var(--border);border-radius:4px;padding:6px 8px 6px 8px;font-family:Arial,sans-serif;font-size:11px;color:var(--text);z-index:7;min-width:80px;max-width:260px;cursor:move;user-select:none;box-shadow:0 2px 6px rgba(0,0,0,0.35)}
+.canvas-goi-legend.transparent{background:transparent;border-color:transparent;box-shadow:none}
+.canvas-goi-legend .gl-title{font-weight:700;font-size:11px;margin-bottom:4px;padding-right:14px;color:var(--text)}
+.canvas-goi-legend .gl-row{display:flex;align-items:center;gap:6px;padding:1px 0;line-height:1.35}
+.canvas-goi-legend .gl-marker{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px}
+.canvas-goi-legend .gl-label{flex:1;outline:none;border:1px dashed transparent;border-radius:2px;padding:0 3px;cursor:text;min-height:14px}
+.canvas-goi-legend .gl-label:hover{border-color:var(--border)}
+.canvas-goi-legend .gl-label:focus{border-color:var(--accent);background:rgba(0,0,0,0.25)}
+.canvas-goi-legend .gl-hide{flex-shrink:0;width:14px;height:14px;border:none;background:transparent;color:var(--text-sec);cursor:pointer;font-size:11px;padding:0;border-radius:2px;opacity:0;transition:opacity .12s}
+.canvas-goi-legend:hover .gl-hide{opacity:0.7}
+.canvas-goi-legend .gl-hide:hover{opacity:1;color:var(--danger)}
+.canvas-goi-legend .gl-close{position:absolute;top:-7px;right:-7px;width:16px;height:16px;border-radius:50%;background:var(--danger);color:#fff;font-size:10px;border:none;cursor:pointer;display:none;align-items:center;justify-content:center;z-index:1;padding:0}
+.canvas-goi-legend:hover .gl-close{display:flex}
+.canvas-goi-legend .gl-bg-toggle{position:absolute;top:-7px;left:-7px;width:16px;height:16px;border-radius:50%;background:var(--surface);color:var(--text-sec);font-size:9px;border:1px solid var(--border);cursor:pointer;display:none;align-items:center;justify-content:center;z-index:1;padding:0}
+.canvas-goi-legend:hover .gl-bg-toggle{display:flex}
+.canvas-goi-legend .gl-bg-toggle:hover{color:var(--text);border-color:var(--text-sec)}
+.canvas-goi-legend .gl-empty{font-style:italic;color:var(--text-sec);padding:4px 0}
 /* Export bar */
 .export-bar{display:flex;gap:6px;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--surface)}
 .export-bar .spacer{flex:1}
@@ -2135,22 +2155,24 @@ function addGroupOfInterest(){
     document.getElementById('goi-end').value='';
     renderGOIList();
     refreshAllPlots();
+    if(typeof refreshGOILegends==='function') refreshGOILegends();
 }
 
 function removeGOI(id){
     GROUPS_OF_INTEREST=GROUPS_OF_INTEREST.filter(g=>g.id!==id);
     renderGOIList();
+    if(typeof refreshGOILegends==='function') refreshGOILegends();
     refreshAllPlots();
 }
 
 function goiColor(id,color){
-    const g=GROUPS_OF_INTEREST.find(g=>g.id===id);if(g){g.color=color;renderGOIList();refreshAllPlots()}
+    const g=GROUPS_OF_INTEREST.find(g=>g.id===id);if(g){g.color=color;renderGOIList();refreshAllPlots();if(typeof refreshGOILegends==='function') refreshGOILegends()}
 }
 function goiSymbol(id,sym){
-    const g=GROUPS_OF_INTEREST.find(g=>g.id===id);if(g){g.symbol=sym;renderGOIList();refreshAllPlots()}
+    const g=GROUPS_OF_INTEREST.find(g=>g.id===id);if(g){g.symbol=sym;renderGOIList();refreshAllPlots();if(typeof refreshGOILegends==='function') refreshGOILegends()}
 }
 function goiSize(id,sz){
-    const g=GROUPS_OF_INTEREST.find(g=>g.id===id);if(g){g.size=+sz;refreshAllPlots()}
+    const g=GROUPS_OF_INTEREST.find(g=>g.id===id);if(g){g.size=+sz;refreshAllPlots();if(typeof refreshGOILegends==='function') refreshGOILegends()}
 }
 
 function renderGOIList(){
@@ -3641,6 +3663,8 @@ function duplicatePlot(plotId){
         title:(orig.title||orig.type)+' (copy)',
         frozen:orig.frozen||false,
     };
+    // Deep-clone the GOI legend state so the duplicate's legend is independent
+    if(orig.goiLegend) newPlot.goiLegend=JSON.parse(JSON.stringify(orig.goiLegend));
     CANVAS_PLOTS.push(newPlot);
 
     // Build the card with the same dimensions, offset down/right by 30 px so
@@ -3738,6 +3762,176 @@ function setupPlotResize(wrap,plotId){
 }
 
 // ================================================================
+// GOI LEGEND  (right-click → "Add GOI legend")
+// ================================================================
+// Per-plot draggable HTML overlay with one row per Group of Interest. Each
+// row shows the GOI's marker (color + symbol + size) and an editable label.
+// State lives on the plot entry as p.goiLegend = {x, y, transparent, hidden:[ids],
+// labels:{id:custom}} so it duplicates with the plot and round-trips through
+// session save/load.
+
+// Build the SVG fragment for a single GOI marker (matches the ProkerChart
+// symbols: circle, square, diamond, triangle-up, star, cross). The visible
+// size is clamped so very small or very large GOI sizes still read clearly.
+function _goiMarkerSVG(color,symbol,sizeRaw){
+    const size=Math.max(4,Math.min(18,+sizeRaw||8));
+    const box=18;
+    const c=box/2;
+    const r=size/2;
+    const safeColor=(color||'#ff4444').replace(/[<>"]/g,'');
+    let inner='';
+    switch(symbol){
+        case 'square':       inner=`<rect x="${c-r}" y="${c-r}" width="${r*2}" height="${r*2}" fill="${safeColor}"/>`; break;
+        case 'diamond':      inner=`<polygon points="${c},${c-r} ${c+r},${c} ${c},${c+r} ${c-r},${c}" fill="${safeColor}"/>`; break;
+        case 'triangle-up':  inner=`<polygon points="${c},${c-r} ${c+r*0.866},${c+r*0.5} ${c-r*0.866},${c+r*0.5}" fill="${safeColor}"/>`; break;
+        case 'star':{
+            // 5-point star
+            const pts=[];
+            for(let i=0;i<10;i++){
+                const ang=-Math.PI/2+i*Math.PI/5;
+                const rad=i%2===0?r:r*0.45;
+                pts.push((c+rad*Math.cos(ang)).toFixed(2)+','+(c+rad*Math.sin(ang)).toFixed(2));
+            }
+            inner=`<polygon points="${pts.join(' ')}" fill="${safeColor}"/>`;
+            break;
+        }
+        case 'cross':        inner=`<line x1="${c-r}" y1="${c}" x2="${c+r}" y2="${c}" stroke="${safeColor}" stroke-width="2"/><line x1="${c}" y1="${c-r}" x2="${c}" y2="${c+r}" stroke="${safeColor}" stroke-width="2"/>`; break;
+        case 'circle':
+        default:             inner=`<circle cx="${c}" cy="${c}" r="${r}" fill="${safeColor}"/>`;
+    }
+    return `<svg width="${box}" height="${box}" viewBox="0 0 ${box} ${box}">${inner}</svg>`;
+}
+
+// Default label for a GOI (matches the sidebar list format).
+function _goiDefaultLabel(g){
+    return g.start===g.end?(g.prefix+g.start):(g.prefix+g.start+'–'+g.prefix+g.end);
+}
+
+// Create or refresh the legend on a specific plot. Idempotent: calling twice
+// returns the same DOM element. If state.enabled becomes false the element
+// is removed.
+function addGOILegend(plotId){
+    const p=CANVAS_PLOTS.find(x=>x.plotId===plotId);
+    if(!p){console.warn('addGOILegend: plot not found',plotId);return}
+    if(!GROUPS_OF_INTEREST.length){
+        _showErrorToast('No Groups of Interest defined yet — add one in the Analysis tab first.');
+        return;
+    }
+    if(!p.goiLegend) p.goiLegend={x:14,y:14,transparent:false,hidden:[],labels:{}};
+    p.goiLegend.enabled=true;
+    renderGOILegend(plotId);
+}
+
+function _removeGOILegend(plotId){
+    const p=CANVAS_PLOTS.find(x=>x.plotId===plotId);
+    if(p&&p.goiLegend) p.goiLegend.enabled=false;
+    const card=document.getElementById('card-'+plotId);
+    if(card){const el=card.querySelector('.canvas-goi-legend'); if(el) el.remove()}
+}
+
+function renderGOILegend(plotId){
+    const p=CANVAS_PLOTS.find(x=>x.plotId===plotId);
+    if(!p||!p.goiLegend||!p.goiLegend.enabled) return;
+    const card=document.getElementById('card-'+plotId);
+    if(!card) return;
+    let el=card.querySelector('.canvas-goi-legend');
+    const fresh=!el;
+    if(fresh){
+        el=document.createElement('div');
+        el.className='canvas-goi-legend';
+        card.appendChild(el);
+    }
+    const st=p.goiLegend;
+    el.style.left=(st.x||14)+'px';
+    el.style.top=(st.y||14)+'px';
+    el.classList.toggle('transparent',!!st.transparent);
+
+    const hidden=new Set(st.hidden||[]);
+    const visible=GROUPS_OF_INTEREST.filter(g=>!hidden.has(g.id));
+    let html=`<button class="gl-close" title="Remove legend">&times;</button>`+
+             `<button class="gl-bg-toggle" title="Toggle background">${st.transparent?'◯':'◉'}</button>`+
+             `<div class="gl-title">Groups of interest</div>`;
+    if(!visible.length){
+        html+=`<div class="gl-empty">All GOIs hidden — × on rows to restore (use sidebar to remove).</div>`;
+    }
+    visible.forEach(g=>{
+        const label=(st.labels&&st.labels[g.id]!=null)?st.labels[g.id]:_goiDefaultLabel(g);
+        const safeLabel=String(label).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+        html+=`<div class="gl-row" data-gid="${g.id}">`+
+              `<span class="gl-marker">${_goiMarkerSVG(g.color,g.symbol,g.size)}</span>`+
+              `<span class="gl-label" contenteditable="true" spellcheck="false" data-gid="${g.id}" title="Click to edit; blur to save">${safeLabel}</span>`+
+              `<button class="gl-hide" data-gid="${g.id}" title="Hide this row in this legend (does not remove the GOI)">&times;</button>`+
+              `</div>`;
+    });
+    el.innerHTML=html;
+
+    // Wire interactivity
+    if(fresh){
+        // Drag (only when grabbing the legend background, not editable text or buttons)
+        let dragging=false,sx=0,sy=0,oX=0,oY=0;
+        el.addEventListener('mousedown',e=>{
+            if(e.target.closest('.gl-label[contenteditable]')&&e.target===document.activeElement) return;
+            if(e.target.closest('.gl-close,.gl-bg-toggle,.gl-hide')) return;
+            if(e.target.closest('.gl-label')&&e.detail===2) return;  // dblclick to edit
+            dragging=true;sx=e.clientX;sy=e.clientY;
+            oX=parseFloat(el.style.left)||0;oY=parseFloat(el.style.top)||0;
+            document.body.style.cursor='move';e.preventDefault();
+        });
+        document.addEventListener('mousemove',e=>{
+            if(!dragging) return;
+            const sc=typeof canvasScale==='number'?canvasScale:1;
+            el.style.left=(oX+(e.clientX-sx)/sc)+'px';
+            el.style.top=(oY+(e.clientY-sy)/sc)+'px';
+        });
+        document.addEventListener('mouseup',()=>{
+            if(!dragging) return;
+            dragging=false;document.body.style.cursor='';
+            st.x=parseFloat(el.style.left)||0;
+            st.y=parseFloat(el.style.top)||0;
+            try{autoSaveSession()}catch(_){}
+        });
+    }
+    // Per-render handlers (re-bind because innerHTML was replaced)
+    el.querySelector('.gl-close').onclick=ev=>{ev.stopPropagation();_removeGOILegend(plotId);try{autoSaveSession()}catch(_){}};
+    el.querySelector('.gl-bg-toggle').onclick=ev=>{ev.stopPropagation();st.transparent=!st.transparent;renderGOILegend(plotId);try{autoSaveSession()}catch(_){}};
+    el.querySelectorAll('.gl-hide').forEach(btn=>{
+        btn.onclick=ev=>{
+            ev.stopPropagation();
+            const gid=+btn.dataset.gid;
+            if(!st.hidden) st.hidden=[];
+            if(!st.hidden.includes(gid)) st.hidden.push(gid);
+            renderGOILegend(plotId);
+            try{autoSaveSession()}catch(_){}
+        };
+    });
+    el.querySelectorAll('.gl-label').forEach(span=>{
+        span.addEventListener('blur',()=>{
+            const gid=+span.dataset.gid;
+            const txt=span.innerText.trim();
+            if(!st.labels) st.labels={};
+            const g=GROUPS_OF_INTEREST.find(x=>x.id===gid);
+            const def=g?_goiDefaultLabel(g):'';
+            if(!txt||txt===def){delete st.labels[gid]} else {st.labels[gid]=txt}
+            try{autoSaveSession()}catch(_){}
+        });
+        span.addEventListener('keydown',e=>{
+            if(e.key==='Enter'){e.preventDefault();span.blur()}
+            if(e.key==='Escape'){const gid=+span.dataset.gid;const g=GROUPS_OF_INTEREST.find(x=>x.id===gid);span.innerText=(st.labels&&st.labels[gid]!=null)?st.labels[gid]:(g?_goiDefaultLabel(g):'');span.blur()}
+        });
+    });
+}
+
+// Re-render every legend on the canvas (called when GOIs change in the sidebar
+// — add/remove/recolor/resize/symbol-change). Cheap because we just rebuild
+// the small DOM fragment per legend.
+function refreshGOILegends(){
+    if(!Array.isArray(CANVAS_PLOTS)) return;
+    CANVAS_PLOTS.forEach(p=>{
+        if(p.goiLegend&&p.goiLegend.enabled) renderGOILegend(p.plotId);
+    });
+}
+
+// ================================================================
 // PLOT RENDERING
 // ================================================================
 // ================================================================
@@ -3791,6 +3985,7 @@ function renderPlot(p,qd,fidx){
     chart.on('updatefrozen',()=>updateFrozenPlot(p.plotId));
     chart.on('exportdata',()=>exportPlotDataCSV(p));
     chart.on('duplicate',()=>duplicatePlot(p.plotId));
+    chart.on('goilegend',()=>addGOILegend(p.plotId));
     chart.on('pointselect',d=>{d.plotId=p.plotId;updateToolbar(null,d)});
     chart.on('pointdeselect',()=>updateToolbar(null));
     chart.on('titleselect',d=>updateToolbar(d.element));
@@ -3806,6 +4001,10 @@ function renderPlot(p,qd,fidx){
         filteredCount:fidx.length,
         groups:BINS.filter(b=>b.samples.length>0).map(b=>b.label+' ('+b.samples.join(',')+')').join('; '),
     };
+
+    // Re-render any GOI legend attached to this plot. Idempotent: no-op if
+    // the legend isn't enabled. Picks up session-restored or duplicated state.
+    try{if(p.goiLegend&&p.goiLegend.enabled) renderGOILegend(p.plotId)}catch(_){}
 
     // Show frozen indicator
     const wrap=div.closest('.canvas-plot');
@@ -5872,6 +6071,7 @@ function buildSessionObject(opts){
                 position:card?{left:card.style.left||'',top:card.style.top||'',width:card.style.width||'',height:card.style.height||''}:null,
                 colorOverrides:chart&&Array.isArray(chart._colorOverrides)?chart._colorOverrides:[],
                 annotations:chart&&Array.isArray(chart.annotations)?chart.annotations:[],
+                goiLegend:p.goiLegend||null,
             };
         }),
         processing:{
@@ -6103,6 +6303,9 @@ function loadSession(file){
                 try{
                     const plotId='plot-'+(nextPlotId++);
                     const plotEntry={id:nextPlotId-1,type:cp.type,config:cfg,plotId,title:cp.title||cp.type,frozen:cp.frozen||false};
+                    // Restore the GOI legend state (if any) before render so the
+                    // post-render hook in renderPlot picks it up.
+                    if(cp.goiLegend&&typeof cp.goiLegend==='object') plotEntry.goiLegend=cp.goiLegend;
                     CANVAS_PLOTS.push(plotEntry);
                     const pw=document.createElement('div');pw.className='canvas-plot';pw.id='card-'+plotId;
                     if(cp.position&&typeof cp.position==='object'){

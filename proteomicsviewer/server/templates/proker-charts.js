@@ -949,6 +949,7 @@ class ProkerChart {
         items += `<div class="rc-sep"></div>`;
         items += `<div class="rc-item" data-action="exportdata">&#128190; Export data (CSV — Prism-ready)</div>`;
         items += `<div class="rc-item" data-action="duplicate">&#128203; Duplicate plot (with labels)</div>`;
+        items += `<div class="rc-item" data-action="goilegend">&#127991;&#65039; Add GOI legend</div>`;
         if (this._zoomed) {
             items += `<div class="rc-sep"></div>`;
             items += `<div class="rc-item" data-action="resetzoom">&#8634; Reset zoom</div>`;
@@ -999,8 +1000,9 @@ class ProkerChart {
                 else if (action === 'updatefrozen') this._emit('updatefrozen', {});
                 else if (action === 'exportdata') this._emit('exportdata', {});
                 else if (action === 'duplicate') this._emit('duplicate', {});
+                else if (action === 'goilegend') this._emit('goilegend', {});
                 this._closeContextMenu();
-                if (action !== 'settings' && action !== 'exportdata' && action !== 'duplicate') this._clearSelection();
+                if (action !== 'settings' && action !== 'exportdata' && action !== 'duplicate' && action !== 'goilegend') this._clearSelection();
             });
         });
 
