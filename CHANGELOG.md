@@ -3,6 +3,21 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.5] — 2026-05-05
+
+### Fixed — GOI legend renders correctly in PNG export, on top of the chart
+The v4.15.4 export integration shipped, but had three bugs that made the legend look wrong (or missing) in the PNG export specifically:
+
+1. **CSS `color-mix()` background colours didn't survive the data-URI round-trip.** PNG export serialises the composite SVG to a `data:image/svg+xml,...` URI and renders it via `Image → drawImage`. The image renderer in some environments doesn't accept the modern color-syntax that `getComputedStyle()` returned for our `color-mix(in srgb, var(--surface) 92%, transparent)` background — so the legend rect ended up with no fill, making the legend look blank or transparent. Fixed with a new `_normalizeCssColor()` helper that runs every legend colour through a 1×1 throwaway canvas, which always produces `#rrggbb` or `rgba(r,g,b,a)` — universally supported.
+
+2. **Position math used CSS-transform-scaled values.** Both export paths computed legend position via `legend.getBoundingClientRect()`. When the canvas is zoomed (anything ≠ 100 %), this returns *visual* coordinates (scaled), but the export SVG uses *layout* coordinates (unscaled). Result: legend appeared at the wrong position relative to its chart, or even off the visible export bounds. Fixed with a new `_layoutOffsetWithin(el, ancestor)` helper that walks the offsetParent chain and returns true layout offsets, plus switched to `offsetWidth`/`offsetHeight` for size.
+
+3. **`maxW` was only expanded when the legend extended *below* the chart.** A logic bug — should always expand when the legend extends past the chart's right edge. Result: a wide legend placed in the right portion of a narrow chart was silently clipped from the export. Fixed: `maxW` and per-card height are now both updated unconditionally based on the legend's bounds.
+
+Verified that the legend SVG group is appended **after** the chart's inner SVG content in both export paths, so SVG painter's-algorithm draws it on top of the chart (later siblings = on top).
+
+The transparent-toggle state, custom row labels, hidden rows, marker colours/shapes, and editable title all carry through correctly now.
+
 ## [4.15.4] — 2026-05-05
 
 ### Fixed — GOI legend now exports correctly
