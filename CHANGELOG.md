@@ -3,6 +3,33 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.3] — 2026-05-05
+
+### Added — canvas-level right-click menu with "Clear canvas"
+Right-clicking on **empty canvas space** (i.e. not on a plot, annotation, GOI legend, or zoom control) now opens a small context menu. Items:
+
+- **📝 Add text box** — same as the toolbar `+ Text` button, but discoverable from the canvas itself.
+- **➡️ Add line** — same as the toolbar `+ Line` button.
+- **🗑️ Clear canvas** *(only shown when there's something to clear)* — wipes everything off the canvas in one action: all plots (with their charts, color overrides, pinned labels, and GOI legends), all text-box / line / shape annotations. The menu item shows a live count of what's about to be removed (e.g. "Clear canvas (3 plots + 2 annotations)").
+
+### Safety — explicit warning modal before clearing
+Clear canvas does **not** wipe immediately. It opens a styled modal that:
+
+- Has a red ⚠️ "Clear canvas?" header
+- Lists exactly what will be removed, broken down by category (plots, text boxes, line annotations, shape annotations, GOI legends) — so the user knows precisely what they'd lose
+- Reminds them: "This cannot be undone. If you want to keep this layout, save the session first (top-right → Save Session) before continuing."
+- Has explicit **Cancel** (focused by default — Enter doesn't wipe) and **Clear canvas** (red danger-styled) buttons
+
+Right-clicking on empty canvas with nothing there shows "Canvas is empty" in the menu — the Clear option is omitted entirely. The modal also gracefully falls back to the native `confirm()` dialog if its DOM element is somehow missing.
+
+### Implementation
+- `_canvasContents()` inventories the canvas, counting plots and breaking down annotations by type.
+- `clearCanvas()` opens the modal with a per-category breakdown.
+- `_confirmClearCanvas()` / `_cancelClearCanvas()` handle the modal buttons.
+- `_doClearCanvas()` performs the actual wipe: destroys every chart instance, clears `CHARTS` and `CANVAS_PLOTS`, resets `canvas.style.minHeight/minWidth` (the auto-grown values from drag/resize/addPlot), resets viewport scroll, restores the empty-canvas drop hint, refreshes the stats-methods sidebar, and triggers an autosave.
+- Context menu attaches via `vp.addEventListener('contextmenu', ...)`. Skips when right-click target is inside `.canvas-plot`, `.canvas-anno-wrap`, `.canvas-zoom-controls`, `.canvas-textbox`, or `.canvas-goi-legend` so each of those keeps their own menu/behavior.
+- Reuses the existing `.modal-overlay` / `.modal-box` / `.m-cancel` / `.m-danger` CSS so the styled warning matches the file-conflict modal exactly.
+
 ## [4.15.2] — 2026-05-04
 
 ### Fixed — GOI legend background now follows the active theme

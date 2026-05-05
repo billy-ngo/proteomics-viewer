@@ -406,6 +406,22 @@ async function uploadFile(file,append){
         </div>
     </div>
 </div>
+<!-- Modal: confirm clearing the canvas (right-click → Clear canvas).
+     Body text is rebuilt by clearCanvas() with a per-category breakdown of
+     what's about to be removed; the user has to explicitly press the danger
+     button. Cancel is focused by default so a stray Enter doesn't wipe. -->
+<div id="clear-canvas-modal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <h3 style="color:var(--danger)">&#9888;&#65039; Clear canvas?</h3>
+        <p>This will permanently remove the following from the canvas:</p>
+        <div id="clear-canvas-list" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px 12px;font-size:12px;color:var(--text);line-height:1.7;margin-bottom:14px;font-family:monospace"></div>
+        <p style="font-size:11px;color:var(--text-sec);margin-top:-4px;margin-bottom:18px"><b>This cannot be undone.</b> If you want to keep this layout, save the session first (top-right &rarr; Save Session) before continuing.</p>
+        <div class="modal-actions">
+            <button id="clear-canvas-cancel" class="m-cancel" onclick="_cancelClearCanvas()">Cancel</button>
+            <button class="m-danger" onclick="_confirmClearCanvas()">Clear canvas</button>
+        </div>
+    </div>
+</div>
 
 <nav id="tabbar">
     <!-- Left: logo + title + info/help (BiNgo layout) -->
@@ -4935,6 +4951,179 @@ function _makeDraggable(el,handle){
     });
     document.addEventListener('mouseup',()=>{if(dragging){dragging=false;document.body.style.cursor=''}});
 }
+
+// ================================================================
+// CANVAS-LEVEL RIGHT-CLICK MENU  (right-click on empty canvas → "Clear canvas")
+// ================================================================
+// Wipes everything off the canvas in one action — all plots (with their
+// charts, color overrides, pinned labels, GOI legends), all annotations
+// (text boxes, lines, shapes), and resets the canvas's grown min-height /
+// min-width / scroll position so the next plot lands in a clean state.
+// Always asks for confirmation; honest about what's about to be removed.
+// Inventory the things that would be removed by clearCanvas. Counts plots
+// AND breaks down annotations by type (text boxes / lines / shapes / GOI
+// legends) so the warning modal can tell the user exactly what they'll lose.
+function _canvasContents(){
+    const wraps=document.querySelectorAll('.canvas-anno-wrap');
+    const stats={plots:CANVAS_PLOTS.length, text:0, line:0, shape:0, legend:0};
+    wraps.forEach(w=>{
+        if(w.querySelector('.canvas-textbox')) stats.text++;
+        else if(w.querySelector('svg line')||w.querySelector('line')) stats.line++;
+        else if(w.querySelector('.canvas-shape')) stats.shape++;
+    });
+    // GOI legends live INSIDE plot cards, so they're already covered by the
+    // "plots" count — but show them separately so the user knows they go too.
+    stats.legend=document.querySelectorAll('.canvas-goi-legend').length;
+    return stats;
+}
+
+// Show a styled modal warning before wiping the canvas. Falls back to the
+// native confirm() dialog if the modal element is missing for some reason
+// (defensive — shouldn't happen since the modal is in the static HTML).
+function clearCanvas(){
+    const c=_canvasContents();
+    if(!c.plots&&!c.text&&!c.line&&!c.shape) return;  // nothing to clear
+
+    const modal=document.getElementById('clear-canvas-modal');
+    if(!modal){
+        // Defensive fallback to native confirm
+        const parts=[];
+        if(c.plots) parts.push(c.plots+' plot'+(c.plots===1?'':'s'));
+        const annoTotal=c.text+c.line+c.shape;
+        if(annoTotal) parts.push(annoTotal+' annotation'+(annoTotal===1?'':'s'));
+        if(!confirm('Remove '+parts.join(' and ')+' from the canvas?\n\nThis cannot be undone.')) return;
+        _doClearCanvas();
+        return;
+    }
+
+    // Build a per-category breakdown line for the modal body
+    const lines=[];
+    if(c.plots)  lines.push('• '+c.plots +' plot'  +(c.plots ===1?'':'s'));
+    if(c.text)   lines.push('• '+c.text  +' text box' +(c.text  ===1?'':'es'));
+    if(c.line)   lines.push('• '+c.line  +' line annotation'  +(c.line  ===1?'':'s'));
+    if(c.shape)  lines.push('• '+c.shape +' shape annotation' +(c.shape ===1?'':'s'));
+    if(c.legend) lines.push('• '+c.legend+' GOI legend'+(c.legend===1?'':'s')+' (attached to plots above)');
+    document.getElementById('clear-canvas-list').innerHTML=lines.join('<br>');
+
+    modal.classList.remove('hidden');
+    // Focus the cancel button by default so an accidental Enter doesn't wipe
+    setTimeout(()=>{document.getElementById('clear-canvas-cancel')?.focus()},10);
+}
+
+function _confirmClearCanvas(){
+    document.getElementById('clear-canvas-modal')?.classList.add('hidden');
+    _doClearCanvas();
+}
+
+function _cancelClearCanvas(){
+    document.getElementById('clear-canvas-modal')?.classList.add('hidden');
+}
+
+function _doClearCanvas(){
+    // Destroy every chart so listeners are detached and DOM refs released
+    Object.keys(CHARTS).forEach(id=>{
+        try{CHARTS[id].destroy()}catch(_){}
+    });
+    CHARTS={};
+    CANVAS_PLOTS=[];
+
+    // Wipe the canvas DOM and restore the empty-state hint
+    const canvas=document.getElementById('canvas');
+    if(canvas){
+        canvas.classList.add('empty-canvas');
+        canvas.innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>';
+        // Reset the min-height/min-width that drag/resize/addPlot grew over
+        // time, so the canvas snaps back to fitting the visible viewport.
+        canvas.style.minHeight='';
+        canvas.style.minWidth='';
+    }
+
+    // Reset viewport scroll
+    const vp=document.getElementById('canvas-viewport');
+    if(vp){vp.scrollLeft=0;vp.scrollTop=0}
+
+    if(typeof updateStatsMethodsPanel==='function') updateStatsMethodsPanel();
+    if(typeof updateToolbar==='function') updateToolbar(null);
+    try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
+}
+
+function _closeCanvasContextMenu(){
+    document.getElementById('canvas-ctx-menu')?.remove();
+}
+
+function _showCanvasContextMenu(x,y){
+    _closeCanvasContextMenu();
+    const menu=document.createElement('div');
+    menu.className='rc-context-menu';
+    menu.id='canvas-ctx-menu';
+    menu.style.left=x+'px';menu.style.top=y+'px';
+
+    const nPlots=CANVAS_PLOTS.length;
+    const nAnno=document.querySelectorAll('.canvas-anno-wrap').length;
+    const totalCount=nPlots+nAnno;
+
+    let items='';
+    items+=`<div class="rc-item" data-action="addtext">&#128221; Add text box</div>`;
+    items+=`<div class="rc-item" data-action="addline">&#10146; Add line</div>`;
+    if(totalCount>0){
+        items+=`<div class="rc-sep"></div>`;
+        const summary=[
+            nPlots>0?nPlots+' plot'+(nPlots===1?'':'s'):'',
+            nAnno >0?nAnno +' annotation'+(nAnno ===1?'':'s'):'',
+        ].filter(Boolean).join(' + ');
+        items+=`<div class="rc-item" data-action="clearcanvas" style="color:var(--danger)">&#128465;&#65039; Clear canvas <span style="opacity:0.6;font-size:10px;margin-left:auto">(${summary})</span></div>`;
+    } else {
+        items+=`<div class="rc-sep"></div>`;
+        items+=`<div class="rc-item" style="opacity:0.5;cursor:default">Canvas is empty</div>`;
+    }
+    menu.innerHTML=items;
+    document.body.appendChild(menu);
+
+    // Keep the menu inside the viewport (flip if it would overflow)
+    const r=menu.getBoundingClientRect();
+    if(r.right>window.innerWidth)  menu.style.left=(x-r.width )+'px';
+    if(r.bottom>window.innerHeight) menu.style.top =(y-r.height)+'px';
+
+    menu.querySelectorAll('.rc-item').forEach(item=>{
+        item.addEventListener('click',()=>{
+            const action=item.dataset.action;
+            if(action==='clearcanvas') clearCanvas();
+            else if(action==='addtext') addCanvasTextBox();
+            else if(action==='addline') addCanvasLine();
+            _closeCanvasContextMenu();
+        });
+    });
+
+    // Close on next click outside
+    setTimeout(()=>{
+        document.addEventListener('click',function once(e){
+            if(!e.target.closest('#canvas-ctx-menu')) _closeCanvasContextMenu();
+            document.removeEventListener('click',once);
+        });
+    },10);
+}
+
+// Attach the right-click handler to the canvas viewport. Only fires on EMPTY
+// canvas space — not on plots (which have their own chart-level menu) or on
+// annotations (which already have their own × close button).
+(function(){
+    const tryAttach=()=>{
+        const vp=document.getElementById('canvas-viewport');
+        if(!vp){setTimeout(tryAttach,200);return}
+        vp.addEventListener('contextmenu',e=>{
+            const t=e.target;
+            // Skip when clicking on a plot, annotation, zoom controls, or
+            // text box — those have their own behaviour.
+            if(t.closest('.canvas-plot')||t.closest('.canvas-anno-wrap')||
+               t.closest('.canvas-zoom-controls')||t.closest('.canvas-textbox')||
+               t.closest('.canvas-goi-legend')) return;
+            e.preventDefault();
+            _showCanvasContextMenu(e.clientX,e.clientY);
+        });
+    };
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',tryAttach);
+    else tryAttach();
+})();
 
 function addCanvasTextBox(){
     const canvas=document.getElementById('canvas');if(!canvas)return;
