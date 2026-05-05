@@ -190,15 +190,18 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .canvas-anno-wrap:hover .canvas-anno-close{display:flex}
 /* GOI legend — draggable per-plot overlay; one row per Group of Interest with
    marker swatch + editable label. Lives inside .canvas-plot so it duplicates
-   and exports with the plot. */
-.canvas-goi-legend{position:absolute;background:rgba(13,17,23,0.92);border:1px solid var(--border);border-radius:4px;padding:6px 8px 6px 8px;font-family:Arial,sans-serif;font-size:11px;color:var(--text);z-index:7;min-width:80px;max-width:260px;cursor:move;user-select:none;box-shadow:0 2px 6px rgba(0,0,0,0.35)}
+   and exports with the plot.
+   Background and focus highlight are derived from the active theme's
+   --surface and --accent colours via color-mix(), so the legend stays
+   readable on dark, light, soft, high-contrast, and custom themes alike. */
+.canvas-goi-legend{position:absolute;background:color-mix(in srgb, var(--surface) 92%, transparent);border:1px solid var(--border);border-radius:4px;padding:6px 8px 6px 8px;font-family:Arial,sans-serif;font-size:11px;color:var(--text);z-index:7;min-width:80px;max-width:260px;cursor:move;user-select:none;box-shadow:0 2px 6px color-mix(in srgb, var(--text) 30%, transparent)}
 .canvas-goi-legend.transparent{background:transparent;border-color:transparent;box-shadow:none}
 .canvas-goi-legend .gl-title{font-weight:700;font-size:11px;margin-bottom:4px;padding-right:14px;color:var(--text)}
 .canvas-goi-legend .gl-row{display:flex;align-items:center;gap:6px;padding:1px 0;line-height:1.35}
 .canvas-goi-legend .gl-marker{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px}
-.canvas-goi-legend .gl-label{flex:1;outline:none;border:1px dashed transparent;border-radius:2px;padding:0 3px;cursor:text;min-height:14px}
+.canvas-goi-legend .gl-label{flex:1;outline:none;border:1px dashed transparent;border-radius:2px;padding:0 3px;cursor:text;min-height:14px;color:var(--text)}
 .canvas-goi-legend .gl-label:hover{border-color:var(--border)}
-.canvas-goi-legend .gl-label:focus{border-color:var(--accent);background:rgba(0,0,0,0.25)}
+.canvas-goi-legend .gl-label:focus{border-color:var(--accent);background:color-mix(in srgb, var(--accent) 14%, transparent)}
 .canvas-goi-legend .gl-hide{flex-shrink:0;width:14px;height:14px;border:none;background:transparent;color:var(--text-sec);cursor:pointer;font-size:11px;padding:0;border-radius:2px;opacity:0;transition:opacity .12s}
 .canvas-goi-legend:hover .gl-hide{opacity:0.7}
 .canvas-goi-legend .gl-hide:hover{opacity:1;color:var(--danger)}

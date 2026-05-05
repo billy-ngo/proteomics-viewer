@@ -3,6 +3,23 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.2] — 2026-05-04
+
+### Fixed — GOI legend background now follows the active theme
+The GOI legend introduced in v4.15.0 hardcoded its background as `rgba(13,17,23,0.92)` — the dark theme's `--bg` colour with alpha. On any other theme (light, soft, high-contrast, or a custom theme) this rendered as a black-on-light box that looked obviously broken. Same problem with the `:focus` highlight on editable labels (`rgba(0,0,0,0.25)`) and the drop-shadow.
+
+All three are now derived from the active theme's CSS custom properties via `color-mix()`:
+
+- **Background**: `color-mix(in srgb, var(--surface) 92%, transparent)` — matches whichever surface colour the active theme uses (preset or custom). Stays opaque-ish so the legend reads clearly even when overlaid on a busy plot.
+- **Editable-label focus highlight**: `color-mix(in srgb, var(--accent) 14%, transparent)` — a subtle tint of the theme's accent colour, so it pops in any colour scheme.
+- **Drop shadow**: `color-mix(in srgb, var(--text) 30%, transparent)` — soft on dark themes (text colour is light → faint shadow), more visible on light themes (text colour is dark → solid grey shadow).
+
+The legend now also explicitly inherits `var(--text)` for the editable label text (was inheriting from the parent, which worked but was implicit).
+
+Reactivity: when the user changes theme via the Theme panel, `applyThemeVars` rewrites the CSS variables on `documentElement` and the legend's `color-mix()` declarations recompute automatically — no JS code path touches the legend, no re-render needed. The transparent toggle (◯) still works exactly as before.
+
+Browser support note: `color-mix()` is supported in Chrome 111+, Firefox 113+, Safari 16.2+ (all March 2023 or earlier). Pro-ker doesn't target older browsers, so no fallback is provided.
+
 ## [4.15.1] — 2026-05-04
 
 ### Added — Groups-of-Interest custom labels (sidebar)
