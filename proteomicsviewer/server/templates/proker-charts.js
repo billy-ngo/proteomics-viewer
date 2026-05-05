@@ -841,7 +841,14 @@ class ProkerChart {
     _editChartTitle(el) {
         const current = this._chartTitle || '';
         const rect = el.getBoundingClientRect();
-        this._showEditInput(rect, current, v => { this._chartTitle = v; this.render(); });
+        this._showEditInput(rect, current, v => {
+            this._chartTitle = v;
+            this.render();
+            // Emit so the host (index.html) can persist this edit on the
+            // plot entry in CANVAS_PLOTS — otherwise a refresh would call
+            // setChartTitle() with the auto-computed default and wipe it.
+            this._emit('titleedit', { kind: 'chart', value: v });
+        });
     }
 
     // Shared edit input helper
@@ -868,6 +875,7 @@ class ProkerChart {
         this._showEditInput(rect, current, v => {
             if (axis === 'x') this.xTitle = v; else this.yTitle = v;
             this.render();
+            this._emit('titleedit', { kind: axis === 'x' ? 'xaxis' : 'yaxis', value: v });
         });
     }
 

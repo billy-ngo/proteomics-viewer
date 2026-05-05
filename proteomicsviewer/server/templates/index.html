@@ -4029,6 +4029,17 @@ function renderPlot(p,qd,fidx){
     else if(p.type==='pca') buildPCAConfig(chart,p,useQd,useFidx);
     else if(p.type==='abundance') buildAbundanceConfig(chart,p,useQd,useFidx);
 
+    // Re-apply any user-edited titles AFTER the build*Config sets the
+    // auto-computed defaults. This is what preserves an inline title edit
+    // across re-renders (filter changes, freeze toggles, session reload, etc.)
+    if(p.config&&p.config._titleOverrides){
+        const ov=p.config._titleOverrides;
+        if(ov.chart!=null) chart.setChartTitle(ov.chart);
+        if(ov.xaxis!=null) chart.setXTitle(ov.xaxis);
+        if(ov.yaxis!=null) chart.setYTitle(ov.yaxis);
+        chart.render();
+    }
+
     chart.on('dblclick',()=>openGraphSettingsForPlot(p.plotId));
     chart.on('resetcolors',()=>{p._forceUpdate=true;const{data:q}=getQData();renderPlot(p,q,getFilteredIdx())});
     chart.on('freeze',()=>freezePlot(p.plotId));
@@ -4036,6 +4047,15 @@ function renderPlot(p,qd,fidx){
     chart.on('exportdata',()=>exportPlotDataCSV(p));
     chart.on('duplicate',()=>duplicatePlot(p.plotId));
     chart.on('goilegend',()=>addGOILegend(p.plotId));
+    // Persist inline title/axis edits on the plot's config so they survive
+    // re-render, session save/load, and plot duplication. Without this, every
+    // re-render would call setChartTitle/setXTitle/setYTitle with the
+    // computed defaults and silently wipe the user's edits.
+    chart.on('titleedit',d=>{
+        if(!p.config._titleOverrides) p.config._titleOverrides={};
+        p.config._titleOverrides[d.kind]=d.value;
+        try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
+    });
     chart.on('pointselect',d=>{d.plotId=p.plotId;updateToolbar(null,d)});
     chart.on('pointdeselect',()=>updateToolbar(null));
     chart.on('titleselect',d=>updateToolbar(d.element));
@@ -4765,44 +4785,58 @@ function _measureSvg(svg){
     return{w:w+pad,h:h+pad};
 }
 
+// Iterate plot CARDS (not just chart SVGs) so we can also embed each plot's
+// GOI legend (which lives as a sibling div inside the .canvas-plot wrapper).
+// Returns {parts, maxW, totalH} ready to drop into a composite SVG.
+function _buildSeparatePlotsSVG(){
+    const canvas=document.getElementById('canvas');
+    const cards=canvas?canvas.querySelectorAll('.canvas-plot'):[];
+    if(!cards.length) return null;
+    const parts=[];
+    let maxW=0,totalH=0;
+    cards.forEach(card=>{
+        const svgEl=card.querySelector('.proker-svg');
+        if(!svgEl) return;
+        const{w:sw,h:sh}=_measureSvg(svgEl);
+        if(sw>maxW) maxW=sw;
+        // Capture chart + (optional) legend at this card's vertical offset
+        let cardSvg=`<g transform="translate(0,${totalH})">${svgEl.innerHTML}`;
+        const legend=card.querySelector('.canvas-goi-legend');
+        if(legend){
+            // Compute legend position relative to the card's chart SVG so it
+            // sits where the user placed it within the plot area.
+            const cardR=card.getBoundingClientRect();
+            const lr=legend.getBoundingClientRect();
+            const lx=lr.left-cardR.left, ly=lr.top-cardR.top;
+            cardSvg+=_legendToSVG(legend,lx,ly);
+            // Account for legend in the per-card height
+            const legendBottom=ly+lr.height;
+            if(legendBottom>sh) maxW=Math.max(maxW,lx+lr.width);
+        }
+        cardSvg+=`</g>`;
+        parts.push(cardSvg);
+        totalH+=sh+12;
+    });
+    return{parts,maxW,totalH};
+}
+
 function exportAllSVG(){
     // Combine all plot SVGs into one canvas SVG
-    const canvas=document.getElementById('canvas');if(!canvas)return;
-    const plots=canvas.querySelectorAll('.proker-svg');
-    if(!plots.length){alert('No plots on the canvas to export.');return}
-    const sizes=[...plots].map(_measureSvg);
-    // reduce(... , 0) returns 0 (not -Infinity) when sizes is empty — defensive
-    const maxW=sizes.reduce((m,s)=>Math.max(m,s.w),0);
-    let totalH=0;
-    const svgParts=[];
-    plots.forEach((svg,idx)=>{
-        const{h}=sizes[idx];
-        svgParts.push(`<g transform="translate(0,${totalH})">${svg.innerHTML}</g>`);
-        totalH+=h+12;
-    });
+    const result=_buildSeparatePlotsSVG();
+    if(!result){alert('No plots on the canvas to export.');return}
+    const{parts,maxW,totalH}=result;
     if(maxW<=0||totalH<=0){alert('Plots have zero size — nothing to export.');return}
-    const combined=`<svg xmlns="http://www.w3.org/2000/svg" width="${maxW}" height="${totalH}" style="font-family:Arial,Helvetica,sans-serif">${svgParts.join('')}</svg>`;
+    const combined=`<svg xmlns="http://www.w3.org/2000/svg" width="${maxW}" height="${totalH}" style="font-family:Arial,Helvetica,sans-serif">${parts.join('')}</svg>`;
     const blob=new Blob([combined],{type:'image/svg+xml'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='proker_canvas.svg';a.click();
 }
 function exportAllPNG(){
-    const canvas=document.getElementById('canvas');if(!canvas)return;
-    const plots=canvas.querySelectorAll('.proker-svg');
-    if(!plots.length){alert('No plots on the canvas to export.');return}
-    const scale=2;
-    const sizes=[...plots].map(_measureSvg);
-    const maxW=sizes.reduce((m,s)=>Math.max(m,s.w),0);
-    let totalH=0;
-    sizes.forEach(s=>{totalH+=s.h+12});
-    // Combine SVGs then render to canvas
-    const svgParts=[];let yOff=0;
-    plots.forEach((svg,idx)=>{
-        const{h}=sizes[idx];
-        svgParts.push(`<g transform="translate(0,${yOff})">${svg.innerHTML}</g>`);
-        yOff+=h+12;
-    });
+    const result=_buildSeparatePlotsSVG();
+    if(!result){alert('No plots on the canvas to export.');return}
+    const{parts,maxW,totalH}=result;
     if(maxW<=0||totalH<=0){alert('Plots have zero size — nothing to export.');return}
-    const combined=`<svg xmlns="http://www.w3.org/2000/svg" width="${maxW}" height="${totalH}" style="font-family:Arial,Helvetica,sans-serif">${svgParts.join('')}</svg>`;
+    const scale=2;
+    const combined=`<svg xmlns="http://www.w3.org/2000/svg" width="${maxW}" height="${totalH}" style="font-family:Arial,Helvetica,sans-serif">${parts.join('')}</svg>`;
     const cvs=document.createElement('canvas');cvs.width=maxW*scale;cvs.height=totalH*scale;
     const ctx=cvs.getContext('2d');const img=new Image();
     img.onload=()=>{ctx.drawImage(img,0,0,cvs.width,cvs.height);cvs.toBlob(blob=>{
@@ -4810,6 +4844,66 @@ function exportAllPNG(){
     img.onerror=()=>alert('PNG export failed: the SVG could not be rasterised (likely too large for a data URI). Try the SVG export instead.');
     img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(combined);
 }
+// Convert a .canvas-goi-legend DOM element into an SVG <g> fragment positioned
+// at (ox, oy) so it can be embedded inside the composite export SVG. Walks the
+// legend's structure (background, title, rows of marker + label) and emits
+// equivalent SVG primitives. The marker SVG already in the row is reused
+// directly; only the buttons (close / bg-toggle / hide) are skipped.
+function _legendToSVG(legendEl, ox, oy){
+    if(!legendEl) return '';
+    const r=legendEl.getBoundingClientRect();
+    const w=r.width, h=r.height;
+    const cs=getComputedStyle(legendEl);
+    const isTransparent=legendEl.classList.contains('transparent');
+    // Resolve the computed background colour (color-mix is computed to rgba)
+    const bg=isTransparent?'none':(cs.backgroundColor||'#ffffff');
+    const borderColor=isTransparent?'none':(cs.borderColor||'#cccccc');
+    const borderWidth=isTransparent?0:(parseInt(cs.borderTopWidth)||1);
+    const radius=parseInt(cs.borderTopLeftRadius)||4;
+    const textColor=cs.color||'#000000';
+    let svg=`<g transform="translate(${ox},${oy})">`;
+    if(!isTransparent){
+        svg+=`<rect x="0" y="0" width="${w}" height="${h}" rx="${radius}" ry="${radius}" `+
+             `fill="${bg}" stroke="${borderColor}" stroke-width="${borderWidth}"/>`;
+    }
+    // Title row
+    const title=legendEl.querySelector('.gl-title');
+    if(title){
+        const tr=title.getBoundingClientRect();
+        const tcs=getComputedStyle(title);
+        const tfs=parseInt(tcs.fontSize)||11;
+        const tx=tr.left-r.left, ty=tr.top-r.top+tfs;
+        svg+=`<text x="${tx}" y="${ty}" fill="${tcs.color||textColor}" font-size="${tfs}" font-weight="700" font-family="Arial,Helvetica,sans-serif">`+
+             (title.textContent||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')+
+             `</text>`;
+    }
+    // Rows: marker SVG + label text
+    legendEl.querySelectorAll('.gl-row').forEach(row=>{
+        const rr=row.getBoundingClientRect();
+        const ry=rr.top-r.top;
+        // Inline the marker SVG verbatim (already in correct shape/colour)
+        const marker=row.querySelector('.gl-marker svg');
+        if(marker){
+            const mr=marker.getBoundingClientRect();
+            const mx=mr.left-r.left, my=mr.top-r.top;
+            svg+=`<g transform="translate(${mx},${my})">${marker.innerHTML}</g>`;
+        }
+        // Label text
+        const label=row.querySelector('.gl-label');
+        if(label){
+            const lr=label.getBoundingClientRect();
+            const lcs=getComputedStyle(label);
+            const lfs=parseInt(lcs.fontSize)||11;
+            const lx=lr.left-r.left+3, ly=lr.top-r.top+lfs;
+            svg+=`<text x="${lx}" y="${ly}" fill="${lcs.color||textColor}" font-size="${lfs}" font-family="Arial,Helvetica,sans-serif">`+
+                 ((label.innerText||label.textContent||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'))+
+                 `</text>`;
+        }
+    });
+    svg+=`</g>`;
+    return svg;
+}
+
 // ================================================================
 // CANVAS-AS-IS EXPORT (preserves layout, positions, annotations)
 // ================================================================
@@ -4832,6 +4926,17 @@ function _buildCanvasCompositeSVG(){
             if(m.h>h) h=m.h;
             if(m.w>w) w=m.w;
             items.push({type:'svg',x,y,w,h,content:svg.outerHTML});
+        }
+        // Embed any GOI legend that lives inside this plot card. Capture the
+        // legend's position relative to the canvas (not the plot) so it lands
+        // in the right spot in the composite.
+        const legend=pw.querySelector('.canvas-goi-legend');
+        if(legend){
+            const lr=legend.getBoundingClientRect();
+            const lx=lr.left-canvasRect.left, ly=lr.top-canvasRect.top;
+            items.push({type:'legend',x:lx,y:ly,w:lr.width,h:lr.height,el:legend});
+            maxX=Math.max(maxX,lx+lr.width);maxY=Math.max(maxY,ly+lr.height);
+            minX=Math.min(minX,lx);minY=Math.min(minY,ly);
         }
         minX=Math.min(minX,x);minY=Math.min(minY,y);
         maxX=Math.max(maxX,x+w);maxY=Math.max(maxY,y+h);
@@ -4897,6 +5002,8 @@ function _buildCanvasCompositeSVG(){
             svg+=`<g transform="translate(${ox},${oy})">${inner}</g>`;
         } else if(item.type==='rawsvg'){
             svg+=`<g transform="translate(${ox},${oy})"><svg width="${item.w}" height="${item.h}">${item.content}</svg></g>`;
+        } else if(item.type==='legend'){
+            svg+=_legendToSVG(item.el,ox,oy);
         } else if(item.type==='text'){
             const lines=(item.text||'').split('\n');
             const fs=parseInt(item.fontSize)||13;

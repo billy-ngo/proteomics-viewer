@@ -3,6 +3,35 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.4] — 2026-05-05
+
+### Fixed — GOI legend now exports correctly
+Both export paths previously dropped the `.canvas-goi-legend` overlay entirely:
+
+- **Canvas-as-is export** (`exportCanvasAsSVG` / `exportCanvasAsPNG`) iterated `.canvas-plot` for chart SVG and `.canvas-anno-wrap` for text/line/shape annotations, but never visited the legend div that lives as a sibling inside the plot card.
+- **Per-plot export** (`exportAllSVG` / `exportAllPNG`, the default "Export graphs separately" option) iterated `.proker-svg` directly, which is the chart SVG only — it didn't even look at plot cards.
+
+Both are fixed. New `_legendToSVG(legendEl, ox, oy)` helper walks the legend's DOM (background, title, marker SVGs, label text) and emits an equivalent SVG `<g>` block. The buttons (close, bg-toggle, hide) are deliberately skipped because they're UI controls, not figure content.
+
+- Canvas-as-is now collects each plot card's legend (if present) and embeds it in the composite at the right canvas-relative position via the new `type: 'legend'` item in the items list.
+- Per-plot export was refactored to iterate `.canvas-plot` cards (via the new `_buildSeparatePlotsSVG()` helper) instead of bare `.proker-svg` elements, so each plot's legend is included immediately below/over its chart, in the same per-card group transform.
+
+The legend's transparent-toggle state, custom row labels, hidden rows, marker colours/shapes, and editable title all carry through to the export verbatim.
+
+### Fixed — inline-edited titles now persist across re-renders and session save/load
+Until this release, when a user double-clicked a chart title (or X/Y axis title) and typed a new label, the change was stored only on the live chart instance (`chart._chartTitle`, `chart.xTitle`, `chart.yTitle`). On the next re-render — triggered by anything from a filter change to a freeze/unfreeze toggle to a session reload — `buildEnrichmentConfig` / `buildVolcanoConfig` / etc. would call `setChartTitle(...)` / `setXTitle(...)` / `setYTitle(...)` with their auto-computed defaults and silently wipe the user's edit.
+
+Two coordinated fixes:
+
+1. **Chart engine** (`proker-charts.js`): `_editChartTitle` and `_editAxisTitle` now emit a `titleedit` event with `{kind: 'chart' | 'xaxis' | 'yaxis', value}` after the user commits the edit.
+2. **Host page** (`index.html`): the `titleedit` listener writes the new value to `p.config._titleOverrides[kind]` on the plot entry and triggers an autosave. After every `buildXxxConfig` call, `renderPlot` re-applies these overrides via `setChartTitle/setXTitle/setYTitle` and re-renders.
+
+Because `_titleOverrides` lives on `p.config` (which is already serialised whole in the session save), edits round-trip through reload automatically with no extra plumbing. Plot duplication (which deep-clones the config) also carries the overrides to the new copy.
+
+### Already correct (verified)
+- **Pinned point labels**: the floating leader-line labels created by clicking a data point have always been saved as `chart.annotations` and round-trip cleanly through session save/load (`canvasPlots[i].annotations`).
+- **GOI legend custom labels** (per-row text edits inside a legend) and **GOI custom names** (the sidebar text input, v4.15.1): both already persist via `goiLegend.labels[id]` and `groupsOfInterest[].name` respectively.
+
 ## [4.15.3] — 2026-05-05
 
 ### Added — canvas-level right-click menu with "Clear canvas"
