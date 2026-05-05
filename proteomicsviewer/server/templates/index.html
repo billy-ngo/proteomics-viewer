@@ -196,7 +196,13 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
    readable on dark, light, soft, high-contrast, and custom themes alike. */
 .canvas-goi-legend{position:absolute;background:color-mix(in srgb, var(--surface) 92%, transparent);border:1px solid var(--border);border-radius:4px;padding:6px 8px 6px 8px;font-family:Arial,sans-serif;font-size:11px;color:var(--text);z-index:7;min-width:80px;max-width:260px;cursor:move;user-select:none;box-shadow:0 2px 6px color-mix(in srgb, var(--text) 30%, transparent)}
 .canvas-goi-legend.transparent{background:transparent;border-color:transparent;box-shadow:none}
-.canvas-goi-legend .gl-title{font-weight:700;font-size:11px;margin-bottom:4px;padding-right:14px;color:var(--text)}
+.canvas-goi-legend .gl-title{font-weight:700;font-size:11px;margin-bottom:4px;padding-right:14px;color:var(--text);outline:none}
+/* Editable title — same hover-dashed/focus-accent treatment as .gl-label.
+   Empty title text suppresses the row entirely (handled in renderGOILegend). */
+.canvas-goi-legend .gl-title[contenteditable]:hover{border-color:var(--border)}
+.canvas-goi-legend .gl-title[contenteditable]:focus{border-color:var(--accent);background:color-mix(in srgb, var(--accent) 14%, transparent)}
+.canvas-goi-legend .gl-title-row{display:flex;align-items:center;gap:4px;margin-bottom:4px;padding-right:14px}
+.canvas-goi-legend .gl-title-row .gl-title{margin:0;padding-right:0}
 .canvas-goi-legend .gl-row{display:flex;align-items:center;gap:6px;padding:1px 0;line-height:1.35}
 .canvas-goi-legend .gl-marker{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px}
 .canvas-goi-legend .gl-label{flex:1;outline:none;border:1px dashed transparent;border-radius:2px;padding:0 3px;cursor:text;min-height:14px;color:var(--text)}
@@ -3898,9 +3904,20 @@ function renderGOILegend(plotId){
 
     const hidden=new Set(st.hidden||[]);
     const visible=GROUPS_OF_INTEREST.filter(g=>!hidden.has(g.id));
+    // Title: editable inline. Empty string = hide the title row entirely
+    // (state.title === '' suppresses, state.title === undefined uses default).
+    const defaultTitle='Groups of interest';
+    const titleText=(st.title!=null)?st.title:defaultTitle;
+    const showTitle=titleText!=='';
+    const safeTitle=String(titleText).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
     let html=`<button class="gl-close" title="Remove legend">&times;</button>`+
-             `<button class="gl-bg-toggle" title="Toggle background">${st.transparent?'◯':'◉'}</button>`+
-             `<div class="gl-title">Groups of interest</div>`;
+             `<button class="gl-bg-toggle" title="Toggle background">${st.transparent?'◯':'◉'}</button>`;
+    if(showTitle){
+        html+=`<div class="gl-title-row" style="display:flex;align-items:center;gap:4px;margin-bottom:4px;padding-right:14px">`+
+              `<div class="gl-title" contenteditable="true" spellcheck="false" title="Click to edit; clear text to remove the title row entirely" style="flex:1;outline:none;border:1px dashed transparent;border-radius:2px;padding:0 3px;cursor:text;margin:0">${safeTitle}</div>`+
+              `<button class="gl-hide gl-title-hide" title="Hide title row (clear text to do the same)">&times;</button>`+
+              `</div>`;
+    }
     if(!visible.length){
         html+=`<div class="gl-empty">All GOIs hidden — × on rows to restore (use sidebar to remove).</div>`;
     }
@@ -3920,9 +3937,12 @@ function renderGOILegend(plotId){
         // Drag (only when grabbing the legend background, not editable text or buttons)
         let dragging=false,sx=0,sy=0,oX=0,oY=0;
         el.addEventListener('mousedown',e=>{
-            if(e.target.closest('.gl-label[contenteditable]')&&e.target===document.activeElement) return;
+            // Don't start a drag from inside an active contenteditable region —
+            // catches both editable row labels and the editable title.
+            if(e.target.isContentEditable&&e.target===document.activeElement) return;
             if(e.target.closest('.gl-close,.gl-bg-toggle,.gl-hide')) return;
-            if(e.target.closest('.gl-label')&&e.detail===2) return;  // dblclick to edit
+            // Double-click on an editable label/title focuses it for editing
+            if((e.target.closest('.gl-label')||e.target.closest('.gl-title'))&&e.detail===2) return;
             dragging=true;sx=e.clientX;sy=e.clientY;
             oX=parseFloat(el.style.left)||0;oY=parseFloat(el.style.top)||0;
             document.body.style.cursor='move';e.preventDefault();
@@ -3944,7 +3964,9 @@ function renderGOILegend(plotId){
     // Per-render handlers (re-bind because innerHTML was replaced)
     el.querySelector('.gl-close').onclick=ev=>{ev.stopPropagation();_removeGOILegend(plotId);try{autoSaveSession()}catch(_){}};
     el.querySelector('.gl-bg-toggle').onclick=ev=>{ev.stopPropagation();st.transparent=!st.transparent;renderGOILegend(plotId);try{autoSaveSession()}catch(_){}};
-    el.querySelectorAll('.gl-hide').forEach(btn=>{
+    // Per-row hide buttons — distinguish from the title-hide button by checking
+    // that data-gid is present. Title-hide is handled separately below.
+    el.querySelectorAll('.gl-hide:not(.gl-title-hide)').forEach(btn=>{
         btn.onclick=ev=>{
             ev.stopPropagation();
             const gid=+btn.dataset.gid;
@@ -3954,6 +3976,36 @@ function renderGOILegend(plotId){
             try{autoSaveSession()}catch(_){}
         };
     });
+    // Title-hide button — sets state.title to '' which suppresses the title row
+    const titleHideBtn=el.querySelector('.gl-title-hide');
+    if(titleHideBtn){
+        titleHideBtn.onclick=ev=>{
+            ev.stopPropagation();
+            st.title='';
+            renderGOILegend(plotId);
+            try{autoSaveSession()}catch(_){}
+        };
+    }
+    // Title contenteditable — blur to commit; empty string hides the title
+    const titleEl=el.querySelector('.gl-title');
+    if(titleEl){
+        titleEl.addEventListener('blur',()=>{
+            const txt=titleEl.innerText.trim();
+            const def='Groups of interest';
+            if(!txt){st.title='';renderGOILegend(plotId)}            // hide row entirely
+            else if(txt===def){delete st.title}                       // restore default behaviour (no override)
+            else {st.title=txt}
+            try{autoSaveSession()}catch(_){}
+        });
+        titleEl.addEventListener('keydown',e=>{
+            if(e.key==='Enter'){e.preventDefault();titleEl.blur()}
+            if(e.key==='Escape'){
+                const def='Groups of interest';
+                titleEl.innerText=(st.title!=null)?st.title:def;
+                titleEl.blur();
+            }
+        });
+    }
     el.querySelectorAll('.gl-label').forEach(span=>{
         span.addEventListener('blur',()=>{
             const gid=+span.dataset.gid;
@@ -4914,9 +4966,11 @@ function _legendToSVG(legendEl, ox, oy){
         svg+=`<rect x="0" y="0" width="${w}" height="${h}" rx="${radius}" ry="${radius}" `+
              `fill="${bg}" stroke="${borderColor}" stroke-width="${borderWidth}"/>`;
     }
-    // Title row — use layout offsets within the legend
+    // Title row — use layout offsets within the legend. If the title was
+    // hidden via the per-render guard (state.title === ''), it isn't in the
+    // DOM at all so this query returns null and we skip silently.
     const title=legendEl.querySelector('.gl-title');
-    if(title){
+    if(title&&title.textContent.trim()){
         const tcs=getComputedStyle(title);
         const tfs=parseInt(tcs.fontSize)||11;
         // Title's offset relative to the legend (legend is its offsetParent)
@@ -4929,9 +4983,16 @@ function _legendToSVG(legendEl, ox, oy){
     }
     // Rows: marker SVG + label text
     legendEl.querySelectorAll('.gl-row').forEach(row=>{
-        const marker=row.querySelector('.gl-marker svg');
-        if(marker){
-            const off=_layoutOffsetWithin(marker,legendEl);
+        const markerSpan=row.querySelector('.gl-marker');
+        const marker=markerSpan?markerSpan.querySelector('svg'):null;
+        if(marker&&markerSpan){
+            // SVG elements DON'T have offsetLeft/offsetTop (those are HTML-only).
+            // Read the offset from the wrapping <span class="gl-marker">, which
+            // is an HTML element and IS in the offsetParent chain. Without this
+            // workaround _layoutOffsetWithin returns (0,0) for the SVG marker
+            // → all marker dots stack at the legend's top-left corner, hidden
+            // behind the title row in the export. (v4.15.5 bug, fixed v4.15.6.)
+            const off=_layoutOffsetWithin(markerSpan,legendEl);
             // Marker's inner SVG is already in its own viewBox (0..18); embed
             // verbatim inside a <g> that translates to its layout position.
             svg+=`<g transform="translate(${off.x},${off.y})">${marker.innerHTML}</g>`;

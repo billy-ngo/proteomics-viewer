@@ -3,6 +3,28 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.6] — 2026-05-05
+
+### Fixed — colored marker dots now appear in exported legend
+The v4.15.5 export rendered the legend's title and labels correctly but the colored marker dots all stacked at the legend's top-left corner (visually missing — hidden behind the title row).
+
+Root cause: SVG elements (the `<svg>` inside each `.gl-marker` span) **don't have `offsetLeft` / `offsetTop` / `offsetParent`** — those are HTML-element-only properties. The export's `_layoutOffsetWithin()` walked up the offsetParent chain starting from the SVG marker, hit `undefined` immediately, and returned `(0, 0)` for every marker. Each dot got positioned at the legend's origin, hidden behind the title.
+
+Fix: read the offset from the wrapping `<span class="gl-marker">` (an HTML element with valid offsets) instead of the SVG marker itself. The marker's inner shape is then translated to the span's layout position. In-app rendering was unaffected because the span's CSS positions the SVG via flexbox layout, not absolute coordinates.
+
+### Added — editable / removable legend title
+The "Groups of interest" header is now an editable `contenteditable` element, matching the row labels:
+
+- Click the title to edit; type a custom heading like "Pathway hits" or your project name. Press <kbd>Enter</kbd> to commit, <kbd>Escape</kbd> to revert.
+- Clear the text (type and delete it all, then blur) to **hide the title row entirely** — useful when the legend is purely a colour key for a figure caption that already says what it is.
+- Or click the small × button next to the title to hide it instantly. Restore the title later by typing into the (still draggable) legend body — the title row reappears on the next render.
+- The custom title persists in `state.title` on the legend and round-trips through session save/load and plot duplication. An empty string means "hidden"; `undefined` means "use the default 'Groups of interest'".
+
+CSS now mirrors the `.gl-label` editing affordances: dashed-border on hover, accent-coloured focus highlight via `color-mix(in srgb, var(--accent) 14%, transparent)`. Drag-to-move now skips when the user is actively editing any contenteditable region in the legend (catches both the title and row labels via `e.target.isContentEditable`), so editing doesn't accidentally trigger a drag.
+
+### Export honours the title state
+The PNG/SVG legend export skips the title row entirely if `state.title === ''` or the title element's text is empty — no leftover blank rectangle in the figure.
+
 ## [4.15.5] — 2026-05-05
 
 ### Fixed — GOI legend renders correctly in PNG export, on top of the chart
