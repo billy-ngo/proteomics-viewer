@@ -3,6 +3,11 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.9] — 2026-05-06
+
+### Changed — empty-canvas hint text
+The empty-canvas drop hint now reads "Add a graph from the Visualization tab" instead of "Drop a graph type here or click one from the palette". Drag-and-drop still works; the message just points users to the canonical entry point. Replaced in all four spots that recreate the empty-canvas state (initial render, `resetState()`, `removePlot()` when last plot leaves, and `clearCanvas()`).
+
 ## [4.15.8] — 2026-05-06
 
 ### Fixed — marker color change no longer wipes Groups-of-Interest highlights

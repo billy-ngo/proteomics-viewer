@@ -953,7 +953,7 @@ async function uploadFile(file,append){
         <div id="canvas-toolbar"></div>
         <div id="canvas-viewport">
             <div id="canvas" class="empty-canvas">
-                <div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>
+                <div class="canvas-drop-hint" id="canvas-drop">Add a graph from the Visualization tab</div>
             </div>
         </div>
         <!-- Zoom controls live OUTSIDE #canvas-viewport so they anchor to the
@@ -1455,7 +1455,7 @@ async function fileModalAppend(){
 }
 
 function resetState(){RAW=null;BINS=[];UNASSIGNED=[];ANALYSES=[];DERIVED=[];CANVAS_PLOTS=[];nextBinId=1;nextAnaId=1;nextPlotId=1;SELECTED.clear();
-    document.getElementById('canvas').innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>';
+    document.getElementById('canvas').innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Add a graph from the Visualization tab</div>';
     document.getElementById('canvas').classList.add('empty-canvas');
     document.getElementById('canvas-wrap').classList.add('hidden');document.getElementById('right-welcome').classList.remove('hidden');
     document.getElementById('upload-section').classList.remove('hidden');
@@ -3677,7 +3677,7 @@ function removePlot(plotId){
     updateStatsMethodsPanel();
     if(!CANVAS_PLOTS.length){
         const canvas=document.getElementById('canvas');canvas.classList.add('empty-canvas');
-        canvas.innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>';
+        canvas.innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Add a graph from the Visualization tab</div>';
     }
 }
 // Duplicate a plot in place — preserves config, frozen state, pinned labels,
@@ -5271,7 +5271,7 @@ function _doClearCanvas(){
     const canvas=document.getElementById('canvas');
     if(canvas){
         canvas.classList.add('empty-canvas');
-        canvas.innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Drop a graph type here or click one from the palette</div>';
+        canvas.innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Add a graph from the Visualization tab</div>';
         // Reset the min-height/min-width that drag/resize/addPlot grew over
         // time, so the canvas snaps back to fitting the visible viewport.
         canvas.style.minHeight='';
