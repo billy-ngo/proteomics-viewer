@@ -3,6 +3,26 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.18] — 2026-05-06
+
+### Added — axis color + thickness controls in Graph Settings
+A new **Axes** section in the Graph Settings panel sits between Display and Text. Two controls:
+
+- **Axis color** — same swatch UX as Plot bg / Paper bg / Grid color (click for palette, hover to peek, double-click for OS native picker). Updates `chart.opts.theme.line` so axis lines, tick marks, and axis-break slashes all repaint immediately.
+- **Axis thickness** — `0.5–5 px` slider + numeric input (matches the existing Size / Opacity / Font size pattern). Drives a new chart-level `_axisWidth` property used by the axis line stroke, tick mark stroke, and axis-break slash thickness.
+
+Both controls feed into `chart.relayout({axisColor, axisWidth})`, persist on `cp.config._gsLayout` so they round-trip through every re-render and session save/load, and are restored to their saved values when reopening Graph Settings on a configured plot.
+
+### Fixed — dot plot tick labels no longer leak past the axis break
+The dot plot's X and Y axes both have visual breaks separating the main protein cloud from the unique-only band. Previously, numeric tick labels rendered for the entire axis range — including the unique band region below/left of the break — which contradicted the visual "this axis is discontinuous here" signal. The break tells you "ignore values past this line", but the tick numbers said otherwise.
+
+The chart engine now skips any tick whose value falls past an `_axisBreaks` entry on the corresponding axis. So Y ticks with `value < yBreak` and X ticks with `value < xBreak` are suppressed; the visible tick range matches the visible cloud range. The unique band stays unlabelled (which is correct — the band uses synthetic positions, not real values).
+
+### Fixed — markers near the axis break are no longer clipped
+The break-masking rect (which "erases" the axis line at the break point so the diagonal slashes can sit on top) used to span the FULL plot width for Y breaks (`width="${pw+2}"`) and FULL plot height for X breaks (`height="${ph+2}"`). That meant any data point in the 8 px band along the break got sliced — visible as half-circles next to the break on the dot plot.
+
+The masks now only cover the axis line itself (12 × 8 px for Y breaks, 8 × 12 px for X breaks). The slashes still draw on top to mark the break visually; markers in the plot area remain fully visible.
+
 ## [4.15.17] — 2026-05-06
 
 ### Fixed — GOI legend icon now matches the on-chart marker exactly

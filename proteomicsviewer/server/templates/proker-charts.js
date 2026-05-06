@@ -195,20 +195,37 @@ class ProkerChart {
             svg += `</g>`;
         }
 
-        // Axes lines
+        // Axes lines — colour comes from T.line (settable via Graph Settings
+        // axis colour swatch which writes to opts.theme.line), thickness
+        // from this._axisWidth (settable via Graph Settings axis width input).
+        const axisWidth = this._axisWidth || 1;
         svg += `<g shape-rendering="crispEdges">`;
-        svg += `<line x1="${m.left}" y1="${m.top + ph}" x2="${m.left + pw}" y2="${m.top + ph}" stroke="${T.line}" stroke-width="1"/>`;
-        svg += `<line x1="${m.left}" y1="${m.top}" x2="${m.left}" y2="${m.top + ph}" stroke="${T.line}" stroke-width="1"/>`;
+        svg += `<line x1="${m.left}" y1="${m.top + ph}" x2="${m.left + pw}" y2="${m.top + ph}" stroke="${T.line}" stroke-width="${axisWidth}"/>`;
+        svg += `<line x1="${m.left}" y1="${m.top}" x2="${m.left}" y2="${m.top + ph}" stroke="${T.line}" stroke-width="${axisWidth}"/>`;
         svg += `</g>`;
+
+        // Pre-compute axis-break positions so the tick render below can hide
+        // labels in the discontinuous region. An axis break with `pos` means
+        // "values below pos are part of a separate band (e.g. unique-only
+        // proteins on the dot plot) — those tick numbers don't reflect a
+        // continuous axis, so suppress them". Without this, dot plots show
+        // numeric tick labels in the unique-protein band area, which is
+        // misleading because the axis is broken.
+        const xBreakPositions = (this._axisBreaks || []).filter(b => b.axis === 'x').map(b => b.pos);
+        const yBreakPositions = (this._axisBreaks || []).filter(b => b.axis === 'y').map(b => b.pos);
+        const xBeyondBreak = v => xBreakPositions.some(bp => v < bp);
+        const yBeyondBreak = v => yBreakPositions.some(bp => v < bp);
 
         // X tick marks + labels — suppressed when _hideXTicks is set (1D plots
         // like Unique Protein scatter use meaningless X coords for jitter and
-        // shouldn't show a numeric axis).
+        // shouldn't show a numeric axis). Also suppressed for ticks past an
+        // axis break (dot plot's unique-protein band).
         if (!this._hideXTicks) {
             svg += `<g class="x-ticks">`;
             xTicks.forEach(v => {
+                if (xBeyondBreak(v)) return;
                 const x = Math.round(m.left + xScale(v)) + 0.5;
-                svg += `<line x1="${x}" y1="${m.top + ph}" x2="${x}" y2="${m.top + ph + 5}" stroke="${T.line}" stroke-width="1" shape-rendering="crispEdges"/>`;
+                svg += `<line x1="${x}" y1="${m.top + ph}" x2="${x}" y2="${m.top + ph + 5}" stroke="${T.line}" stroke-width="${axisWidth}" shape-rendering="crispEdges"/>`;
                 svg += `<text x="${x}" y="${m.top + ph + 18}" text-anchor="middle" fill="${T.textSec}" font-size="${tfs}" class="tick-label" data-axis="x" data-val="${v}" style="cursor:pointer">${xFmt(v)}</text>`;
             });
             svg += `</g>`;
@@ -218,8 +235,9 @@ class ProkerChart {
         if (!this._hideYTicks) {
             svg += `<g class="y-ticks">`;
             yTicks.forEach(v => {
+                if (yBeyondBreak(v)) return;
                 const y = Math.round(m.top + yScale(v)) + 0.5;
-                svg += `<line x1="${m.left - 5}" y1="${y}" x2="${m.left}" y2="${y}" stroke="${T.line}" stroke-width="1" shape-rendering="crispEdges"/>`;
+                svg += `<line x1="${m.left - 5}" y1="${y}" x2="${m.left}" y2="${y}" stroke="${T.line}" stroke-width="${axisWidth}" shape-rendering="crispEdges"/>`;
                 svg += `<text x="${m.left - 8}" y="${y + 4}" text-anchor="end" fill="${T.textSec}" font-size="${tfs}" class="tick-label" data-axis="y" data-val="${v}" style="cursor:pointer">${yFmt(v)}</text>`;
             });
             svg += `</g>`;
@@ -464,22 +482,33 @@ class ProkerChart {
         });
         svg += `</g>`;
 
-        // Axis break indicators (double slash marks on axis)
+        // Axis break indicators (double slash marks on axis). The masking
+        // rect only covers the axis line itself near the break — NOT the
+        // whole plot width/height — so markers near the break stay intact.
+        // Previously the rect spanned `pw+2` (Y break) or `ph+2` (X break)
+        // which sliced any data points in that horizontal/vertical band.
+        // Slash thickness scales with axisWidth so they stay visually
+        // proportional when the user makes the axes bolder.
         if (this._axisBreaks && this._axisBreaks.length) {
+            const slashW = Math.max(1.5, axisWidth + 0.5);
             this._axisBreaks.forEach(brk => {
                 if (brk.axis === 'y') {
                     const by = m.top + yScale(brk.pos);
-                    // Double diagonal slash on the Y axis
+                    // Mask the Y axis line at `by` only (12 px wide centred
+                    // on the axis — covers the axis stroke + 5 px tick mark
+                    // to the left). Slashes draw on top to mark the break.
                     const ax = m.left;
-                    svg += `<rect x="${ax-1}" y="${by-4}" width="${pw+2}" height="8" fill="${T.bg || T.plot}"/>`;
-                    svg += `<line x1="${ax-4}" y1="${by+3}" x2="${ax+4}" y2="${by-3}" stroke="${T.line}" stroke-width="1.5"/>`;
-                    svg += `<line x1="${ax-1}" y1="${by+3}" x2="${ax+7}" y2="${by-3}" stroke="${T.line}" stroke-width="1.5"/>`;
+                    svg += `<rect x="${ax-6}" y="${by-4}" width="12" height="8" fill="${T.bg || T.plot}"/>`;
+                    svg += `<line x1="${ax-4}" y1="${by+3}" x2="${ax+4}" y2="${by-3}" stroke="${T.line}" stroke-width="${slashW}"/>`;
+                    svg += `<line x1="${ax-1}" y1="${by+3}" x2="${ax+7}" y2="${by-3}" stroke="${T.line}" stroke-width="${slashW}"/>`;
                 } else if (brk.axis === 'x') {
                     const bx = m.left + xScale(brk.pos);
                     const ay = m.top + ph;
-                    svg += `<rect x="${bx-4}" y="${m.top-1}" width="8" height="${ph+2}" fill="${T.bg || T.plot}"/>`;
-                    svg += `<line x1="${bx-3}" y1="${ay+4}" x2="${bx+3}" y2="${ay-4}" stroke="${T.line}" stroke-width="1.5"/>`;
-                    svg += `<line x1="${bx-3}" y1="${ay+7}" x2="${bx+3}" y2="${ay-1}" stroke="${T.line}" stroke-width="1.5"/>`;
+                    // Mask the X axis line at `bx` only (8 px wide × 12 px
+                    // tall — covers axis stroke + 5 px tick mark below).
+                    svg += `<rect x="${bx-4}" y="${ay-6}" width="8" height="12" fill="${T.bg || T.plot}"/>`;
+                    svg += `<line x1="${bx-3}" y1="${ay+4}" x2="${bx+3}" y2="${ay-4}" stroke="${T.line}" stroke-width="${slashW}"/>`;
+                    svg += `<line x1="${bx-3}" y1="${ay+7}" x2="${bx+3}" y2="${ay-1}" stroke="${T.line}" stroke-width="${slashW}"/>`;
                 }
             });
         }
@@ -1358,6 +1387,11 @@ class ProkerChart {
         if (props.transparentBg !== undefined) this._transparentBg = props.transparentBg;
         if (props.fontSize) this._fontSize = props.fontSize;
         if (props.showRefLines !== undefined) this._showRefLines = props.showRefLines;
+        // Axis style — colour + line thickness (px). User-controllable so
+        // axes can be made bolder for figures or recoloured to match a
+        // theme. Falls back to theme.line and width 1 when unset.
+        if (props.axisColor) this.opts.theme.line = props.axisColor;
+        if (props.axisWidth != null) this._axisWidth = +props.axisWidth || 1;
         this.render();
         return this;
     }

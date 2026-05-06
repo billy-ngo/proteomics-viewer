@@ -564,6 +564,17 @@ async function uploadFile(file,append){
                 <span class="gs-swatch" id="gs-paper-bg-sw" onclick="gsOpenPicker('gs-paper-bg')" onmouseenter="gsOpenPicker('gs-paper-bg')" ondblclick="gsNative('gs-paper-bg')" style="margin-left:auto"></span>
             </div>
         </div>
+        <!-- Axes -->
+        <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Axes</div>
+        <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">
+            <div style="display:flex;align-items:center;gap:6px">
+                <span style="font-size:11px;color:var(--text-sec);flex:1">Axis color</span>
+                <span class="gs-swatch" id="gs-axis-color-sw" onclick="gsOpenPicker('gs-axis-color')" onmouseenter="gsOpenPicker('gs-axis-color')" ondblclick="gsNative('gs-axis-color')" title="Click or hover: swatches, Double-click: picker"></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-sec)">
+                Axis thickness <input type="range" id="gs-axis-width" min="0.5" max="5" step="0.5" value="1" style="flex:1" title="Axis line + tick mark thickness in pixels"> <input type="number" id="gs-axis-width-num" min="0.5" max="10" step="0.5" value="1" style="width:40px;font-size:11px;padding:2px;text-align:center">
+            </div>
+        </div>
         <!-- Text -->
         <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Text</div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;font-size:11px;color:var(--text-sec)">
@@ -577,6 +588,7 @@ async function uploadFile(file,append){
     <input type="color" id="gs-plot-bg" value="#161b22" style="display:none">
     <input type="color" id="gs-paper-bg" value="#0d1117" style="display:none">
     <input type="color" id="gs-grid-color" value="#21262d" style="display:none">
+    <input type="color" id="gs-axis-color" value="#30363d" style="display:none">
 </div>
 
 <div id="export-panel" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
@@ -6967,13 +6979,17 @@ function applyGraphSettings(){
     const showFClines=document.getElementById('gs-show-fc-lines')?.checked!==false;
     const showFDRline=document.getElementById('gs-show-fdr-line')?.checked!==false;
     const showEllipses=document.getElementById('gs-show-ellipses')?.checked!==false;
+    // Axis colour + thickness — controls go straight onto layoutOverride so
+    // they round-trip through cp.config._gsLayout like the other layout props.
+    const axisColor=document.getElementById('gs-axis-color').value;
+    const axisWidth=parseFloat(document.getElementById('gs-axis-width').value)||1;
     // Build the persisted overrides up front so we can stash them on each
     // plot's config and reapply on every future render. Without this, every
     // re-render (filter change, freeze toggle, session reload, plot duplicate)
     // calls build*Config which rebuilds traces/layout from scratch and silently
     // wipes the user's Graph Settings choices.
     const markerOverride={size,symbol:shape,color,opacity,hollow,outline,outlineColor};
-    const layoutOverride={plotBg:showPlotBg?plotBg:null,paperBg:showPaperBg?paperBg:null,gridColor,showGrid,showRefLines:showThresholds,transparentBg:!showPaperBg&&!showPlotBg,fontSize};
+    const layoutOverride={plotBg:showPlotBg?plotBg:null,paperBg:showPaperBg?paperBg:null,gridColor,showGrid,showRefLines:showThresholds,transparentBg:!showPaperBg&&!showPlotBg,fontSize,axisColor,axisWidth};
     // Capture per-plot BEFORE state for undo. We snapshot _gsMarker, _gsLayout,
     // and the threshold/ellipses flags — exactly what gets mutated below — so
     // the undo entry can roll the plot back to its prior styling. Per-plot
@@ -7928,14 +7944,15 @@ function gsSync(sliderId,numId,transform){
 gsSync('gs-dot-size','gs-dot-size-num');
 gsSync('gs-dot-opacity','gs-dot-opacity-num');
 gsSync('gs-font-size','gs-font-size-num');
+gsSync('gs-axis-width','gs-axis-width-num');
 document.getElementById('gs-dot-shape').addEventListener('change',applyGraphSettings);
 // Hidden color inputs — triggered by swatch picker or native
-['gs-dot-color','gs-outline-color','gs-plot-bg','gs-paper-bg','gs-grid-color'].forEach(id=>{
+['gs-dot-color','gs-outline-color','gs-plot-bg','gs-paper-bg','gs-grid-color','gs-axis-color'].forEach(id=>{
     document.getElementById(id).addEventListener('input',function(){gsUpdateSwatches();applyGraphSettings()});
 });
 
 function gsUpdateSwatches(){
-    const ids=['gs-dot-color','gs-outline-color','gs-plot-bg','gs-paper-bg','gs-grid-color'];
+    const ids=['gs-dot-color','gs-outline-color','gs-plot-bg','gs-paper-bg','gs-grid-color','gs-axis-color'];
     ids.forEach(id=>{const sw=document.getElementById(id+'-sw');const inp=document.getElementById(id);if(sw&&inp)sw.style.background=inp.value});
 }
 function gsOpenPicker(inputId){
@@ -8013,6 +8030,10 @@ function openGraphSettingsForPlot(plotId){
     const livePlotBg = theme.plot || '#161b22';
     const livePaperBg= theme.bg   || '#0d1117';
     const liveGridColor = theme.grid || '#21262d';
+    // Axis colour comes from theme.line (which relayout writes to when the
+    // axisColor prop is set). Width is on the chart instance.
+    const liveAxisColor = theme.line || '#30363d';
+    const liveAxisWidth = (chart&&chart._axisWidth) || 1;
     const liveFontSize = chart&&chart._fontSize || 12;
     const liveShowGrid = chart ? (chart._showGrid !== false) : true;
     const liveShowPlotBg  = chart ? !chart._hidePlotBg  : true;
@@ -8020,6 +8041,8 @@ function openGraphSettingsForPlot(plotId){
     const plotBg=cfgL.plotBg||livePlotBg;
     const paperBg=cfgL.paperBg||livePaperBg;
     const gridColor=cfgL.gridColor||liveGridColor;
+    const axisColor=cfgL.axisColor||liveAxisColor;
+    const axisWidth=cfgL.axisWidth!=null?cfgL.axisWidth:liveAxisWidth;
     const fontSize=cfgL.fontSize||liveFontSize;
     const showGrid=cfgL.showGrid!==undefined?cfgL.showGrid:liveShowGrid;
     // For show*Bg we infer from cfgL.plotBg/paperBg being explicitly null
@@ -8029,6 +8052,9 @@ function openGraphSettingsForPlot(plotId){
     document.getElementById('gs-plot-bg').value = plotBg;
     document.getElementById('gs-paper-bg').value= paperBg;
     document.getElementById('gs-grid-color').value=gridColor;
+    document.getElementById('gs-axis-color').value=axisColor;
+    document.getElementById('gs-axis-width').value=axisWidth;
+    document.getElementById('gs-axis-width-num').value=axisWidth;
     document.getElementById('gs-show-grid').checked=showGrid;
     document.getElementById('gs-show-plotbg').checked=showPlotBg;
     document.getElementById('gs-show-paperbg').checked=showPaperBg;
