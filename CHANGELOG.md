@@ -3,6 +3,29 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.11] — 2026-05-06
+
+### Fixed — chart and axis titles no longer clipped when the plot is shrunk
+Long titles (chart title, X-axis title, Y-axis title) used to render at their fixed font size and silently overflow the SVG bounds when the plot card was made smaller. The result was titles cut off mid-word at the chart's left/right edge — visible in earlier screenshots where the volcano plot's Y-axis title "RpoC swarmer log2(RpoC swarmer / WT swarmer) enriched in WT swarmer" was clipped at the top edge.
+
+All three title types now **auto-shrink to fit** the available space:
+
+1. Measure the title's rendered width via a hidden `<canvas>` 2D context (`measureText`), accurate to the actual font and string.
+2. If the title fits at the base font size (`fs+1` for chart title, `fs` for axis titles), render as-is.
+3. Otherwise progressively shrink the font in 0.5 px steps down to a 8 px minimum until it fits.
+4. If the title still doesn't fit at minimum size, **truncate with "…"** via binary-search for the longest fitting prefix.
+
+Each title also carries an `<svg:title>` child element with the full untruncated text — modern browsers show this as a hover tooltip, so the user can still read the original title even when it's been shrunk or truncated.
+
+Available width per title:
+- Chart title (top, centred): plot width `pw`.
+- X-axis title (bottom, centred): plot width `pw`.
+- Y-axis title (rotated −90°, left): plot height `ph` (after rotation, the text extends along the chart's vertical axis).
+
+A 3 px safety pad on each side prevents anti-aliasing/kerning from pushing rendered glyphs over the edge.
+
+The `<svg:title>` tooltip carries the full text into PNG/SVG exports too — when you hover a clipped axis title in an exported SVG opened in a browser, the original full label is still revealed.
+
 ## [4.15.10] — 2026-05-06
 
 ### Fixed — +Text now actually does something visible
