@@ -4092,6 +4092,26 @@ function renderPlot(p,qd,fidx){
         chart.render();
     }
 
+    // Re-apply persisted Graph Settings (marker style + layout) after
+    // build*Config has run. Without this, every re-render reverts the
+    // user's chosen colour, size, shape, opacity, hollow, plot/paper
+    // background, grid colour, font size, threshold-line visibility, etc.
+    // because build*Config rebuilds traces/layout from scratch each time.
+    if(p.config&&p.config._gsLayout) chart.relayout(p.config._gsLayout);
+    if(p.config&&p.config._gsMarker) chart.restyle(p.config._gsMarker);
+    // Per-axis FC / FDR threshold-line visibility (in addition to the
+    // master showThresholds toggle which build*Config already honours).
+    if(chart._refLines&&p.config){
+        const showFC =p.config.showFClines!==false;
+        const showFDR=p.config.showFDRline!==false;
+        let touched=false;
+        chart._refLines.forEach(rl=>{
+            if(rl.axis==='x'&&!showFC){rl._hidden=true;touched=true}
+            if(rl.axis==='y'&&!showFDR){rl._hidden=true;touched=true}
+        });
+        if(touched) chart.render();
+    }
+
     chart.on('dblclick',()=>openGraphSettingsForPlot(p.plotId));
     chart.on('resetcolors',()=>{p._forceUpdate=true;const{data:q}=getQData();renderPlot(p,q,getFilteredIdx())});
     chart.on('freeze',()=>freezePlot(p.plotId));
@@ -6236,19 +6256,34 @@ function applyGraphSettings(){
     const showFClines=document.getElementById('gs-show-fc-lines')?.checked!==false;
     const showFDRline=document.getElementById('gs-show-fdr-line')?.checked!==false;
     const showEllipses=document.getElementById('gs-show-ellipses')?.checked!==false;
+    // Build the persisted overrides up front so we can stash them on each
+    // plot's config and reapply on every future render. Without this, every
+    // re-render (filter change, freeze toggle, session reload, plot duplicate)
+    // calls build*Config which rebuilds traces/layout from scratch and silently
+    // wipes the user's Graph Settings choices.
+    const markerOverride={size,symbol:shape,color,opacity,hollow};
+    const layoutOverride={plotBg:showPlotBg?plotBg:null,paperBg:showPaperBg?paperBg:null,gridColor,showGrid,showRefLines:showThresholds,transparentBg:!showPaperBg&&!showPlotBg,fontSize};
     gsTargetPlots.forEach(plotId=>{
         const chart=CHARTS[plotId];if(!chart)return;
-        chart.restyle({size,symbol:shape,color,opacity,hollow});
+        chart.restyle(markerOverride);
         if(chart._refLines&&showThresholds){
             chart._refLines.forEach(rl=>{
                 if(rl.axis==='x') rl._hidden=!showFClines;
                 if(rl.axis==='y') rl._hidden=!showFDRline;
             });
         }
-        chart.relayout({plotBg:showPlotBg?plotBg:null,paperBg:showPaperBg?paperBg:null,gridColor,showGrid,showRefLines:showThresholds,transparentBg:!showPaperBg&&!showPlotBg,fontSize});
+        chart.relayout(layoutOverride);
         const cp=CANVAS_PLOTS.find(c=>c.plotId===plotId);
         if(cp&&cp.config){
-            cp.config.showThresholds=showThresholds;cp.config.showFClines=showFClines;cp.config.showFDRline=showFDRline;
+            // PERSISTENCE — these get re-applied in renderPlot after every
+            // build*Config call, so the user's tweaks survive any future render.
+            // They live on cp.config (which session-save serialises whole), so
+            // they round-trip through reload and plot duplication for free.
+            cp.config._gsMarker=Object.assign({},markerOverride);
+            cp.config._gsLayout=Object.assign({},layoutOverride);
+            cp.config.showThresholds=showThresholds;
+            cp.config.showFClines=showFClines;
+            cp.config.showFDRline=showFDRline;
             if(cp.type==='pca'){
                 cp.config.showEllipses=showEllipses;
                 cp._forceUpdate=true;
@@ -6256,6 +6291,7 @@ function applyGraphSettings(){
             }
         }
     });
+    try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
 }
 
 // Remove old Plotly-dependent functions

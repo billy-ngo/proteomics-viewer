@@ -1214,12 +1214,23 @@ class ProkerChart {
 
     // ── Restyle (for graph settings) ─────────────────────────────
     restyle(props) {
-        const applyColor = props.color && this.traces.length === 1 && !Array.isArray(this.traces[0]?.marker?.color);
+        // Apply COLOR unconditionally to every trace — overwriting any
+        // per-point color array that build*Config produced. The user
+        // explicitly chose this colour in Graph Settings; respecting it
+        // is more important than preserving categorical defaults (those
+        // can be restored by re-rendering the plot from its config).
+        // Per-point _colorOverrides (right-click → Color selected) still
+        // win over this in the render loop, so individual highlights are
+        // not lost.
+        // Old condition `traces.length === 1 && !Array.isArray(...)`
+        // silently ignored colour changes for volcano (3 traces: ns/up/down),
+        // dot plots (per-point colour arrays), and PCA (per-group traces) —
+        // i.e. essentially every plot type. That was the marker-colour bug.
         this.traces.forEach(trace => {
             if (!trace.marker) trace.marker = {};
             if (props.size != null) trace.marker.size = props.size;
             if (props.symbol) trace.marker.symbol = props.symbol;
-            if (applyColor) trace.marker.color = props.color;
+            if (props.color) trace.marker.color = props.color;
             if (props.opacity != null) trace.marker.opacity = props.opacity;
             if (props.hollow !== undefined) trace.marker._hollow = props.hollow;
         });

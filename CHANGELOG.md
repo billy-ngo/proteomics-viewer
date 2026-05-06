@@ -3,6 +3,61 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.7] — 2026-05-06
+
+### Fixed — Graph Settings marker colour now actually applies
+The colour picker in Graph Settings was silently ignored on essentially every plot type. The bug was an over-restrictive condition in `proker-charts.js`'s `restyle()`:
+
+```js
+// BEFORE — colour only applied when ALL of:
+//   props.color is truthy
+//   AND there's exactly ONE trace
+//   AND traces[0].marker.color is NOT an array
+const applyColor = props.color && this.traces.length === 1 &&
+                   !Array.isArray(this.traces[0]?.marker?.color);
+```
+
+This skipped colour changes for:
+- **Volcano plots** — 3 traces (`ns`, `up`, `down`) → `traces.length === 1` is false → skip
+- **Dot plots** — per-point colour arrays → `Array.isArray(...)` is true → skip
+- **PCA** — per-group traces → multiple traces → skip
+- **Enrichment / unique / abundance** — per-point colour arrays → skip
+
+I.e. **almost every plot type silently ignored the user's colour pick**. Fix: apply `trace.marker.color = props.color` to every trace unconditionally. Per-point overrides set via right-click → "Color selected" still take precedence in the render loop, so individual highlights are preserved.
+
+### Fixed — Graph Settings now persist across re-renders, session reload, plot duplication, and export
+Every Graph Settings option (marker size / shape / colour / opacity / hollow, plot background, paper background, grid colour, grid visibility, font size, threshold-line visibility per axis) was being silently wiped on every re-render. Root cause: `chart.restyle()` and `chart.relayout()` mutate the live chart instance, but on the next call to `renderPlot()` (triggered by filter changes, freeze toggles, session reload, plot duplication, or any data refresh), `build*Config` rebuilds `this.traces` and resets layout flags (`_fontSize`, `_showGrid`, `_hidePlotBg`, etc.) from scratch — discarding the user's tweaks.
+
+Fix mirrors the title-edit persistence from v4.15.4:
+- `applyGraphSettings()` now stores the chosen values on the plot's config:
+  - `cp.config._gsMarker = {size, symbol, color, opacity, hollow}`
+  - `cp.config._gsLayout = {plotBg, paperBg, gridColor, showGrid, showRefLines, transparentBg, fontSize}`
+- `renderPlot()` re-applies these via `chart.relayout()` + `chart.restyle()` immediately after `build*Config` runs.
+- Per-axis FC / FDR threshold-line visibility (which was already persisted as `cp.config.showFClines` / `showFDRline`) is now also re-applied to `chart._refLines` after every render.
+- `applyGraphSettings()` triggers an autosave so the change is captured immediately.
+
+Because `_gsMarker` and `_gsLayout` live on `cp.config` (which the session save serialises whole), all Graph Settings round-trip through reload and plot duplication automatically — no extra plumbing.
+
+### Side effect — exports now reflect the user's Graph Settings
+Both export paths (canvas-as-is and graphs-separately, SVG and PNG) take the chart's currently-rendered SVG verbatim. With Graph Settings now persisting through the chart's render output, the exported figure shows the user's chosen colours, sizes, shapes, opacity, hollow markers, font size, plot/paper backgrounds, grid colour, grid visibility, and threshold-line visibility — exactly as displayed on screen.
+
+### Audit summary
+| Option | Applies live | Persists on re-render | In export | Verdict |
+|---|---|---|---|---|
+| Marker color | ✅ (was ❌) | ✅ (was ❌) | ✅ (was ❌) | Fixed |
+| Marker size | ✅ | ✅ (was ❌) | ✅ | Fixed |
+| Marker shape | ✅ | ✅ (was ❌) | ✅ | Fixed |
+| Marker opacity | ✅ | ✅ (was ❌) | ✅ | Fixed |
+| Hollow markers | ✅ | ✅ (was ❌) | ✅ | Fixed |
+| Plot background | ✅ | ✅ (was ❌) | ✅ | Fixed |
+| Paper background | ✅ | ✅ (was ❌) | ✅ | Fixed |
+| Grid colour | ✅ | ✅ (was ❌) | ✅ | Fixed |
+| Grid visibility | ✅ | ✅ (was ❌) | ✅ | Fixed |
+| Font size | ✅ | ✅ (was ❌) | ✅ | Fixed |
+| Threshold lines (master) | ✅ | ✅ (already worked) | ✅ | Already correct |
+| Threshold lines (per-axis FC/FDR) | ✅ | ✅ (was ❌) | ✅ | Fixed |
+| Confidence ellipses (PCA) | ✅ | ✅ (already worked) | ✅ | Already correct |
+
 ## [4.15.6] — 2026-05-05
 
 ### Fixed — colored marker dots now appear in exported legend
