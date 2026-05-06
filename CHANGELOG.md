@@ -3,6 +3,42 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.15] — 2026-05-06
+
+### Added — robust undo/redo across every canvas action
+Undo/Redo previously existed only as a partial scaffold: a few action types worked (move plot, add label, recolor points), several were stubs (`addPlot` redo was a TODO comment, `removePlot` was a no-op, `addTextBox/addLine` redo did nothing), and many user actions weren't tracked at all (Graph Settings, plot resize, title edits, title drags, freeze, plot rename, shape annotations).
+
+The whole system has been refactored around a snapshot-based action log. Every entry stores enough state to roll forward AND back, an internal `_suppressUndo` flag prevents apply-step from itself recording new entries, and the keyboard handler now also bails out when the user is typing in a contenteditable so `Ctrl+Z` inside a text annotation behaves like normal text undo.
+
+Tracked actions and the state captured for each:
+
+| Action | Tracked state |
+|---|---|
+| `addPlot` (also fired on duplicate) | full plot snapshot — undo removes the plot, redo recreates it byte-for-byte |
+| `removePlot` (the × button) | full plot snapshot — undo rebuilds the plot at its exact prior position with all annotations, color overrides, GOI legend, axis ranges, title positions, and Graph Settings restored |
+| `moveGraph` | old/new left/top |
+| `resizePlot` | old/new width/height |
+| `axisRange` | old/new X and Y ranges (covers right-click drag-zoom, "Edit X/Y range" menu, AND reset-zoom — emitted via the chart's new `rangechange` event) |
+| `graphSettings` | per-plot before/after of `_gsMarker`, `_gsLayout`, threshold flags, ellipses flag — restoring also runs `renderPlot` so the chart fully re-paints |
+| `titleEdit` | kind (chart/xaxis/yaxis), old/new text |
+| `titleDrag` | which (`_titlePos` / `_xTitlePos` / `_yTitlePos`), old/new positions — emitted via the chart's new `titlemove` event |
+| `renamePlot` | old/new title (the inline title input) |
+| `freezePlot` | old/new frozen state |
+| `addLabel` / `removeLabel` | the annotation object |
+| `colorPoints` | the per-point color overrides |
+| `addAnno` / `removeAnno` | full text-box / line / shape snapshot — undo of an add removes the annotation, undo of a delete recreates it with all styling preserved |
+
+The toolbar now includes **Undo** and **Redo** buttons that mirror the keyboard shortcuts. Buttons disable when their stack is empty, and tooltips show the next action that will be undone or redone (e.g. "Undo: graphSettings (Ctrl+Z)") so users can verify before clicking.
+
+A snapshot helper `_snapshotPlot(plotId)` deep-clones plot config (including `_chartState`, `_gsMarker`, `_gsLayout`, `_titleOverrides`), card position+size, chart annotations, and color overrides — used by both `removePlot` undo capture and the duplicate-plot redo path. The matching `_restorePlotFromSnapshot(snap)` rebuilds the card, runs `renderPlot`, and reapplies the captured chart state (axis ranges, title positions, annotations, color overrides).
+
+Annotation snapshots support text boxes, lines, and shapes — all three kinds round-trip through `_snapshotCanvasAnno` / `_restoreCanvasAnno` with their full styling preserved (color, font, dash pattern, arrow, fill, etc.).
+
+### Removed — Y-axis title and X/Y tick labels on the Unique Protein 1D scatter
+The Unique Protein scatter is a 1D plot — the X coordinate is just jitter for visual spread and carries no meaning, and the Y axis shows abundance values that are already readable from the hover tooltip. The numeric tick labels on both axes and the redundant "Abundance (group)" Y title added visual noise without information.
+
+`buildUniqueConfig` now sets two new chart flags (`_hideXTicks`, `_hideYTicks`) and clears both axis titles. The chart engine skips the entire X-tick and Y-tick render groups when these flags are set. Other plot types (volcano, dotplot, PCA, abundance, enrichment) are unaffected — the flags default to off everywhere else.
+
 ## [4.15.14] — 2026-05-06
 
 ### Fixed — X-axis range survives every re-render path

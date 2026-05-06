@@ -201,23 +201,29 @@ class ProkerChart {
         svg += `<line x1="${m.left}" y1="${m.top}" x2="${m.left}" y2="${m.top + ph}" stroke="${T.line}" stroke-width="1"/>`;
         svg += `</g>`;
 
-        // X tick marks + labels
-        svg += `<g class="x-ticks">`;
-        xTicks.forEach(v => {
-            const x = Math.round(m.left + xScale(v)) + 0.5;
-            svg += `<line x1="${x}" y1="${m.top + ph}" x2="${x}" y2="${m.top + ph + 5}" stroke="${T.line}" stroke-width="1" shape-rendering="crispEdges"/>`;
-            svg += `<text x="${x}" y="${m.top + ph + 18}" text-anchor="middle" fill="${T.textSec}" font-size="${tfs}" class="tick-label" data-axis="x" data-val="${v}" style="cursor:pointer">${xFmt(v)}</text>`;
-        });
-        svg += `</g>`;
+        // X tick marks + labels — suppressed when _hideXTicks is set (1D plots
+        // like Unique Protein scatter use meaningless X coords for jitter and
+        // shouldn't show a numeric axis).
+        if (!this._hideXTicks) {
+            svg += `<g class="x-ticks">`;
+            xTicks.forEach(v => {
+                const x = Math.round(m.left + xScale(v)) + 0.5;
+                svg += `<line x1="${x}" y1="${m.top + ph}" x2="${x}" y2="${m.top + ph + 5}" stroke="${T.line}" stroke-width="1" shape-rendering="crispEdges"/>`;
+                svg += `<text x="${x}" y="${m.top + ph + 18}" text-anchor="middle" fill="${T.textSec}" font-size="${tfs}" class="tick-label" data-axis="x" data-val="${v}" style="cursor:pointer">${xFmt(v)}</text>`;
+            });
+            svg += `</g>`;
+        }
 
-        // Y tick marks + labels
-        svg += `<g class="y-ticks">`;
-        yTicks.forEach(v => {
-            const y = Math.round(m.top + yScale(v)) + 0.5;
-            svg += `<line x1="${m.left - 5}" y1="${y}" x2="${m.left}" y2="${y}" stroke="${T.line}" stroke-width="1" shape-rendering="crispEdges"/>`;
-            svg += `<text x="${m.left - 8}" y="${y + 4}" text-anchor="end" fill="${T.textSec}" font-size="${tfs}" class="tick-label" data-axis="y" data-val="${v}" style="cursor:pointer">${yFmt(v)}</text>`;
-        });
-        svg += `</g>`;
+        // Y tick marks + labels — same _hideYTicks toggle for symmetry.
+        if (!this._hideYTicks) {
+            svg += `<g class="y-ticks">`;
+            yTicks.forEach(v => {
+                const y = Math.round(m.top + yScale(v)) + 0.5;
+                svg += `<line x1="${m.left - 5}" y1="${y}" x2="${m.left}" y2="${y}" stroke="${T.line}" stroke-width="1" shape-rendering="crispEdges"/>`;
+                svg += `<text x="${m.left - 8}" y="${y + 4}" text-anchor="end" fill="${T.textSec}" font-size="${tfs}" class="tick-label" data-axis="y" data-val="${v}" style="cursor:pointer">${yFmt(v)}</text>`;
+            });
+            svg += `</g>`;
+        }
 
         // Chart title (centered, draggable). Renders at the user's chosen font
         // size in full — long titles are intentionally allowed to extend past
@@ -531,12 +537,25 @@ class ProkerChart {
         // Draggable text elements (titles) — drag to move, click to edit
         svg.querySelectorAll('.draggable-text').forEach(el => {
             let dragging = false, startMX, startMY, origX, origY, moved = false;
+            // Snapshot of the position BEFORE this drag starts. Used in onUp
+            // to emit a 'titlemove' event with the old/new positions so
+            // index.html can record an undoable entry.
+            let oldPos = null;
             el.addEventListener('mousedown', e => {
                 e.stopPropagation();
                 dragging = true; moved = false;
                 startMX = e.clientX; startMY = e.clientY;
                 origX = parseFloat(el.getAttribute('x'));
                 origY = parseFloat(el.getAttribute('y'));
+                // Capture which property holds this title's saved position
+                // and its current value (or null = no override yet).
+                if (el.classList.contains('chart-title')) {
+                    oldPos = this._titlePos ? {...this._titlePos} : null;
+                } else if (el.dataset.axis === 'x') {
+                    oldPos = this._xTitlePos ? {...this._xTitlePos} : null;
+                } else if (el.dataset.axis === 'y') {
+                    oldPos = this._yTitlePos ? {...this._yTitlePos} : null;
+                }
                 document.body.style.cursor = 'move';
             });
             const onMove = e => {
@@ -557,14 +576,20 @@ class ProkerChart {
                 const nx = parseFloat(el.getAttribute('x'));
                 const ny = parseFloat(el.getAttribute('y'));
                 // Save position
-                if (el.classList.contains('chart-title')) this._titlePos = {x:nx,y:ny};
-                else if (el.dataset.axis === 'x') this._xTitlePos = {x:nx,y:ny};
-                else if (el.dataset.axis === 'y') this._yTitlePos = {x:nx,y:ny};
+                let which = null;
+                if (el.classList.contains('chart-title')) { this._titlePos = {x:nx,y:ny}; which = '_titlePos'; }
+                else if (el.dataset.axis === 'x') { this._xTitlePos = {x:nx,y:ny}; which = '_xTitlePos'; }
+                else if (el.dataset.axis === 'y') { this._yTitlePos = {x:nx,y:ny}; which = '_yTitlePos'; }
                 // If didn't move much, treat as click → edit and select
                 if (!moved || (Math.abs(e.clientX-startMX)<3 && Math.abs(e.clientY-startMY)<3)) {
                     this._emit('titleselect', { element: el });
                     if (el.classList.contains('chart-title')) this._editChartTitle(el);
                     else this._editAxisTitle(el);
+                } else if (which) {
+                    // Real drag — emit titlemove for undo tracking
+                    const newPos = {x:nx,y:ny};
+                    const same = oldPos && Math.abs(oldPos.x-nx)<1 && Math.abs(oldPos.y-ny)<1;
+                    if (!same) this._emit('titlemove', { which, oldPos, newPos });
                 }
             };
             this._onDoc('mousemove', onMove);
@@ -966,14 +991,16 @@ class ProkerChart {
             const oldY = this.yRange ? [...this.yRange] : null;
             if (axis === 'x') this.setXRange(mn, mx); else this.setYRange(mn, mx);
             this._zoomed = true;
-            if (typeof pushUndo === 'function') {
-                pushUndo('axisRange', {
-                    plotId: this.container?.id,
-                    oldX, oldY,
-                    newX: this.xRange ? [...this.xRange] : null,
-                    newY: this.yRange ? [...this.yRange] : null
-                });
-            }
+            // Emit rangechange — index.html's chart.on('rangechange') listener
+            // pushes the undo entry. Was previously a direct pushUndo call
+            // here, but the event-based path keeps all undo pushes in one
+            // place (the renderPlot wiring) which is cleaner and avoids
+            // double-push scenarios.
+            this._emit('rangechange', {
+                oldX, oldY,
+                newX: this.xRange ? [...this.xRange] : null,
+                newY: this.yRange ? [...this.yRange] : null
+            });
             this.render();
         };
         div.querySelector('.range-apply').onclick = commit;
@@ -1073,18 +1100,24 @@ class ProkerChart {
 
     _zoomToSelection() {
         const s = this._selState;
+        const oldX = this.xRange ? [...this.xRange] : null;
+        const oldY = this.yRange ? [...this.yRange] : null;
         this.xRange = [s.x0, s.x1]; this._xManual = true;
         this.yRange = [s.y0, s.y1]; this._yManual = true;
         this._zoomed = true;
+        this._emit('rangechange', { oldX, oldY, newX: [...this.xRange], newY: [...this.yRange] });
         this.render();
     }
 
     _resetZoom() {
+        const oldX = this.xRange ? [...this.xRange] : null;
+        const oldY = this.yRange ? [...this.yRange] : null;
         this.xRange = null;
         this.yRange = null;
         this._xManual = false;
         this._yManual = false;
         this._zoomed = false;
+        this._emit('rangechange', { oldX, oldY, newX: null, newY: null });
         this.render();
     }
 

@@ -997,30 +997,266 @@ var CHARTS={};
 var PROKER_VERSION='4.10.1';
 
 // ── Undo/Redo system ──
-var undoStack=[], redoStack=[], MAX_UNDO=50;
+// Action-based history. Every user-initiated change pushes an entry with
+// enough state to reverse AND replay. Internal flag _suppressUndo prevents
+// the apply step from itself pushing new entries (which would create loops).
+var undoStack=[], redoStack=[], MAX_UNDO=100;
+var _suppressUndo=false;
 function pushUndo(action,data){
+    if(_suppressUndo) return;
     undoStack.push({action,data,ts:Date.now()});
     if(undoStack.length>MAX_UNDO) undoStack.shift();
     redoStack=[];
+    _refreshUndoButtons();
 }
 function performUndo(){
     if(!undoStack.length)return;
     const entry=undoStack.pop();
     redoStack.push(entry);
-    applyUndoEntry(entry,false);
+    _suppressUndo=true;
+    try{applyUndoEntry(entry,false)}
+    catch(e){console.error('Undo failed for',entry.action,e)}
+    finally{_suppressUndo=false}
+    try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
+    _refreshUndoButtons();
 }
 function performRedo(){
     if(!redoStack.length)return;
     const entry=redoStack.pop();
     undoStack.push(entry);
-    applyUndoEntry(entry,true);
+    _suppressUndo=true;
+    try{applyUndoEntry(entry,true)}
+    catch(e){console.error('Redo failed for',entry.action,e)}
+    finally{_suppressUndo=false}
+    try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
+    _refreshUndoButtons();
 }
+// Refresh enabled/disabled state of toolbar Undo/Redo buttons + their tooltips
+function _refreshUndoButtons(){
+    const ub=document.getElementById('tb-undo');
+    const rb=document.getElementById('tb-redo');
+    if(ub){
+        ub.disabled=!undoStack.length;
+        ub.style.opacity=undoStack.length?'1':'0.4';
+        ub.title=undoStack.length?('Undo: '+(undoStack[undoStack.length-1].action)+' (Ctrl+Z)'):'Nothing to undo';
+    }
+    if(rb){
+        rb.disabled=!redoStack.length;
+        rb.style.opacity=redoStack.length?'1':'0.4';
+        rb.title=redoStack.length?('Redo: '+(redoStack[redoStack.length-1].action)+' (Ctrl+Y)'):'Nothing to redo';
+    }
+}
+// ── Snapshot helpers — capture/restore a full plot card ──
+// _snapshotPlot dumps everything needed to recreate a plot byte-for-byte:
+// plot entry (id/type/config/title/frozen/goiLegend), card position+size,
+// chart annotations, colorOverrides, and the chart-instance state (axis
+// ranges, title drag positions). _chartState lives on cp.config so it
+// survives the snapshot via the JSON deep-copy of config.
+function _snapshotPlot(plotId){
+    const p=CANVAS_PLOTS.find(c=>c.plotId===plotId);
+    if(!p) return null;
+    const card=document.getElementById('card-'+plotId);
+    const chart=CHARTS[plotId];
+    // Sync live chart state into p.config._chartState so the deep-clone below
+    // captures the latest zoom / title drag positions.
+    if(chart){
+        if(!p.config._chartState) p.config._chartState={};
+        const cs=p.config._chartState;
+        if(Array.isArray(chart.xRange)) cs.xRange=[...chart.xRange]; else delete cs.xRange;
+        if(Array.isArray(chart.yRange)) cs.yRange=[...chart.yRange]; else delete cs.yRange;
+        if(chart._xManual) cs.xManual=true; else delete cs.xManual;
+        if(chart._yManual) cs.yManual=true; else delete cs.yManual;
+        if(chart._zoomed)  cs.zoomed=true;  else delete cs.zoomed;
+        if(chart._titlePos)  cs.titlePos ={...chart._titlePos };  else delete cs.titlePos;
+        if(chart._xTitlePos) cs.xTitlePos={...chart._xTitlePos}; else delete cs.xTitlePos;
+        if(chart._yTitlePos) cs.yTitlePos={...chart._yTitlePos}; else delete cs.yTitlePos;
+    }
+    return {
+        plotEntry: JSON.parse(JSON.stringify({
+            id: p.id,
+            type: p.type,
+            config: p.config,
+            plotId: p.plotId,
+            title: p.title,
+            frozen: p.frozen||false,
+            goiLegend: p.goiLegend||null,
+        })),
+        position: card?{
+            left: card.style.left||'',
+            top: card.style.top||'',
+            width: card.style.width||(card.offsetWidth?card.offsetWidth+'px':'700px'),
+            height: card.style.height||(card.offsetHeight?card.offsetHeight+'px':'420px'),
+        }:null,
+        annotations: chart&&Array.isArray(chart.annotations)?JSON.parse(JSON.stringify(chart.annotations)):[],
+        colorOverrides: chart&&Array.isArray(chart._colorOverrides)?JSON.parse(JSON.stringify(chart._colorOverrides)):[],
+    };
+}
+// Recreate a plot from a snapshot. Used by undo of removePlot and redo of
+// addPlot. Mirrors loadSession's plot-restore logic.
+function _restorePlotFromSnapshot(snap){
+    if(!snap||!snap.plotEntry) return;
+    const p=JSON.parse(JSON.stringify(snap.plotEntry));
+    CANVAS_PLOTS.push(p);
+    const canvas=document.getElementById('canvas');
+    canvas.classList.remove('empty-canvas');
+    document.getElementById('canvas-drop')?.remove();
+    document.getElementById('right-welcome')?.classList.add('hidden');
+    const wrap=document.getElementById('canvas-wrap');
+    if(wrap){wrap.classList.remove('hidden');wrap.style.display='flex'}
+    canvas.style.position='relative';
+    const pw=document.createElement('div');
+    pw.className='canvas-plot';
+    pw.id='card-'+p.plotId;
+    pw.style.position='absolute';
+    if(snap.position){
+        if(snap.position.left) pw.style.left=snap.position.left;
+        if(snap.position.top)  pw.style.top =snap.position.top;
+        pw.style.width =snap.position.width ||'700px';
+        pw.style.height=snap.position.height||'420px';
+    } else {
+        pw.style.width='700px';
+        pw.style.height='420px';
+    }
+    pw.innerHTML=`<button class="cp-close" onclick="removePlot('${p.plotId}')" title="Remove this plot from the canvas">&times;</button><div id="${p.plotId}" style="width:100%;height:100%"></div><div class="cp-handle se" data-corner="se"></div><div class="cp-handle sw" data-corner="sw"></div><div class="cp-handle ne" data-corner="ne"></div><div class="cp-handle nw" data-corner="nw"></div>`;
+    canvas.appendChild(pw);
+    if(typeof setupPlotResize==='function') setupPlotResize(pw,p.plotId);
+    setTimeout(()=>{
+        try{
+            const{data:qd}=getQData();const fidx=getFilteredIdx();
+            renderPlot(p,qd,fidx);
+            const chart=CHARTS[p.plotId];
+            if(chart){
+                if(snap.colorOverrides&&snap.colorOverrides.length){
+                    chart._colorOverrides=JSON.parse(JSON.stringify(snap.colorOverrides));
+                }
+                if(snap.annotations&&snap.annotations.length){
+                    snap.annotations.forEach(a=>{
+                        if(a&&typeof a.x==='number'&&typeof a.y==='number'){
+                            chart.addAnnotation(a.x,a.y,a.text||'',{ax:a.ax,ay:a.ay,key:a.key});
+                        }
+                    });
+                }
+                chart.render();
+            }
+            updateStatsMethodsPanel();
+        }catch(e){console.error('Restore plot failed',e)}
+    },50);
+}
+// Annotation snapshot helpers — capture a canvas-anno-wrap element fully
+// enough to recreate it. Used by addCanvasTextBox/Line/Shape and the
+// per-annotation × close button.
+function _snapshotCanvasAnno(wrap){
+    if(!wrap) return null;
+    const tb=wrap.querySelector('.canvas-textbox');
+    if(tb){
+        return {kind:'text',
+            left:wrap.style.left,top:wrap.style.top,
+            text:tb.innerText||tb.textContent||'',
+            style:{color:tb.style.color||'',fontSize:tb.style.fontSize||'',fontWeight:tb.style.fontWeight||'',
+                fontStyle:tb.style.fontStyle||'',fontFamily:tb.style.fontFamily||'',
+                textDecoration:tb.style.textDecoration||'',textAlign:tb.style.textAlign||''}};
+    }
+    const line=wrap.querySelector('svg line');
+    if(line){
+        return {kind:'line',
+            left:wrap.style.left,top:wrap.style.top,
+            width:wrap.style.width,height:wrap.style.height,
+            stroke:line.getAttribute('stroke')||'',strokeWidth:line.getAttribute('stroke-width')||'2',
+            strokeDasharray:line.getAttribute('stroke-dasharray')||'',
+            hasArrow:!!wrap.querySelector('marker')};
+    }
+    const shape=wrap.querySelector('.canvas-shape');
+    if(shape){
+        return {kind:'shape',
+            left:wrap.style.left,top:wrap.style.top,
+            width:shape.style.width,height:shape.style.height,
+            shapeType:shape.dataset.shape||'rectangle',
+            color:shape.style.borderColor||shape.style.background||'',
+            borderWidth:shape.style.borderWidth||'2px',
+            filled:shape.dataset.filled==='true'};
+    }
+    return null;
+}
+function _restoreCanvasAnno(snap){
+    if(!snap) return;
+    if(snap.kind==='text'){
+        if(typeof addCanvasTextBox==='function'){
+            // Bypass placement mode by calling _createCanvasTextBoxAt directly
+            const x=parseFloat(snap.left)||50;
+            const y=parseFloat(snap.top)||50;
+            _createCanvasTextBoxAt(x,y);
+            const canvas=document.getElementById('canvas');
+            const wraps=canvas.querySelectorAll('.canvas-anno-wrap');
+            const last=wraps[wraps.length-1];
+            if(last){
+                const tb=last.querySelector('.canvas-textbox');
+                if(tb){
+                    tb.textContent=snap.text||'Text';
+                    if(snap.style){
+                        Object.keys(snap.style).forEach(k=>{
+                            if(snap.style[k]) tb.style[k]=snap.style[k];
+                        });
+                    }
+                }
+            }
+        }
+    } else if(snap.kind==='line'){
+        if(typeof addCanvasLine==='function'){
+            addCanvasLine();
+            const canvas=document.getElementById('canvas');
+            const wraps=canvas.querySelectorAll('.canvas-anno-wrap');
+            const last=wraps[wraps.length-1];
+            if(last){
+                last.style.left=snap.left||'50px';last.style.top=snap.top||'100px';
+                if(snap.width)  last.style.width =snap.width;
+                if(snap.height) last.style.height=snap.height;
+                const ln=last.querySelector('svg line');
+                if(ln){
+                    if(snap.stroke) ln.setAttribute('stroke',snap.stroke);
+                    if(snap.strokeWidth) ln.setAttribute('stroke-width',snap.strokeWidth);
+                    if(snap.strokeDasharray) ln.setAttribute('stroke-dasharray',snap.strokeDasharray);
+                }
+            }
+        }
+    } else if(snap.kind==='shape'){
+        if(typeof addCanvasShape==='function'){
+            addCanvasShape(snap.shapeType||'rectangle');
+            const canvas=document.getElementById('canvas');
+            const wraps=canvas.querySelectorAll('.canvas-anno-wrap');
+            const last=wraps[wraps.length-1];
+            if(last){
+                last.style.left=snap.left||'50px';last.style.top=snap.top||'50px';
+                const sh=last.querySelector('.canvas-shape');
+                if(sh){
+                    if(snap.width)  sh.style.width =snap.width;
+                    if(snap.height) sh.style.height=snap.height;
+                    if(snap.color){sh.style.borderColor=snap.color;if(snap.filled) sh.style.background=snap.color}
+                    if(snap.borderWidth) sh.style.borderWidth=snap.borderWidth;
+                    if(snap.filled) sh.dataset.filled='true';
+                }
+            }
+        }
+    }
+}
+// ── Apply a single undo/redo entry ──
+// Each action stores enough state to roll forward AND back. The internal
+// _suppressUndo flag (set by performUndo/performRedo above) prevents the
+// applied actions from themselves recording new entries.
 function applyUndoEntry(entry,isRedo){
     const d=entry.data;
     switch(entry.action){
         case 'moveGraph':{
             const wrap=document.getElementById('card-'+d.plotId);
             if(wrap){wrap.style.left=(isRedo?d.newL:d.oldL)+'px';wrap.style.top=(isRedo?d.newT:d.oldT)+'px'}
+            break;
+        }
+        case 'resizePlot':{
+            const wrap=document.getElementById('card-'+d.plotId);
+            if(wrap){
+                wrap.style.width =(isRedo?d.newW:d.oldW);
+                wrap.style.height=(isRedo?d.newH:d.oldH);
+                if(CHARTS[d.plotId]) CHARTS[d.plotId].resize();
+            }
             break;
         }
         case 'addLabel':{
@@ -1042,39 +1278,161 @@ function applyUndoEntry(entry,isRedo){
             break;
         }
         case 'addPlot':{
-            if(isRedo){/* re-add would need full rebuild, skip */}
-            else{removePlot(d.plotId)}
+            // Forward: re-add the plot from snapshot. Backward: remove it.
+            if(isRedo){_restorePlotFromSnapshot(d.snapshot)}
+            else{
+                if(CHARTS[d.plotId]){try{CHARTS[d.plotId].destroy()}catch(_){}delete CHARTS[d.plotId]}
+                CANVAS_PLOTS=CANVAS_PLOTS.filter(p=>p.plotId!==d.plotId);
+                document.getElementById('card-'+d.plotId)?.remove();
+                updateStatsMethodsPanel();
+                if(!CANVAS_PLOTS.length){
+                    const canvas=document.getElementById('canvas');canvas.classList.add('empty-canvas');
+                    canvas.innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Add a graph from the Visualization tab</div>';
+                }
+            }
             break;
         }
         case 'removePlot':{
-            // Can't fully restore a removed plot, just track for awareness
+            // Forward: actually remove the plot. Backward: rebuild from snapshot.
+            if(isRedo){
+                if(CHARTS[d.plotId]){try{CHARTS[d.plotId].destroy()}catch(_){}delete CHARTS[d.plotId]}
+                CANVAS_PLOTS=CANVAS_PLOTS.filter(p=>p.plotId!==d.plotId);
+                document.getElementById('card-'+d.plotId)?.remove();
+                updateStatsMethodsPanel();
+                if(!CANVAS_PLOTS.length){
+                    const canvas=document.getElementById('canvas');canvas.classList.add('empty-canvas');
+                    canvas.innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Add a graph from the Visualization tab</div>';
+                }
+            } else {
+                _restorePlotFromSnapshot(d.snapshot);
+            }
             break;
         }
-        case 'addTextBox':case 'addLine':{
-            const el=document.getElementById(d.id);
-            if(isRedo){/* would need to re-create */}
-            else{if(el)el.remove()}
+        case 'addAnno':{
+            // Forward: re-add the canvas annotation. Backward: remove the most-
+            // recently-added matching annotation.
+            if(isRedo){_restoreCanvasAnno(d.snapshot)}
+            else{
+                // Remove the LAST annotation matching this snapshot's left/top.
+                // Annotations don't carry stable IDs, so we match by position.
+                const canvas=document.getElementById('canvas');
+                if(canvas){
+                    const wraps=[...canvas.querySelectorAll('.canvas-anno-wrap')].reverse();
+                    const target=wraps.find(w=>w.style.left===d.snapshot.left&&w.style.top===d.snapshot.top);
+                    if(target) target.remove();
+                }
+            }
+            break;
+        }
+        case 'removeAnno':{
+            if(isRedo){
+                const canvas=document.getElementById('canvas');
+                if(canvas){
+                    const wraps=[...canvas.querySelectorAll('.canvas-anno-wrap')].reverse();
+                    const target=wraps.find(w=>w.style.left===d.snapshot.left&&w.style.top===d.snapshot.top);
+                    if(target) target.remove();
+                }
+            } else {_restoreCanvasAnno(d.snapshot)}
             break;
         }
         case 'graphSettings':{
             const chart=CHARTS[d.plotId];if(!chart)break;
-            const prev=isRedo?d.newSettings:d.oldSettings;
-            if(prev.traces)chart.traces=JSON.parse(JSON.stringify(prev.traces));
-            if(prev.theme)Object.assign(chart.opts.theme,prev.theme);
-            chart.render();
+            const cp=CANVAS_PLOTS.find(c=>c.plotId===d.plotId);if(!cp)break;
+            const target=isRedo?d.after:d.before;
+            // Restore persisted Graph Settings + threshold flags. Force full
+            // re-render so the change paints. This mirrors applyGraphSettings
+            // structure but reapplies a saved snapshot instead of reading the
+            // form. Includes _chartState so axis ranges/title positions roll
+            // back too.
+            if(target.gsMarker)  cp.config._gsMarker =JSON.parse(JSON.stringify(target.gsMarker));
+            else delete cp.config._gsMarker;
+            if(target.gsLayout)  cp.config._gsLayout =JSON.parse(JSON.stringify(target.gsLayout));
+            else delete cp.config._gsLayout;
+            cp.config.showThresholds=target.showThresholds;
+            cp.config.showFClines  =target.showFClines;
+            cp.config.showFDRline  =target.showFDRline;
+            if(cp.type==='pca') cp.config.showEllipses=target.showEllipses;
+            cp._forceUpdate=true;
+            const{data:qd}=getQData();renderPlot(cp,qd,getFilteredIdx());
             break;
         }
         case 'axisRange':{
             const chart=CHARTS[d.plotId];if(!chart)break;
-            if(isRedo){chart.setXRange(d.newX?.[0],d.newX?.[1]);chart.setYRange(d.newY?.[0],d.newY?.[1])}
-            else{chart.setXRange(d.oldX?.[0],d.oldX?.[1]);chart.setYRange(d.oldY?.[0],d.oldY?.[1])}
+            const cp=CANVAS_PLOTS.find(c=>c.plotId===d.plotId);
+            const target=isRedo?{x:d.newX,y:d.newY}:{x:d.oldX,y:d.oldY};
+            if(target.x){chart.setXRange(target.x[0],target.x[1])}
+            else{chart.xRange=null;chart._xManual=false}
+            if(target.y){chart.setYRange(target.y[0],target.y[1])}
+            else{chart.yRange=null;chart._yManual=false}
+            chart._zoomed=!!(target.x||target.y);
+            // Sync to cp.config._chartState so a later renderPlot keeps the change
+            if(cp){
+                if(!cp.config._chartState) cp.config._chartState={};
+                const cs=cp.config._chartState;
+                if(target.x){cs.xRange=[...target.x];cs.xManual=true} else{delete cs.xRange;delete cs.xManual}
+                if(target.y){cs.yRange=[...target.y];cs.yManual=true} else{delete cs.yRange;delete cs.yManual}
+                if(chart._zoomed) cs.zoomed=true; else delete cs.zoomed;
+            }
             chart.render();
+            break;
+        }
+        case 'titleEdit':{
+            const chart=CHARTS[d.plotId];if(!chart)break;
+            const cp=CANVAS_PLOTS.find(c=>c.plotId===d.plotId);
+            const v=isRedo?d.newValue:d.oldValue;
+            if(d.kind==='chart') chart.setChartTitle(v);
+            else if(d.kind==='xaxis') chart.setXTitle(v);
+            else if(d.kind==='yaxis') chart.setYTitle(v);
+            if(cp){
+                if(!cp.config._titleOverrides) cp.config._titleOverrides={};
+                cp.config._titleOverrides[d.kind]=v;
+            }
+            chart.render();
+            break;
+        }
+        case 'titleDrag':{
+            const chart=CHARTS[d.plotId];if(!chart)break;
+            const cp=CANVAS_PLOTS.find(c=>c.plotId===d.plotId);
+            const target=isRedo?d.newPos:d.oldPos;
+            const key=d.which;  // '_titlePos' | '_xTitlePos' | '_yTitlePos'
+            if(target) chart[key]={x:target.x,y:target.y};
+            else delete chart[key];
+            // Mirror to cp.config._chartState for the renderPlot pipeline
+            if(cp){
+                if(!cp.config._chartState) cp.config._chartState={};
+                const cs=cp.config._chartState;
+                const csKey=key.replace(/^_/,'');
+                if(target) cs[csKey]={x:target.x,y:target.y};
+                else delete cs[csKey];
+            }
+            chart.render();
+            break;
+        }
+        case 'renamePlot':{
+            const cp=CANVAS_PLOTS.find(c=>c.plotId===d.plotId);
+            if(cp) cp.title=isRedo?d.newTitle:d.oldTitle;
+            // Update inline title input if present
+            const card=document.getElementById('card-'+d.plotId);
+            const inp=card?.querySelector('.plot-title-input');
+            if(inp) inp.value=isRedo?d.newTitle:d.oldTitle;
+            break;
+        }
+        case 'freezePlot':{
+            const cp=CANVAS_PLOTS.find(c=>c.plotId===d.plotId);
+            if(!cp) break;
+            cp.frozen=isRedo?d.newFrozen:d.oldFrozen;
+            cp._forceUpdate=true;
+            const{data:qd}=getQData();renderPlot(cp,qd,getFilteredIdx());
             break;
         }
     }
 }
 // Keyboard shortcut
 document.addEventListener('keydown',e=>{
+    // Skip when user is typing in an input/textarea/contentEditable
+    const tag=(e.target&&e.target.tagName)||'';
+    const inText=tag==='INPUT'||tag==='TEXTAREA'||(e.target&&e.target.isContentEditable);
+    if(inText) return;
     if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){e.preventDefault();performUndo()}
     if((e.ctrlKey||e.metaKey)&&(e.key==='y'||(e.key==='z'&&e.shiftKey))){e.preventDefault();performRedo()}
 });
@@ -1175,7 +1533,7 @@ function openNativeColorPicker(currentColor,onPick){
 }
 
 function tbBase(){
-    return `<button onclick="addCanvasTextBox()" title="Add text box" style="font-size:10px">+ Text</button><button onclick="addCanvasLine()" title="Add line" style="font-size:10px">+ Line</button><button onclick="showShapeMenu(this)" title="Pick a shape to add" style="font-size:10px">+ Shape ▾</button>`;
+    return `<button id="tb-undo" onclick="performUndo()" title="Undo (Ctrl+Z)" style="font-size:10px">&#8630; Undo</button><button id="tb-redo" onclick="performRedo()" title="Redo (Ctrl+Y)" style="font-size:10px">&#8631; Redo</button><div class="tb-sep"></div><button onclick="addCanvasTextBox()" title="Add text box" style="font-size:10px">+ Text</button><button onclick="addCanvasLine()" title="Add line" style="font-size:10px">+ Line</button><button onclick="showShapeMenu(this)" title="Pick a shape to add" style="font-size:10px">+ Shape ▾</button>`;
 }
 
 function showShapeMenu(anchor){
@@ -1272,6 +1630,10 @@ function updateToolbar(el,pointData){
             <label class="checkbox-row" style="margin:0;font-size:10px"><input type="checkbox" ${el.dataset.filled==='true'?'checked':''} onchange="tbShapeFill(this.checked)"> Fill</label>`;
     }
     tb.innerHTML=html;
+    // Sync the Undo/Redo button enabled state + tooltips with the current
+    // stack contents. The toolbar is rebuilt every time the user interacts
+    // with the canvas, so we need to reapply the state on each rebuild.
+    if(typeof _refreshUndoButtons==='function') _refreshUndoButtons();
 }
 
 // Swatch popups
@@ -3655,7 +4017,17 @@ function addPlotToCanvas(type){
     setupPlotResize(plotWrap,plotId);
 
     document.getElementById('viz-config-area').innerHTML='';
-    setTimeout(()=>renderPlot(CANVAS_PLOTS[CANVAS_PLOTS.length-1],qd,fidx),100);
+    setTimeout(()=>{
+        const newCp=CANVAS_PLOTS[CANVAS_PLOTS.length-1];
+        renderPlot(newCp,qd,fidx);
+        // Record an undoable add. Snapshot is taken AFTER first render so the
+        // captured _chartState/colorOverrides/annotations reflect the actual
+        // initial chart (not yet-undefined state from before render).
+        try{
+            const snap=_snapshotPlot(newCp.plotId);
+            if(snap) pushUndo('addPlot',{plotId:newCp.plotId,snapshot:snap});
+        }catch(_){}
+    },100);
 }
 function updateStatsMethodsPanel(){
     const hasVolcano=CANVAS_PLOTS.some(p=>p.type==='volcano');
@@ -3669,9 +4041,19 @@ function updateStatsMethodsPanel(){
 }
 function renamePlot(plotId,newTitle){
     const p=CANVAS_PLOTS.find(p=>p.plotId===plotId);
-    if(p) p.title=newTitle;
+    if(!p) return;
+    const oldTitle=p.title;
+    if(oldTitle===newTitle) return;
+    p.title=newTitle;
+    pushUndo('renamePlot',{plotId,oldTitle,newTitle});
 }
 function removePlot(plotId){
+    // Snapshot the full plot state BEFORE destruction so undo can rebuild it
+    // byte-for-byte. Captures plot entry (config including _chartState +
+    // _gsMarker + _gsLayout + _titleOverrides), card position+size, chart
+    // annotations, and per-point colour overrides.
+    let snap=null;
+    try{snap=_snapshotPlot(plotId)}catch(_){}
     // Destroy the chart instance so its document-level listeners are detached,
     // then drop the CHARTS entry — otherwise stale references accumulate.
     if(CHARTS[plotId]){
@@ -3685,6 +4067,7 @@ function removePlot(plotId){
         const canvas=document.getElementById('canvas');canvas.classList.add('empty-canvas');
         canvas.innerHTML='<div class="canvas-drop-hint" id="canvas-drop">Add a graph from the Visualization tab</div>';
     }
+    if(snap) pushUndo('removePlot',{plotId,snapshot:snap});
 }
 // Duplicate a plot in place — preserves config, frozen state, pinned labels,
 // and per-point color overrides. Triggered from the chart's right-click menu
@@ -3758,6 +4141,13 @@ function duplicatePlot(plotId){
                 }
             }
             updateStatsMethodsPanel();
+            // Record an undoable add for the duplicate. Same shape as the
+            // addPlot entry pushed by addPlotToCanvas — undo removes the
+            // duplicate, redo recreates it from the snapshot.
+            try{
+                const snap=_snapshotPlot(newPlotId);
+                if(snap) pushUndo('addPlot',{plotId:newPlotId,snapshot:snap});
+            }catch(_){}
         }catch(e){
             console.error('duplicatePlot: render failed for',newPlotId,e);
             _showErrorToast('Plot duplication failed: '+(e&&e.message||e));
@@ -3770,6 +4160,8 @@ function duplicatePlot(plotId){
 function setupPlotResize(wrap,plotId){
     const plotEl=()=>document.getElementById(plotId);
     let dragging=false,corner='',startX=0,startY=0,startW=0,startH=0;
+    // Snapshot of pre-drag dimensions for the undo entry pushed on mouseup.
+    let preW='',preH='';
 
     wrap.querySelectorAll('.cp-handle').forEach(handle=>{
         handle.addEventListener('mousedown',e=>{
@@ -3777,6 +4169,8 @@ function setupPlotResize(wrap,plotId){
             corner=handle.dataset.corner;
             startX=e.clientX;startY=e.clientY;
             startW=wrap.offsetWidth;startH=wrap.offsetHeight;
+            preW=wrap.style.width||(startW+'px');
+            preH=wrap.style.height||(startH+'px');
             document.body.style.cursor=handle.style.cursor;
             document.body.style.userSelect='none';
             e.preventDefault();e.stopPropagation();
@@ -3813,6 +4207,11 @@ function setupPlotResize(wrap,plotId){
                 const needH=wrapT+wrap.offsetHeight+50, needW=wrapL+wrap.offsetWidth+50;
                 if(canvas.offsetHeight<needH) canvas.style.minHeight=needH+'px';
                 if(canvas.offsetWidth<needW)  canvas.style.minWidth=needW+'px';
+            }
+            // Push undo if the size actually changed
+            const newW=wrap.style.width, newH=wrap.style.height;
+            if((newW&&newW!==preW)||(newH&&newH!==preH)){
+                pushUndo('resizePlot',{plotId,oldW:preW,oldH:preH,newW,newH});
             }
             if(typeof autoSaveSession==='function') autoSaveSession();
         }catch(_){}
@@ -4179,8 +4578,33 @@ function renderPlot(p,qd,fidx){
     // re-render would call setChartTitle/setXTitle/setYTitle with the
     // computed defaults and silently wipe the user's edits.
     chart.on('titleedit',d=>{
+        const before=(p.config._titleOverrides&&p.config._titleOverrides[d.kind])
+                  ?? (d.kind==='chart'?(chart._chartTitle||''):d.kind==='xaxis'?chart.xTitle:chart.yTitle);
         if(!p.config._titleOverrides) p.config._titleOverrides={};
         p.config._titleOverrides[d.kind]=d.value;
+        // Only push undo if the text actually changed
+        if(before!==d.value){
+            pushUndo('titleEdit',{plotId:p.plotId,kind:d.kind,oldValue:before,newValue:d.value});
+        }
+        try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
+    });
+    // Title drag — chart emits oldPos/newPos when the user finishes dragging
+    // the chart title or an axis title. Push an undo entry per drag so the
+    // user can roll back individual position changes.
+    chart.on('titlemove',d=>{
+        pushUndo('titleDrag',{plotId:p.plotId,which:d.which,oldPos:d.oldPos,newPos:d.newPos});
+        try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
+    });
+    // Axis range change — emitted by zoom-to-selection, manual range edit,
+    // and reset-zoom. The chart object's internal pushUndo callsite still
+    // exists for legacy reasons; this listener is now the canonical hook
+    // and writes a single 'axisRange' undo entry.
+    chart.on('rangechange',d=>{
+        // Only push if something actually changed (zoom applied vs no-op)
+        const sameX=JSON.stringify(d.oldX)===JSON.stringify(d.newX);
+        const sameY=JSON.stringify(d.oldY)===JSON.stringify(d.newY);
+        if(sameX&&sameY) return;
+        pushUndo('axisRange',{plotId:p.plotId,oldX:d.oldX,oldY:d.oldY,newX:d.newX,newY:d.newY});
         try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
     });
     chart.on('pointselect',d=>{d.plotId=p.plotId;updateToolbar(null,d)});
@@ -4222,11 +4646,13 @@ function renderPlot(p,qd,fidx){
 function freezePlot(plotId){
     const p=CANVAS_PLOTS.find(c=>c.plotId===plotId);
     if(!p)return;
-    p.frozen=!p.frozen;
+    const oldFrozen=!!p.frozen;
+    p.frozen=!oldFrozen;
     // Re-render to show/hide badge
     const{data:qd}=getQData();const fidx=getFilteredIdx();
     p._forceUpdate=true;
     renderPlot(p,qd,fidx);
+    pushUndo('freezePlot',{plotId,oldFrozen,newFrozen:p.frozen});
 }
 
 function updateFrozenPlot(plotId){
@@ -4365,7 +4791,14 @@ function buildUniqueConfig(chart,p,qd,fidx){
         text:jittered.map(d=>d.hoverLabel+'<br>Abundance: '+fmtVal(d.y)),
         customdata:jittered.map(d=>d.full)
     }]);
-    chart.setChartTitle((p.title||'Unique to '+featured)+subtitle).setXTitle('').setYTitle('Abundance ('+featured+')');
+    chart.setChartTitle((p.title||'Unique to '+featured)+subtitle).setXTitle('').setYTitle('');
+    // Suppress axis decoration entirely on the 1D scatter — the X coord is
+    // just jitter (no meaning) and the Y abundance scale is read off the
+    // hover tooltip. Hiding both tick clusters and the axis titles keeps
+    // the plot visually clean and matches user feedback that the labels
+    // added noise without information.
+    chart._hideXTicks=true;
+    chart._hideYTicks=true;
     // Force explicit ranges for consistent display
     chart.setXRange(-0.5,0.5);
     chart.setYRange(yLo,yHi);
@@ -5490,12 +5923,23 @@ function _enterCanvasPlacement(msg,onPlace){
 // Build the text-box DOM at (x, y), with autofocus + select-all so the user
 // can immediately type to replace the placeholder. Drag, click-to-select-for-
 // toolbar, and double-click-to-edit behaviours match the original implementation.
+// Remove a canvas annotation (text box, line, shape) via its × close
+// button. Snapshots the wrapper first and pushes a 'removeAnno' undo entry
+// so the user can roll back the deletion. Replaces the previous inline
+// `onclick="this.parentElement.remove()"` which silently dropped state.
+function _removeCanvasAnno(btn){
+    const wrap=btn?.parentElement;if(!wrap) return;
+    let snap=null;
+    try{snap=_snapshotCanvasAnno(wrap)}catch(_){}
+    wrap.remove();
+    if(snap) pushUndo('removeAnno',{snapshot:snap});
+}
 function _createCanvasTextBoxAt(x,y){
     const canvas=document.getElementById('canvas');if(!canvas)return;
     const wrap=document.createElement('div');
     wrap.className='canvas-anno-wrap';
     wrap.style.cssText=`position:absolute;left:${Math.max(0,x)}px;top:${Math.max(0,y)}px`;
-    wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button><div class="canvas-textbox" contenteditable="true">Text</div>`;
+    wrap.innerHTML=`<button class="canvas-anno-close" onclick="_removeCanvasAnno(this)">&times;</button><div class="canvas-textbox" contenteditable="true">Text</div>`;
     canvas.style.position='relative';
     canvas.appendChild(wrap);
     const tb=wrap.querySelector('.canvas-textbox');
@@ -5527,6 +5971,12 @@ function _createCanvasTextBoxAt(x,y){
         sel.removeAllRanges();
         sel.addRange(range);
     },10);
+    // Record an undoable add. Snapshot AFTER creation so the captured
+    // left/top reflect the actual placed position.
+    try{
+        const snap=_snapshotCanvasAnno(wrap);
+        if(snap) pushUndo('addAnno',{snapshot:snap});
+    }catch(_){}
 }
 
 function addCanvasLine(){
@@ -5543,7 +5993,7 @@ function addCanvasLine(){
         const minX=Math.min(x1,x2)-10,minY=Math.min(y1,y2)-10;
         const w=Math.abs(x2-x1)+20,h=Math.abs(y2-y1)+20;
         wrap.style.width=w+'px';wrap.style.height=h+'px';
-        wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button><svg width="${w}" height="${h}" style="position:absolute;left:0;top:0;overflow:visible;cursor:move"><line x1="${x1-minX}" y1="${y1-minY}" x2="${x2-minX}" y2="${y2-minY}" stroke="var(--text)" stroke-width="2"/></svg><div class="canvas-line-handle" style="left:${x1-minX-5}px;top:${y1-minY-5}px" data-end="1"></div><div class="canvas-line-handle" style="left:${x2-minX-5}px;top:${y2-minY-5}px" data-end="2"></div>`;
+        wrap.innerHTML=`<button class="canvas-anno-close" onclick="_removeCanvasAnno(this)">&times;</button><svg width="${w}" height="${h}" style="position:absolute;left:0;top:0;overflow:visible;cursor:move"><line x1="${x1-minX}" y1="${y1-minY}" x2="${x2-minX}" y2="${y2-minY}" stroke="var(--text)" stroke-width="2"/></svg><div class="canvas-line-handle" style="left:${x1-minX-5}px;top:${y1-minY-5}px" data-end="1"></div><div class="canvas-line-handle" style="left:${x2-minX-5}px;top:${y2-minY-5}px" data-end="2"></div>`;
         // Endpoint mousedown
         wrap.querySelectorAll('.canvas-line-handle').forEach(function(handle){
             handle.addEventListener('mousedown',function(e){
@@ -5583,6 +6033,10 @@ function addCanvasLine(){
     });
     canvas.appendChild(wrap);
     renderLine();
+    try{
+        const snap=_snapshotCanvasAnno(wrap);
+        if(snap) pushUndo('addAnno',{snapshot:snap});
+    }catch(_){}
 }
 
 function addCanvasShape(shapeType){
@@ -5597,7 +6051,7 @@ function addCanvasShape(shapeType){
     shape.dataset.filled='false';
     shape.style.cssText='width:60px;height:60px;border:2px solid var(--text);background:transparent;cursor:move';
     _applyShapeStyle(shape);
-    wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button>`;
+    wrap.innerHTML=`<button class="canvas-anno-close" onclick="_removeCanvasAnno(this)">&times;</button>`;
     wrap.appendChild(shape);
     canvas.appendChild(wrap);
     _makeDraggable(wrap,shape);
@@ -5610,6 +6064,10 @@ function addCanvasShape(shapeType){
     document.addEventListener('mousemove',e=>{if(!resizing)return;shape.style.width=Math.max(20,rw+e.clientX-rsx)+'px';shape.style.height=Math.max(20,rh2+e.clientY-rsy)+'px'});
     document.addEventListener('mouseup',()=>{if(resizing){resizing=false;document.body.style.cursor=''}});
     shape.addEventListener('click',e=>{e.stopPropagation();updateToolbar(shape)});
+    try{
+        const snap=_snapshotCanvasAnno(wrap);
+        if(snap) pushUndo('addAnno',{snapshot:snap});
+    }catch(_){}
 }
 function _applyShapeStyle(el){
     const s=el.dataset.shape||'rectangle';
@@ -6399,6 +6857,23 @@ function applyGraphSettings(){
     // wipes the user's Graph Settings choices.
     const markerOverride={size,symbol:shape,color,opacity,hollow,outline,outlineColor};
     const layoutOverride={plotBg:showPlotBg?plotBg:null,paperBg:showPaperBg?paperBg:null,gridColor,showGrid,showRefLines:showThresholds,transparentBg:!showPaperBg&&!showPlotBg,fontSize};
+    // Capture per-plot BEFORE state for undo. We snapshot _gsMarker, _gsLayout,
+    // and the threshold/ellipses flags — exactly what gets mutated below — so
+    // the undo entry can roll the plot back to its prior styling. Per-plot
+    // because gsTargetPlots may apply settings to multiple plots in batch.
+    const beforeStates={};
+    gsTargetPlots.forEach(plotId=>{
+        const cp=CANVAS_PLOTS.find(c=>c.plotId===plotId);
+        if(!cp||!cp.config) return;
+        beforeStates[plotId]={
+            gsMarker: cp.config._gsMarker?JSON.parse(JSON.stringify(cp.config._gsMarker)):null,
+            gsLayout: cp.config._gsLayout?JSON.parse(JSON.stringify(cp.config._gsLayout)):null,
+            showThresholds: cp.config.showThresholds,
+            showFClines:    cp.config.showFClines,
+            showFDRline:    cp.config.showFDRline,
+            showEllipses:   cp.config.showEllipses,
+        };
+    });
     gsTargetPlots.forEach(plotId=>{
         const chart=CHARTS[plotId];if(!chart)return;
         chart.restyle(markerOverride);
@@ -6426,6 +6901,22 @@ function applyGraphSettings(){
                 const{data:qd}=getQData();renderPlot(cp,qd,getFilteredIdx());
             }
         }
+    });
+    // Push one undo entry per affected plot. Multi-plot batch becomes one
+    // undo per plot — Ctrl+Z rolls them back individually in reverse order
+    // (matches user's last-action-first mental model).
+    gsTargetPlots.forEach(plotId=>{
+        const before=beforeStates[plotId];
+        if(!before) return;
+        const after={
+            gsMarker:Object.assign({},markerOverride),
+            gsLayout:Object.assign({},layoutOverride),
+            showThresholds,showFClines,showFDRline,showEllipses,
+        };
+        // Skip pushing if nothing actually changed (user opened panel, didn't
+        // touch anything). Compares the JSON representation — cheap, exact.
+        if(JSON.stringify(before)===JSON.stringify(after)) return;
+        pushUndo('graphSettings',{plotId,before,after});
     });
     try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
 }
