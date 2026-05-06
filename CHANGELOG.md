@@ -3,6 +3,30 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.14] — 2026-05-06
+
+### Fixed — X-axis range survives every re-render path
+v4.15.13 made axis ranges round-trip through session save/load, but they were still wiped any time `renderPlot()` ran — which is many code paths: PCA Graph Settings change, filter change → `renderAll`, freeze toggle, reset colours, session restore. `renderPlot` destroys the old chart and constructs a fresh `ProkerChart`, so the in-memory `xRange` / `yRange` / `_xManual` / `_yManual` were silently lost between destroy and re-render.
+
+The fix promotes axis ranges (and title drag positions) to a first-class persisted field on `p.config._chartState`, mirroring the existing `_gsMarker` / `_gsLayout` pattern that already survives every re-render:
+
+1. `renderPlot` now snapshots the OLD chart's `xRange/yRange/xManual/yManual/zoomed/titlePos/xTitlePos/yTitlePos` into `p.config._chartState` BEFORE calling `destroy()`. The snapshot reads the live chart, so it always reflects the user's most recent zoom or title drag.
+2. After `build*Config` and the `_gsLayout` / `_gsMarker` reapply, `renderPlot` restores from `p.config._chartState` and triggers one render, committing the user's range and title positions on the fresh chart.
+3. `buildSessionObject` writes the same snapshot into `p.config._chartState` at save time, then lets `cp.config` (which includes `_chartState`) flow through the session JSON naturally — no separate `chartState` field needed.
+4. `loadSession` migrates v4.15.13 saves (which used a sibling `cp.chartState` field) into `cfg._chartState` so older sessions still restore the user's zoom.
+
+The restore is conservative: only manual ranges (`xManual` / `yManual === true`) are reapplied. A plot saved at the auto range stays auto.
+
+### Fixed — graphs are draggable again when paper background is hidden
+Drag-to-move attached its `mousedown` listener to `svg.querySelector('rect')` — the FIRST `<rect>` element in the SVG. With paper background visible this picked the full-size paper-bg rect, so dragging worked anywhere on the chart. With paper background hidden the first rect became the smaller plot-bg (so drag only worked over the plot area itself, not the title / axis / margin regions). With both backgrounds hidden the first rect was the `clipPath` rect inside `<defs>` — not visible, no clicks captured — and drag was completely broken.
+
+Two changes:
+
+1. **Drag listener moved to SVG level.** Now any `mousedown` inside the SVG bubbles up and starts a drag, with bail-outs for clicks on data points, titles, tick labels, annotations, and the selection rectangle so existing interactions keep working.
+2. **Defensive drag-surface rect added.** A full-SVG transparent `<rect class="drag-surface" pointer-events="all">` is rendered first inside the SVG so the chart always has something to capture pointer events even when both backgrounds are hidden. Without it, browsers don't reliably hit-test fully empty SVG regions.
+
+Tested combinations: paper bg on / plot bg on; paper bg off / plot bg on; paper bg on / plot bg off; both off; transparent bg toggle. All four reliably drag now.
+
 ## [4.15.13] — 2026-05-06
 
 ### Fixed — chart axis range and title positions now survive session save/load

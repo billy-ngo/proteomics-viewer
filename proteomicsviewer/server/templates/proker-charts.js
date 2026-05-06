@@ -168,6 +168,17 @@ class ProkerChart {
         // Build SVG
         let svg = `<svg class="proker-svg" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="overflow:visible;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased">`;
 
+        // Drag/event surface — invisible full-SVG rect rendered first so
+        // the SVG always has something to capture pointer events even when
+        // both paper and plot backgrounds are hidden. Without this, an SVG
+        // with no painted area in transparent regions doesn't reliably
+        // hit-test empty space, so the SVG-level mousedown handler used
+        // for drag-to-move would never fire when both bgs were off.
+        // Has pointer-events="all" so transparent fill still captures.
+        // Data points / titles / axes / annotations sit above this and
+        // have their own pointer-events, so they receive clicks normally.
+        svg += `<rect class="drag-surface" width="${w}" height="${h}" fill="transparent" pointer-events="all"/>`;
+
         // Background
         if (!this._transparentBg && !this._hidePaperBg) {
             svg += `<rect width="${w}" height="${h}" fill="${T.bg}" rx="0"/>`;
@@ -719,25 +730,30 @@ class ProkerChart {
             this._emit('pointdeselect', {});
         });
 
-        // Left-click drag on plot background → move entire plot on canvas
+        // Left-click drag on chart background → move entire plot on canvas.
+        // Listens at the SVG level so drag works regardless of paper / plot
+        // background visibility. Bails out when the click lands on an
+        // interactive child (data point, title, tick label, annotation) so
+        // those existing interactions keep working unchanged. The previous
+        // implementation attached to svg.querySelector('rect') which broke
+        // when paper bg was hidden — the first rect became the smaller
+        // plot-bg, restricting drag to the plot area only, or with both
+        // bgs hidden, the clipPath rect inside <defs> (invisible).
+        svg.style.cursor = 'grab';
         {
             let dragging = false, startMX, startMY, origL, origT;
-            const plotBgRect = svg.querySelector('rect'); // first rect is the background
-            if (plotBgRect) {
-                plotBgRect.style.cursor = 'grab';
-                plotBgRect.addEventListener('mousedown', e => {
-                    if (e.button !== 0) return;
-                    if (e.target.closest('.data-pt,.axis-title,.chart-title,.tick-label,.ann')) return;
-                    const wrap = this.container.closest('.canvas-plot');
-                    if (!wrap) return;
-                    dragging = true;
-                    startMX = e.clientX; startMY = e.clientY;
-                    origL = parseFloat(wrap.style.left) || 0;
-                    origT = parseFloat(wrap.style.top) || 0;
-                    document.body.style.cursor = 'grabbing';
-                    e.preventDefault();
-                });
-            }
+            svg.addEventListener('mousedown', e => {
+                if (e.button !== 0) return;
+                if (e.target.closest('.data-pt,.axis-title,.chart-title,.tick-label,.ann,.sel-box')) return;
+                const wrap = this.container.closest('.canvas-plot');
+                if (!wrap) return;
+                dragging = true;
+                startMX = e.clientX; startMY = e.clientY;
+                origL = parseFloat(wrap.style.left) || 0;
+                origT = parseFloat(wrap.style.top) || 0;
+                document.body.style.cursor = 'grabbing';
+                e.preventDefault();
+            });
             this._onDoc('mousemove', e => {
                 if (!dragging) return;
                 const wrap = this.container.closest('.canvas-plot');

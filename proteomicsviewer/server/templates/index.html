@@ -4053,6 +4053,28 @@ function renderPlot(p,qd,fidx){
 
     const div=document.getElementById(p.plotId);if(!div)return;
     if(CHARTS[p.plotId]){
+        // Snapshot the OLD chart's instance-level state (axis ranges, manual
+        // flags, title drag positions, zoom flag) into p.config._chartState
+        // BEFORE we destroy it. Without this, every re-render path that goes
+        // through renderPlot — global Graph Settings change for PCA, filter
+        // change → renderAll, freeze toggle, reset colours, session restore —
+        // builds a fresh chart and silently wipes the user's X/Y zoom.
+        // The block AFTER build*Config below restores from this snapshot.
+        try{
+            const oldCh=CHARTS[p.plotId];
+            if(oldCh){
+                if(!p.config._chartState) p.config._chartState={};
+                const cs=p.config._chartState;
+                if(Array.isArray(oldCh.xRange)) cs.xRange=[...oldCh.xRange];
+                if(Array.isArray(oldCh.yRange)) cs.yRange=[...oldCh.yRange];
+                if(oldCh._xManual) cs.xManual=true; else if('xManual' in cs) delete cs.xManual;
+                if(oldCh._yManual) cs.yManual=true; else if('yManual' in cs) delete cs.yManual;
+                if(oldCh._zoomed)  cs.zoomed=true;
+                if(oldCh._titlePos)  cs.titlePos ={...oldCh._titlePos};
+                if(oldCh._xTitlePos) cs.xTitlePos={...oldCh._xTitlePos};
+                if(oldCh._yTitlePos) cs.yTitlePos={...oldCh._yTitlePos};
+            }
+        }catch(_){}
         // Destroy guard: if the previous chart's destroy() throws (stale DOM
         // ref, missing tooltip, etc.), don't let it block creating the new
         // chart. Always clear the entry so memory doesn't pile up.
@@ -4105,6 +4127,33 @@ function renderPlot(p,qd,fidx){
     // because build*Config rebuilds traces/layout from scratch each time.
     if(p.config&&p.config._gsLayout) chart.relayout(p.config._gsLayout);
     if(p.config&&p.config._gsMarker) chart.restyle(p.config._gsMarker);
+    // Re-apply persisted axis ranges + title drag positions captured from the
+    // OLD chart instance just before destroy (above) — or from the session
+    // file on first render after load. Without this every re-render path
+    // (PCA Graph Settings, filter change, freeze, reset colours, session
+    // restore) wipes the user's X/Y zoom and title positions.
+    // Conservative restore: only manual ranges (xManual/yManual === true) get
+    // reapplied; auto ranges stay auto. _zoomed flag is set so the chart's
+    // reset-zoom button knows it's currently zoomed in.
+    if(p.config&&p.config._chartState){
+        const cs=p.config._chartState;
+        let needRender=false;
+        if(cs.xManual&&Array.isArray(cs.xRange)&&cs.xRange.length===2){
+            chart.xRange=[cs.xRange[0],cs.xRange[1]];
+            chart._xManual=true;
+            needRender=true;
+        }
+        if(cs.yManual&&Array.isArray(cs.yRange)&&cs.yRange.length===2){
+            chart.yRange=[cs.yRange[0],cs.yRange[1]];
+            chart._yManual=true;
+            needRender=true;
+        }
+        if(cs.zoomed) chart._zoomed=true;
+        if(cs.titlePos &&typeof cs.titlePos.x ==='number'){chart._titlePos ={x:cs.titlePos.x ,y:cs.titlePos.y };needRender=true}
+        if(cs.xTitlePos&&typeof cs.xTitlePos.x==='number'){chart._xTitlePos={x:cs.xTitlePos.x,y:cs.xTitlePos.y};needRender=true}
+        if(cs.yTitlePos&&typeof cs.yTitlePos.x==='number'){chart._yTitlePos={x:cs.yTitlePos.x,y:cs.yTitlePos.y};needRender=true}
+        if(needRender) chart.render();
+    }
     // Per-axis FC / FDR threshold-line visibility (in addition to the
     // master showThresholds toggle which build*Config already honours).
     if(chart._refLines&&p.config){
@@ -6629,45 +6678,52 @@ function buildSessionObject(opts){
         canvasPlots:_safeMap(CANVAS_PLOTS,p=>{
             const card=document.getElementById('card-'+p.plotId);
             const chart=CHARTS[p.plotId];
-            // Capture per-card layout. We read getBoundingClientRect's
-            // client size as a fallback for width/height because the inline
-            // style may carry the create-time defaults (700/420 px) even after
-            // a user resize that was committed via offsetWidth (rare path
-            // before setupPlotResize wrote them back). Position (left/top) is
-            // always inline because every move/drag writes wrap.style.left/top.
+            // Capture per-card layout. Position (left/top) is always inline
+            // because every move/drag writes wrap.style.left/top. Width/height
+            // are inline after addCanvasPlot (700/420 defaults) and after
+            // setupPlotResize commits a user resize. The offsetWidth/offsetHeight
+            // fallbacks cover any code path that mutates rendered size without
+            // writing back to inline style.
             const pos=card?{
                 left:card.style.left||'',
                 top:card.style.top||'',
                 width:card.style.width||(card.offsetWidth?card.offsetWidth+'px':''),
                 height:card.style.height||(card.offsetHeight?card.offsetHeight+'px':''),
             }:null;
-            // Capture chart-instance state that lives on the chart object
-            // (not on cp.config) so it round-trips through save/load:
-            //   xRange/yRange/_xManual/_yManual — axis zoom/range overrides
-            //     set by drag-zoom or the right-click "Edit X/Y range" menu.
-            //   _titlePos / _xTitlePos / _yTitlePos — drag positions for the
-            //     chart title and axis titles (user can drag them anywhere).
-            //   _zoomed — flag indicating "user zoomed in" so reset-zoom
-            //     button shows correctly after reload.
-            // Without this block, a user who zooms the X-axis to a range and
-            // then saves would see the full auto range on reload.
-            const chartState=chart?{
-                xRange:Array.isArray(chart.xRange)?[...chart.xRange]:null,
-                yRange:Array.isArray(chart.yRange)?[...chart.yRange]:null,
-                xManual:!!chart._xManual,
-                yManual:!!chart._yManual,
-                zoomed:!!chart._zoomed,
-                titlePos :chart._titlePos ?{...chart._titlePos }:null,
-                xTitlePos:chart._xTitlePos?{...chart._xTitlePos}:null,
-                yTitlePos:chart._yTitlePos?{...chart._yTitlePos}:null,
-            }:null;
+            // Snapshot the live chart instance's interactive state into
+            // p.config._chartState so it round-trips through save/load AND
+            // through every renderPlot() destroy-and-recreate cycle. Without
+            // this, a user who zooms the X-axis and then triggers a global
+            // format change (anything that calls renderPlot — PCA Graph
+            // Settings, filter change, freeze, reset colours, session restore)
+            // sees the zoom snap back to auto.
+            //   xRange/yRange/xManual/yManual — axis zoom set by drag-zoom or
+            //     right-click "Edit X/Y range" menu.
+            //   titlePos / xTitlePos / yTitlePos — drag positions for chart
+            //     title and axis titles.
+            //   zoomed — current "user zoomed in" flag (drives the chart's
+            //     reset-zoom button visibility).
+            // Storing on p.config._chartState (rather than a separate save-
+            // time field) means the same blob also drives the in-memory
+            // renderPlot restore in addition to session round-trip.
+            if(chart){
+                if(!p.config._chartState) p.config._chartState={};
+                const cs=p.config._chartState;
+                if(Array.isArray(chart.xRange)) cs.xRange=[...chart.xRange]; else delete cs.xRange;
+                if(Array.isArray(chart.yRange)) cs.yRange=[...chart.yRange]; else delete cs.yRange;
+                if(chart._xManual) cs.xManual=true; else delete cs.xManual;
+                if(chart._yManual) cs.yManual=true; else delete cs.yManual;
+                if(chart._zoomed)  cs.zoomed=true;  else delete cs.zoomed;
+                if(chart._titlePos)  cs.titlePos ={...chart._titlePos };  else delete cs.titlePos;
+                if(chart._xTitlePos) cs.xTitlePos={...chart._xTitlePos}; else delete cs.xTitlePos;
+                if(chart._yTitlePos) cs.yTitlePos={...chart._yTitlePos}; else delete cs.yTitlePos;
+            }
             return{
                 type:p.type,
                 config:p.config,
                 title:p.title,
                 frozen:p.frozen||false,
                 position:pos,
-                chartState,
                 colorOverrides:chart&&Array.isArray(chart._colorOverrides)?chart._colorOverrides:[],
                 annotations:chart&&Array.isArray(chart.annotations)?chart.annotations:[],
                 goiLegend:p.goiLegend||null,
@@ -6922,6 +6978,14 @@ function loadSession(file){
 
                 try{
                     const plotId='plot-'+(nextPlotId++);
+                    // Legacy compat: v4.15.13 saved chartState as a sibling
+                    // field; v4.15.14+ stores it on cfg._chartState so it
+                    // flows through cp.config naturally and survives every
+                    // renderPlot cycle. Migrate at load time so older saves
+                    // still restore the user's X/Y zoom and title positions.
+                    if(cp.chartState&&typeof cp.chartState==='object'&&!cfg._chartState){
+                        cfg._chartState=cp.chartState;
+                    }
                     const plotEntry={id:nextPlotId-1,type:cp.type,config:cfg,plotId,title:cp.title||cp.type,frozen:cp.frozen||false};
                     // Restore the GOI legend state (if any) before render so the
                     // post-render hook in renderPlot picks it up.
@@ -6961,30 +7025,11 @@ function loadSession(file){
                                         }
                                     });
                                 }
-                                // Restore chart-instance state (axis ranges
-                                // + title drag positions). This must run AFTER
-                                // renderPlot so build*Config has populated
-                                // xScale/yScale; setting xRange/yRange before
-                                // would be overwritten by build*Config.
-                                if(cp.chartState&&typeof cp.chartState==='object'){
-                                    const cs=cp.chartState;
-                                    let needRender=false;
-                                    if(Array.isArray(cs.xRange)&&cs.xRange.length===2&&cs.xManual){
-                                        chart.xRange=[cs.xRange[0],cs.xRange[1]];
-                                        chart._xManual=true;
-                                        needRender=true;
-                                    }
-                                    if(Array.isArray(cs.yRange)&&cs.yRange.length===2&&cs.yManual){
-                                        chart.yRange=[cs.yRange[0],cs.yRange[1]];
-                                        chart._yManual=true;
-                                        needRender=true;
-                                    }
-                                    if(cs.zoomed) chart._zoomed=true;
-                                    if(cs.titlePos &&typeof cs.titlePos.x ==='number'){chart._titlePos ={x:cs.titlePos.x ,y:cs.titlePos.y };needRender=true}
-                                    if(cs.xTitlePos&&typeof cs.xTitlePos.x==='number'){chart._xTitlePos={x:cs.xTitlePos.x,y:cs.xTitlePos.y};needRender=true}
-                                    if(cs.yTitlePos&&typeof cs.yTitlePos.x==='number'){chart._yTitlePos={x:cs.yTitlePos.x,y:cs.yTitlePos.y};needRender=true}
-                                    if(needRender) chart.render();
-                                }
+                                // NB: chart-instance state (axis ranges, title
+                                // drag positions) is restored by renderPlot
+                                // itself via cfg._chartState — no separate
+                                // step needed here. Legacy cp.chartState saves
+                                // were migrated into cfg._chartState above.
                             }
                         }catch(plotErr){
                             console.error('Failed to render restored plot',cp.title,plotErr);
