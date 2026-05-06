@@ -256,11 +256,20 @@ class ProkerChart {
             const marker = trace.marker || {};
             const baseSize = marker.size || 5;
             const baseSymbol = marker.symbol || 'circle';
-            const opacity = marker.opacity != null ? marker.opacity : 0.8;
+            // Trace-level (scalar) opacity. Stays a number even when a per-
+            // point _pointOpacity array exists for GOI markers — the array
+            // overrides individual entries and falls back to this scalar for
+            // ordinary points.
+            const baseOpacity = (typeof marker.opacity === 'number') ? marker.opacity : 0.8;
             const colors = Array.isArray(marker.color) ? marker.color : null;
             const singleColor = !colors ? (marker.color || T.text) : null;
             const sizes = Array.isArray(marker.size) ? marker.size : null;
             const symbols = Array.isArray(marker.symbol) ? marker.symbol : null;
+            // Per-point opacity override (parallel array). Used by GOI markers
+            // so the user can pick a custom opacity per group of interest
+            // while ordinary points pick up baseOpacity. A null/undefined slot
+            // means "use baseOpacity".
+            const pointOpacities = Array.isArray(marker._pointOpacity) ? marker._pointOpacity : null;
 
             // For colorscale mapping
             let colorFn = null;
@@ -322,6 +331,11 @@ class ProkerChart {
                 }
                 const ptSize = sizes ? sizes[i] : baseSize;
                 const ptSymbol = symbols ? symbols[i] : baseSymbol;
+                // Per-point opacity falls back to the trace-level baseOpacity
+                // for any slot that isn't explicitly set (null/undefined in
+                // the array). This is how GOI markers carry independent
+                // opacity while the noise cloud uses the global value.
+                const opacity = pointOpacities && pointOpacities[i] != null ? pointOpacities[i] : baseOpacity;
                 const symFn = this._symbols[ptSymbol] || this._symbols.circle;
                 const hoverText = trace.text ? trace.text[i] || '' : '';
                 const customData = trace.customdata ? trace.customdata[i] || '' : '';
@@ -1317,9 +1331,11 @@ class ProkerChart {
                     m.color = props.color;
                 }
             }
-            // OPACITY and HOLLOW are global per-trace (not per-point); applied
-            // to every point including highlights, since they're stylistic
-            // choices that should sweep across the whole plot.
+            // OPACITY — the trace-level scalar applies to ordinary points
+            // only. Per-GOI opacity lives on a separate `_pointOpacity`
+            // array (set by applyMarkerOverrides) and is untouched by Graph
+            // Settings, so a user picking a global opacity in the panel
+            // doesn't wipe the per-group opacities they set on the GOI list.
             if (props.opacity != null) m.opacity = props.opacity;
             if (props.hollow !== undefined) m._hollow = props.hollow;
             if (props.outline !== undefined) m._outline = props.outline;

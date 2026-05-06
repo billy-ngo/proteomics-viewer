@@ -507,8 +507,14 @@ async function uploadFile(file,append){
     <div class="fp-header"><span id="gs-title">Graph Settings</span><button onclick="document.getElementById('graph-settings-panel').classList.add('hidden')">&times;</button></div>
     <div class="fp-body">
         <div id="gs-batch-selector" class="hidden" style="margin-bottom:10px">
-            <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Apply to</div>
-            <div id="gs-plot-checks" style="max-height:80px;overflow-y:auto"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px">Apply to</div>
+                <div style="display:flex;gap:4px">
+                    <button onclick="gsBatchSelectAll(true)" style="font-size:10px;padding:1px 6px;background:transparent;border:1px solid var(--border);color:var(--text-sec);cursor:pointer;border-radius:3px" title="Select every plot on the canvas">All</button>
+                    <button onclick="gsBatchSelectAll(false)" style="font-size:10px;padding:1px 6px;background:transparent;border:1px solid var(--border);color:var(--text-sec);cursor:pointer;border-radius:3px" title="Deselect every plot">None</button>
+                </div>
+            </div>
+            <div id="gs-plot-checks" style="max-height:120px;overflow-y:auto"></div>
         </div>
         <!-- Markers -->
         <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Markers</div>
@@ -2452,10 +2458,12 @@ function hasActiveHighlights(){return SPECIES_HIGHLIGHTS.some(h=>h.enabled)||has
 // MARKER OVERRIDE HELPER — applies GOI + species highlights to traces
 // ================================================================
 function applyMarkerOverrides(pidxArr,defaultColor,defaultSize,defaultSymbol){
-    // Returns {color, size, symbol, priority} where each is a single value or array.
-    // priority: 0 for ordinary points, 1 for highlighted-species, 2 for GOI —
-    // ProkerChart renders higher-priority points LAST so they sit on top and
-    // are always click-accessible above the noise cloud.
+    // Returns {color, size, symbol, opacity, priority} where each is a single
+    // value or array. priority: 0 for ordinary points, 1 for highlighted-
+    // species, 2 for GOI — ProkerChart renders higher-priority points LAST so
+    // they sit on top and are always click-accessible above the noise cloud.
+    // The opacity array carries per-GOI custom opacity; ordinary points have
+    // null in the array (the chart engine falls back to baseOpacity for those).
     const goiActive=hasGOI();
     const hlActive=hasActiveHighlights();
     if(!goiActive&&!hlActive) return{color:defaultColor,size:defaultSize,symbol:defaultSymbol};
@@ -2463,8 +2471,10 @@ function applyMarkerOverrides(pidxArr,defaultColor,defaultSize,defaultSymbol){
     const colors=new Array(n);
     const sizes=goiActive?new Array(n):null;
     const symbols=goiActive?new Array(n):null;
+    const opacities=goiActive?new Array(n):null;
     const priority=new Array(n);
     let anyHighlighted=false;
+    let anyOpacityOverride=false;
     for(let i=0;i<n;i++){
         const pi=pidxArr[i];
         const goi=goiActive?getGOIOverride(pi):null;
@@ -2472,6 +2482,13 @@ function applyMarkerOverrides(pidxArr,defaultColor,defaultSize,defaultSymbol){
             colors[i]=goi.color;
             if(sizes)sizes[i]=goi.size;
             if(symbols)symbols[i]=goi.symbol;
+            if(opacities){
+                opacities[i]=goi.opacity!=null?goi.opacity:1.0;
+                if(opacities[i]!==1.0) anyOpacityOverride=true;
+                // Always emit the GOI's opacity even if it equals 1.0 — the
+                // priority-aware restyle code in proker-charts.js needs the
+                // array to exist so it knows to preserve these slots.
+            }
             priority[i]=2;
             anyHighlighted=true;
         } else {
@@ -2479,6 +2496,7 @@ function applyMarkerOverrides(pidxArr,defaultColor,defaultSize,defaultSymbol){
             colors[i]=hl||defaultColor;
             if(sizes)sizes[i]=defaultSize;
             if(symbols)symbols[i]=defaultSymbol;
+            if(opacities) opacities[i]=null;  // ordinary point — engine uses baseOpacity
             priority[i]=hl?1:0;
             if(hl) anyHighlighted=true;
         }
@@ -2487,6 +2505,13 @@ function applyMarkerOverrides(pidxArr,defaultColor,defaultSize,defaultSymbol){
         color:colors,
         size:sizes||defaultSize,
         symbol:symbols||defaultSymbol,
+        // Per-point opacity array — slot is non-null only for GOI proteins.
+        // Returned under a distinct key so the chart engine can keep using
+        // marker.opacity as the trace-level scalar (which Graph Settings
+        // controls) without ambiguity. Lives as `_pointOpacity` on the
+        // marker object so it survives JSON round-trips like other _-prefixed
+        // marker properties.
+        pointOpacity:goiActive?opacities:null,
         priority:anyHighlighted?priority:null,
     };
 }
@@ -2543,7 +2568,10 @@ function addGroupOfInterest(){
         return;
     }
     const ci=(GROUPS_OF_INTEREST.length)%GOI_COLORS.length;
-    GROUPS_OF_INTEREST.push({id:_goiNextId++,prefix,start,end,name:'',color:GOI_COLORS[ci],symbol:'circle',size:8,proteins});
+    // opacity defaults to 1.0 — GOI markers should be fully opaque so they
+    // pop above the noise cloud, while the ordinary trace opacity remains
+    // tunable independently via Graph Settings.
+    GROUPS_OF_INTEREST.push({id:_goiNextId++,prefix,start,end,name:'',color:GOI_COLORS[ci],symbol:'circle',size:8,opacity:1.0,proteins});
     document.getElementById('goi-start').value='';
     document.getElementById('goi-end').value='';
     renderGOIList();
@@ -2567,6 +2595,19 @@ function goiSymbol(id,sym){
 function goiSize(id,sz){
     const g=GROUPS_OF_INTEREST.find(g=>g.id===id);if(g){g.size=+sz;refreshAllPlots();if(typeof refreshGOILegends==='function') refreshGOILegends()}
 }
+// Per-GOI opacity (0..1). Independent of the chart-level marker opacity that
+// Graph Settings controls — GOI markers always render at the user-chosen
+// per-group opacity, while ordinary points use the trace-wide setting.
+function goiOpacity(id,op){
+    const g=GROUPS_OF_INTEREST.find(g=>g.id===id);
+    if(!g) return;
+    let v=parseFloat(op);
+    if(!isFinite(v)) v=1;
+    g.opacity=Math.max(0,Math.min(1,v));
+    refreshAllPlots();
+    if(typeof refreshGOILegends==='function') refreshGOILegends();
+    try{autoSaveSession()}catch(_){}
+}
 // Editable display name. Empty string means "use the auto-generated locus
 // label" (prefix+start, or prefix+start–prefix+end for a range). Setting a
 // name here propagates to every legend on the canvas.
@@ -2586,12 +2627,17 @@ function renderGOIList(){
         const shapes=['circle','square','diamond','triangle-up','star','cross'].map(s=>
             `<option value="${s}" ${g.symbol===s?'selected':''}>${s==='triangle-up'?'triangle':s}</option>`).join('');
         const nameVal=(g.name||'').replace(/[<>"]/g,'');
+        // Default opacity to 1.0 (fully opaque) — GOI markers should pop
+        // above the noise cloud unless the user explicitly dials them down.
+        const opVal=g.opacity!=null?g.opacity:1.0;
+        const opPct=Math.round(opVal*100);
         return `<div style="display:flex;align-items:center;gap:5px;padding:4px;border-bottom:1px solid var(--border);flex-wrap:wrap">
             <span class="goi-color-swatch" data-goiid="${g.id}" style="width:18px;height:18px;border-radius:50%;background:${g.color};cursor:pointer;flex-shrink:0;border:1px solid var(--border)" title="Click: swatches, Double-click: picker"></span>
             <span style="font-size:11px;font-family:monospace;color:${g.color};flex:0 0 auto;min-width:60px" title="${g.proteins.length} proteins">${label} <span style="color:var(--text-sec)">(${g.proteins.length})</span></span>
             <input type="text" value="${nameVal}" placeholder="Custom label (optional)" onchange="goiName(${g.id},this.value)" style="flex:1;min-width:90px;font-size:10px;padding:2px 4px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:2px" title="Custom display label — used in legends in place of the locus tag. Leave blank to use the locus tag.">
-            <select onchange="goiSymbol(${g.id},this.value)" style="font-size:10px;padding:1px 2px;width:70px">${shapes}</select>
-            <input type="number" value="${g.size}" min="2" max="20" step="1" onchange="goiSize(${g.id},this.value)" style="width:38px;font-size:10px;padding:1px 3px;text-align:center" title="Size">
+            <select onchange="goiSymbol(${g.id},this.value)" style="font-size:10px;padding:1px 2px;width:70px" title="Marker shape — independent of Graph Settings">${shapes}</select>
+            <input type="number" value="${g.size}" min="2" max="20" step="1" onchange="goiSize(${g.id},this.value)" style="width:38px;font-size:10px;padding:1px 3px;text-align:center" title="Marker size">
+            <input type="number" value="${opPct}" min="0" max="100" step="5" onchange="goiOpacity(${g.id},this.value/100)" style="width:42px;font-size:10px;padding:1px 3px;text-align:center" title="Opacity (% — independent of the trace-level opacity in Graph Settings)">
             <button onclick="removeGOI(${g.id})" style="background:none;border:none;color:var(--text-sec);cursor:pointer;font-size:14px;padding:0 2px" title="Remove">&times;</button>
         </div>`;
     }).join('');
@@ -2605,7 +2651,7 @@ function renderGOIList(){
 
 function getGOIOverride(proteinIdx){
     for(const g of GROUPS_OF_INTEREST){
-        if(g.proteins.includes(proteinIdx)) return{color:g.color,symbol:g.symbol,size:g.size};
+        if(g.proteins.includes(proteinIdx)) return{color:g.color,symbol:g.symbol,size:g.size,opacity:g.opacity!=null?g.opacity:1.0};
     }
     return null;
 }
@@ -4230,17 +4276,22 @@ function setupPlotResize(wrap,plotId){
 // Build the SVG fragment for a single GOI marker (matches the ProkerChart
 // symbols: circle, square, diamond, triangle-up, star, cross). The visible
 // size is clamped so very small or very large GOI sizes still read clearly.
-function _goiMarkerSVG(color,symbol,sizeRaw){
+function _goiMarkerSVG(color,symbol,sizeRaw,opacity){
     const size=Math.max(4,Math.min(18,+sizeRaw||8));
     const box=18;
     const c=box/2;
     const r=size/2;
     const safeColor=(color||'#ff4444').replace(/[<>"]/g,'');
+    // Opacity defaults to 1 (fully opaque) so calls that don't pass it stay
+    // visually unchanged. Clamped to [0,1] for safety against bad input.
+    const op=opacity!=null?Math.max(0,Math.min(1,+opacity)):1;
+    const opAttr=op<1?` fill-opacity="${op}"`:'';
+    const opStrokeAttr=op<1?` stroke-opacity="${op}"`:'';
     let inner='';
     switch(symbol){
-        case 'square':       inner=`<rect x="${c-r}" y="${c-r}" width="${r*2}" height="${r*2}" fill="${safeColor}"/>`; break;
-        case 'diamond':      inner=`<polygon points="${c},${c-r} ${c+r},${c} ${c},${c+r} ${c-r},${c}" fill="${safeColor}"/>`; break;
-        case 'triangle-up':  inner=`<polygon points="${c},${c-r} ${c+r*0.866},${c+r*0.5} ${c-r*0.866},${c+r*0.5}" fill="${safeColor}"/>`; break;
+        case 'square':       inner=`<rect x="${c-r}" y="${c-r}" width="${r*2}" height="${r*2}" fill="${safeColor}"${opAttr}/>`; break;
+        case 'diamond':      inner=`<polygon points="${c},${c-r} ${c+r},${c} ${c},${c+r} ${c-r},${c}" fill="${safeColor}"${opAttr}/>`; break;
+        case 'triangle-up':  inner=`<polygon points="${c},${c-r} ${c+r*0.866},${c+r*0.5} ${c-r*0.866},${c+r*0.5}" fill="${safeColor}"${opAttr}/>`; break;
         case 'star':{
             // 5-point star
             const pts=[];
@@ -4249,12 +4300,12 @@ function _goiMarkerSVG(color,symbol,sizeRaw){
                 const rad=i%2===0?r:r*0.45;
                 pts.push((c+rad*Math.cos(ang)).toFixed(2)+','+(c+rad*Math.sin(ang)).toFixed(2));
             }
-            inner=`<polygon points="${pts.join(' ')}" fill="${safeColor}"/>`;
+            inner=`<polygon points="${pts.join(' ')}" fill="${safeColor}"${opAttr}/>`;
             break;
         }
-        case 'cross':        inner=`<line x1="${c-r}" y1="${c}" x2="${c+r}" y2="${c}" stroke="${safeColor}" stroke-width="2"/><line x1="${c}" y1="${c-r}" x2="${c}" y2="${c+r}" stroke="${safeColor}" stroke-width="2"/>`; break;
+        case 'cross':        inner=`<line x1="${c-r}" y1="${c}" x2="${c+r}" y2="${c}" stroke="${safeColor}" stroke-width="2"${opStrokeAttr}/><line x1="${c}" y1="${c-r}" x2="${c}" y2="${c+r}" stroke="${safeColor}" stroke-width="2"${opStrokeAttr}/>`; break;
         case 'circle':
-        default:             inner=`<circle cx="${c}" cy="${c}" r="${r}" fill="${safeColor}"/>`;
+        default:             inner=`<circle cx="${c}" cy="${c}" r="${r}" fill="${safeColor}"${opAttr}/>`;
     }
     return `<svg width="${box}" height="${box}" viewBox="0 0 ${box} ${box}">${inner}</svg>`;
 }
@@ -4330,7 +4381,7 @@ function renderGOILegend(plotId){
         const label=(st.labels&&st.labels[g.id]!=null)?st.labels[g.id]:_goiDefaultLabel(g);
         const safeLabel=String(label).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
         html+=`<div class="gl-row" data-gid="${g.id}">`+
-              `<span class="gl-marker">${_goiMarkerSVG(g.color,g.symbol,g.size)}</span>`+
+              `<span class="gl-marker">${_goiMarkerSVG(g.color,g.symbol,g.size,g.opacity)}</span>`+
               `<span class="gl-label" contenteditable="true" spellcheck="false" data-gid="${g.id}" title="Click to edit; blur to save">${safeLabel}</span>`+
               `<button class="gl-hide" data-gid="${g.id}" title="Hide this row in this legend (does not remove the GOI)">&times;</button>`+
               `</div>`;
@@ -4705,7 +4756,7 @@ function buildEnrichmentConfig(chart,p,qd,fidx){
     data.sort((a,b)=>a.val-b.val);
     const total=data.length;
     const mo=applyMarkerOverrides(data.map(d=>d.pidx),'#e6edf3',5,'circle');
-    chart.setData([{x:data.map((_,i)=>i+1),y:data.map(d=>d.val),mode:'markers',marker:{size:mo.size,color:mo.color,symbol:mo.symbol,priority:mo.priority},text:data.map((d,i)=>d.hover+'<br>Rank: #'+(i+1)+'/'+total),customdata:data.map(d=>d.full)}]);
+    chart.setData([{x:data.map((_,i)=>i+1),y:data.map(d=>d.val),mode:'markers',marker:{size:mo.size,color:mo.color,symbol:mo.symbol,priority:mo.priority,_pointOpacity:mo.pointOpacity},text:data.map((d,i)=>d.hover+'<br>Rank: #'+(i+1)+'/'+total),customdata:data.map(d=>d.full)}]);
     // Y-axis title spells out which side means enrichment in which group:
     //   high values  → enriched in gx (numerator)
     //   low values   → enriched in gy (denominator)
@@ -4787,7 +4838,7 @@ function buildUniqueConfig(chart,p,qd,fidx){
         x:jittered.map(d=>d.x),
         y:jittered.map(d=>d.y),
         mode:'markers',
-        marker:{size:mo.size,color:mo.color,symbol:mo.symbol,priority:mo.priority},
+        marker:{size:mo.size,color:mo.color,symbol:mo.symbol,priority:mo.priority,_pointOpacity:mo.pointOpacity},
         text:jittered.map(d=>d.hoverLabel+'<br>Abundance: '+fmtVal(d.y)),
         customdata:jittered.map(d=>d.full)
     }]);
@@ -4963,7 +5014,7 @@ function buildVolcanoConfig(chart,p,qd,fidx){
             x:idx.map(i=>both[i].fc),
             y:idx.map(i=>negLog[i]),
             mode:'markers',
-            marker:{size:mo.size,color:mo.color,opacity:cat==='ns'?0.5:0.85,symbol:mo.symbol,priority:mo.priority},
+            marker:{size:mo.size,color:mo.color,opacity:cat==='ns'?0.5:0.85,symbol:mo.symbol,priority:mo.priority,_pointOpacity:mo.pointOpacity},
             text:idx.map(i=>{
                 const b=both[i];
                 let h=b.hover+'<br>Log2FC: '+b.fc.toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2);
@@ -4988,7 +5039,7 @@ function buildVolcanoConfig(chart,p,qd,fidx){
         const mo=applyMarkerOverrides(items.map(it=>it.pidx),signColor,5,'diamond');
         return{
             x:xs,y:ys,mode:'markers',
-            marker:{size:mo.size,color:mo.color,opacity:0.85,symbol:mo.symbol,priority:mo.priority},
+            marker:{size:mo.size,color:mo.color,opacity:0.85,symbol:mo.symbol,priority:mo.priority,_pointOpacity:mo.pointOpacity},
             text:items.map(it=>{
                 const v=it.mA!=null?it.mA:it.mB;
                 return it.hover+'<br><em>Only in '+labelGroup+'</em><br>Mean '+labelGroup+': '+fmtVal(v)+'<br>Mean '+otherGroup+': 0 (not detected)<br><em>Log2FC and p-value not defined</em>';
@@ -5096,15 +5147,15 @@ function buildDotplotConfig(chart,p,qd,fidx){
     const traces=[];
     if(both.length){const mo=applyMarkerOverrides(both.map(d=>d.pidx),'#8b949e',5,'circle');
         traces.push({x:both.map(d=>d.x),y:both.map(d=>d.y),mode:'markers',
-        marker:{size:mo.size,color:mo.color,opacity:0.6,symbol:mo.symbol,priority:mo.priority},
+        marker:{size:mo.size,color:mo.color,opacity:0.6,symbol:mo.symbol,priority:mo.priority,_pointOpacity:mo.pointOpacity},
         text:both.map(d=>d.hover),customdata:both.map(d=>d.full)})}
     if(xOnly.length){const mo=applyMarkerOverrides(xOnly.map(d=>d.pidx),'#8b949e',5,'circle');
         traces.push({x:xOnly.map(d=>d.x),y:xOnly.map(()=>yBand),mode:'markers',
-        marker:{size:mo.size,color:mo.color,opacity:0.5,symbol:mo.symbol,priority:mo.priority},
+        marker:{size:mo.size,color:mo.color,opacity:0.5,symbol:mo.symbol,priority:mo.priority,_pointOpacity:mo.pointOpacity},
         text:xOnly.map(d=>d.hover),customdata:xOnly.map(d=>d.full)})}
     if(yOnly.length){const mo=applyMarkerOverrides(yOnly.map(d=>d.pidx),'#8b949e',5,'circle');
         traces.push({x:yOnly.map(()=>xBand),y:yOnly.map(d=>d.y),mode:'markers',
-        marker:{size:mo.size,color:mo.color,opacity:0.5,symbol:mo.symbol,priority:mo.priority},
+        marker:{size:mo.size,color:mo.color,opacity:0.5,symbol:mo.symbol,priority:mo.priority,_pointOpacity:mo.pointOpacity},
         text:yOnly.map(d=>d.hover),customdata:yOnly.map(d=>d.full)})}
 
     // Axis breaks for visual separation
@@ -5295,7 +5346,7 @@ function buildAbundanceConfig(chart,p,qd,fidx){
         x:data.map((_,i)=>i+1),
         y:data.map(d=>d.val),
         mode:'markers',
-        marker:{size:mo.size,color:mo.color,symbol:mo.symbol,priority:mo.priority},
+        marker:{size:mo.size,color:mo.color,symbol:mo.symbol,priority:mo.priority,_pointOpacity:mo.pointOpacity},
         text:data.map((d,i)=>d.hover+'<br>Rank: #'+(i+1)+'/'+total),
         customdata:data.map(d=>d.full)
     };
@@ -7250,7 +7301,7 @@ function buildSessionObject(opts){
                 scrollTop :vp?vp.scrollTop :0,
             };
         })(),
-        groupsOfInterest:_safeMap(GROUPS_OF_INTEREST,g=>({prefix:g.prefix,start:g.start,end:g.end,name:g.name||'',color:g.color,symbol:g.symbol,size:g.size,proteins:g.proteins})),
+        groupsOfInterest:_safeMap(GROUPS_OF_INTEREST,g=>({prefix:g.prefix,start:g.start,end:g.end,name:g.name||'',color:g.color,symbol:g.symbol,size:g.size,opacity:g.opacity!=null?g.opacity:1.0,proteins:g.proteins})),
         speciesHighlights:_safeMap(SPECIES_HIGHLIGHTS,h=>({prefix:h.prefix,color:h.color,enabled:h.enabled})),
         canvasAnnotations:_serializeCanvasAnnotations(),
     };
@@ -7934,6 +7985,24 @@ function openGraphSettingsForPlot(plotId){
     gsUpdateSwatches();
 }
 
+// Resolve the visible title for a plot. Precedence:
+//   1. user's inline edit of the chart title (cp.config._titleOverrides.chart)
+//   2. cp.title (set at creation, possibly edited via the title input on the
+//      plot card)
+//   3. cp.type as a last-resort fallback when nothing else exists
+// Used by the "Apply to" checkbox list so users see the same label they're
+// looking at on the canvas, not a stale auto-generated default.
+function _gsPlotLabel(p){
+    const ov=p&&p.config&&p.config._titleOverrides;
+    if(ov&&typeof ov.chart==='string'&&ov.chart.trim()) return ov.chart;
+    if(p&&p.title) return p.title;
+    return (p&&p.type)||'plot';
+}
+// Sanitise for HTML attribute / textContent insertion. The label may include
+// HTML special characters from a user title edit; strip the dangerous ones
+// so we don't open an XSS hole through the Graph Settings panel.
+function _esc(s){return String(s||'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}
+
 function toggleGraphSettingsPanel(){
     if(!CANVAS_PLOTS.length){alert('No plots on canvas');return}
     const wasOpen=!document.getElementById('graph-settings-panel').classList.contains('hidden');
@@ -7945,7 +8014,7 @@ function toggleGraphSettingsPanel(){
     document.getElementById('gs-batch-selector').classList.remove('hidden');
     const checks=document.getElementById('gs-plot-checks');
     checks.innerHTML=CANVAS_PLOTS.map(p=>
-        `<label class="checkbox-row"><input type="checkbox" value="${p.plotId}" checked onchange="gsBatchChanged()">${p.title||p.type}</label>`
+        `<label class="checkbox-row" style="display:flex;align-items:center;gap:6px;font-size:11px"><input type="checkbox" value="${p.plotId}" checked onchange="gsBatchChanged()">${_esc(_gsPlotLabel(p))}</label>`
     ).join('');
     document.getElementById('graph-settings-panel').classList.remove('hidden');
     gsUpdateSwatches();
@@ -7953,6 +8022,12 @@ function toggleGraphSettingsPanel(){
 
 function gsBatchChanged(){
     gsTargetPlots=[...document.querySelectorAll('#gs-plot-checks input:checked')].map(cb=>cb.value);
+}
+// Bulk select / deselect every "Apply to" checkbox at once. Re-syncs
+// gsTargetPlots so the next applyGraphSettings call hits the right plots.
+function gsBatchSelectAll(state){
+    document.querySelectorAll('#gs-plot-checks input[type=checkbox]').forEach(cb=>{cb.checked=!!state});
+    gsBatchChanged();
 }
 
 

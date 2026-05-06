@@ -3,6 +3,30 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.16] — 2026-05-06
+
+### Added — per-GOI opacity (independent of trace-wide Graph Settings opacity)
+Each Group of Interest already had editable color, shape, and size. Opacity was missing — GOI markers always inherited the trace-level opacity from Graph Settings, so users couldn't make GOI dots fully opaque while keeping the noise cloud at 50%.
+
+GOI entries now carry an `opacity` field (defaults to `1.0` so they pop above the cloud). The GOI list row gets a new percentage input (0–100, step 5) next to size, with the tooltip *"Opacity (% — independent of the trace-level opacity in Graph Settings)"*.
+
+Wiring across the stack:
+
+- **Chart engine** (`proker-charts.js`) — added a `_pointOpacity` parallel array on the marker. The render loop reads `pointOpacity[i]` first, falling back to the trace-level scalar `marker.opacity` for ordinary points (slot is `null`). The ambiguity in v4.15.15 where `marker.opacity` could be either scalar or array is resolved — `marker.opacity` is now strictly the trace-wide scalar, and `_pointOpacity` is strictly the per-point array.
+- **`restyle()`** — the OPACITY branch no longer fights with the per-point array. Graph Settings updates `marker.opacity` (scalar) only; `_pointOpacity` is owned by `applyMarkerOverrides` and survives every Graph Settings change. Mirror's the SIZE/SYMBOL/COLOR priority pattern in spirit, but cleaner because the per-point and trace-level values live in different fields.
+- **`getGOIOverride`** — returns `opacity` alongside color/symbol/size so any future caller can see the per-GOI value.
+- **`applyMarkerOverrides`** — emits `pointOpacity` (a parallel array, ordinary slots `null`) which each `build*Config` callsite threads onto the trace marker as `_pointOpacity`. Returned only when GOI is active so non-GOI plots stay scalar-only.
+- **GOI legend** — `_goiMarkerSVG` now accepts an `opacity` arg and emits `fill-opacity` / `stroke-opacity` so the legend marker matches the on-chart appearance.
+- **Session save** — `groupsOfInterest` serialisation includes the new `opacity` field; older session files that lack it default to `1.0` on load.
+
+### Improved — Graph Settings "Apply to" lists current visible titles + Select All/None
+Two papercuts in the Graph Settings batch-apply list:
+
+1. **Stale labels.** The checkbox list showed `cp.title` (the title at creation time) — but if the user had inline-edited the chart title, the canvas showed one label and the panel showed another. Hard to tell which checkbox corresponds to which plot. Now resolves through `_titleOverrides.chart` first, then `cp.title`, then `cp.type`, so the panel always shows the same label as the chart.
+2. **No bulk toggle.** Users with many plots had to click each checkbox to deselect or reselect. Two new buttons (**All** and **None**) sit next to the "Apply to" header and toggle every checkbox in one click. The list's max-height grew from 80 px to 120 px so more plots are visible without scrolling.
+
+A small `_esc()` helper sanitises plot labels before insertion into the panel HTML — labels can contain user input, so we strip `<`/`>`/`&`/`"` to close any potential XSS path through a malicious title.
+
 ## [4.15.15] — 2026-05-06
 
 ### Added — robust undo/redo across every canvas action
