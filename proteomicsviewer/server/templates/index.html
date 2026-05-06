@@ -204,7 +204,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .canvas-goi-legend .gl-title-row{display:flex;align-items:center;gap:4px;margin-bottom:4px;padding-right:14px}
 .canvas-goi-legend .gl-title-row .gl-title{margin:0;padding-right:0}
 .canvas-goi-legend .gl-row{display:flex;align-items:center;gap:6px;padding:1px 0;line-height:1.35}
-.canvas-goi-legend .gl-marker{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px}
+.canvas-goi-legend .gl-marker{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px}
 .canvas-goi-legend .gl-label{flex:1;outline:none;border:1px dashed transparent;border-radius:2px;padding:0 3px;cursor:text;min-height:14px;color:var(--text)}
 .canvas-goi-legend .gl-label:hover{border-color:var(--border)}
 .canvas-goi-legend .gl-label:focus{border-color:var(--accent);background:color-mix(in srgb, var(--accent) 14%, transparent)}
@@ -4276,38 +4276,88 @@ function setupPlotResize(wrap,plotId){
 // Build the SVG fragment for a single GOI marker (matches the ProkerChart
 // symbols: circle, square, diamond, triangle-up, star, cross). The visible
 // size is clamped so very small or very large GOI sizes still read clearly.
-function _goiMarkerSVG(color,symbol,sizeRaw,opacity){
-    const size=Math.max(4,Math.min(18,+sizeRaw||8));
-    const box=18;
-    const c=box/2;
-    const r=size/2;
+// Render a small SVG icon for a GOI legend row that visually matches the
+// on-chart marker. The chart's `_symbols` use `s` as a half-size (radius for
+// circle, half-side for square, half-width for polygons) — so a marker with
+// `g.size = 8` paints a 16-px-wide square on the chart. The legend uses the
+// same convention here, so users see the same shape at the same proportions.
+//
+// The SVG `width`/`height` stay fixed at 22 px (the .gl-marker container is
+// 18 px in CSS, but we leave 2 px on each side for outline/star points). The
+// internal `viewBox` scales with the marker size so a tiny `size=2` marker
+// stays small inside the box, and a large `size=14` marker fills the box —
+// matching the visual relationship between large and small GOI sizes on the
+// actual chart.
+//
+// Style options (`opts`) passed in by the caller match the chart's marker
+// state: `hollow` (boolean), `outline` (boolean), `outlineColor` (string),
+// `outlineWidth` (number). When the user has hollow markers in Graph Settings,
+// the on-chart GOI dots render hollow — the legend follows suit so the legend
+// always reflects what's actually on the canvas.
+function _goiMarkerSVG(color,symbol,sizeRaw,opacity,opts){
+    opts=opts||{};
+    // Chart half-size convention. Clamp gently so legend can render even
+    // pathological sizes — but the box scales below so reasonable sizes look
+    // right. Min 1 prevents zero-size invisible markers.
+    const s=Math.max(1,Math.min(22,+sizeRaw||5));
     const safeColor=(color||'#ff4444').replace(/[<>"]/g,'');
-    // Opacity defaults to 1 (fully opaque) so calls that don't pass it stay
-    // visually unchanged. Clamped to [0,1] for safety against bad input.
     const op=opacity!=null?Math.max(0,Math.min(1,+opacity)):1;
-    const opAttr=op<1?` fill-opacity="${op}"`:'';
-    const opStrokeAttr=op<1?` stroke-opacity="${op}"`:'';
+    // Outline takes a tiny extra padding so the stroke doesn't get clipped.
+    const isHollow=!!opts.hollow;
+    const hasOutline=opts.outline===true;
+    const outlineColor=(opts.outlineColor||'#000000').replace(/[<>"]/g,'');
+    const outlineWidth=+opts.outlineWidth||1;
+    const strokePad=isHollow?1.5:(hasOutline?outlineWidth:0);
+    // Compute the actual marker extent (largest distance from centre any
+    // shape reaches — diamond/triangle-up reach `s*1.3` / `s*1.2`, star
+    // reaches `s*1.2`, circle/square reach `s`). Pick the worst case so the
+    // viewBox always contains the marker without clipping.
+    const extent=s*1.3+strokePad+1;
+    const box=Math.max(18,extent*2);
+    const c=box/2;
+    // Base fill/stroke attrs: opacity always emitted, fill/stroke split by
+    // hollow vs outline vs solid. Mirrors the chart's render branches at
+    // proker-charts.js ~line 343.
+    const opAttr=` fill-opacity="${op}"`;
+    const strokeOpAttr=` stroke-opacity="${op}"`;
+    let style;
+    if(symbol==='cross'){
+        // Cross is always stroke-only (no fill) — chart renders identically.
+        style=` stroke="${safeColor}" stroke-width="${Math.max(1.5,s/3)}" fill="none"${strokeOpAttr}`;
+    } else if(isHollow){
+        style=` fill="none" stroke="${safeColor}" stroke-width="1.5"${strokeOpAttr}`;
+    } else if(hasOutline){
+        style=` fill="${safeColor}"${opAttr} stroke="${outlineColor}" stroke-width="${outlineWidth}"`;
+    } else {
+        style=` fill="${safeColor}"${opAttr}`;
+    }
     let inner='';
     switch(symbol){
-        case 'square':       inner=`<rect x="${c-r}" y="${c-r}" width="${r*2}" height="${r*2}" fill="${safeColor}"${opAttr}/>`; break;
-        case 'diamond':      inner=`<polygon points="${c},${c-r} ${c+r},${c} ${c},${c+r} ${c-r},${c}" fill="${safeColor}"${opAttr}/>`; break;
-        case 'triangle-up':  inner=`<polygon points="${c},${c-r} ${c+r*0.866},${c+r*0.5} ${c-r*0.866},${c+r*0.5}" fill="${safeColor}"${opAttr}/>`; break;
+        case 'square':       inner=`<rect x="${c-s}" y="${c-s}" width="${s*2}" height="${s*2}"${style}/>`; break;
+        case 'diamond':      inner=`<polygon points="${c},${c-s*1.3} ${c+s},${c} ${c},${c+s*1.3} ${c-s},${c}"${style}/>`; break;
+        case 'triangle-up':  inner=`<polygon points="${c},${c-s*1.2} ${c+s},${c+s*0.8} ${c-s},${c+s*0.8}"${style}/>`; break;
+        case 'triangle-right':inner=`<polygon points="${c+s*1.2},${c} ${c-s*0.8},${c-s} ${c-s*0.8},${c+s}"${style}/>`; break;
         case 'star':{
-            // 5-point star
-            const pts=[];
-            for(let i=0;i<10;i++){
-                const ang=-Math.PI/2+i*Math.PI/5;
-                const rad=i%2===0?r:r*0.45;
-                pts.push((c+rad*Math.cos(ang)).toFixed(2)+','+(c+rad*Math.sin(ang)).toFixed(2));
+            // 5-point star — same outer-radius (s*1.2) and inner-radius (s*0.5)
+            // ratios as proker-charts.js _symbols.star.
+            let pts='';
+            for(let i=0;i<5;i++){
+                const a1=(i*72-90)*Math.PI/180;
+                const a2=((i*72)+36-90)*Math.PI/180;
+                pts+=`${(c+s*1.2*Math.cos(a1)).toFixed(2)},${(c+s*1.2*Math.sin(a1)).toFixed(2)} ${(c+s*0.5*Math.cos(a2)).toFixed(2)},${(c+s*0.5*Math.sin(a2)).toFixed(2)} `;
             }
-            inner=`<polygon points="${pts.join(' ')}" fill="${safeColor}"${opAttr}/>`;
+            inner=`<polygon points="${pts.trim()}"${style}/>`;
             break;
         }
-        case 'cross':        inner=`<line x1="${c-r}" y1="${c}" x2="${c+r}" y2="${c}" stroke="${safeColor}" stroke-width="2"${opStrokeAttr}/><line x1="${c}" y1="${c-r}" x2="${c}" y2="${c+r}" stroke="${safeColor}" stroke-width="2"${opStrokeAttr}/>`; break;
+        case 'cross':        inner=`<path d="M${c-s},${c}L${c+s},${c}M${c},${c-s}L${c},${c+s}"${style}/>`; break;
         case 'circle':
-        default:             inner=`<circle cx="${c}" cy="${c}" r="${r}" fill="${safeColor}"${opAttr}/>`;
+        default:             inner=`<circle cx="${c}" cy="${c}" r="${s}"${style}/>`;
     }
-    return `<svg width="${box}" height="${box}" viewBox="0 0 ${box} ${box}">${inner}</svg>`;
+    // SVG renders at 22 px wide (the .gl-marker CSS box); viewBox scales the
+    // internal coords. Marker shape is identical to the chart at the same
+    // size value — small GOIs look small in the legend, large GOIs fill the
+    // box up to the gentle clamp above.
+    return `<svg width="22" height="22" viewBox="0 0 ${box} ${box}">${inner}</svg>`;
 }
 
 // Default label for a GOI in the legend. Honours the user's custom name if
@@ -4377,11 +4427,27 @@ function renderGOILegend(plotId){
     if(!visible.length){
         html+=`<div class="gl-empty">All GOIs hidden — × on rows to restore (use sidebar to remove).</div>`;
     }
+    // Pull the chart's CURRENT marker style so the legend icons reflect any
+    // hollow / outline / outline-color choices applied via Graph Settings.
+    // Reading from the live chart's first trace (rather than e.g.
+    // p.config._gsMarker) catches every code path: Graph Settings, Hollow
+    // toggle, outline picker, and any restyle() call. When the chart hasn't
+    // been built yet (legend rendered before first paint, rare), fall back
+    // to no special style — solid filled markers, identical to v4.15.16.
+    const chart=CHARTS[plotId];
+    const trace0=chart&&chart.traces&&chart.traces[0];
+    const m=(trace0&&trace0.marker)||{};
+    const styleOpts={
+        hollow:!!m._hollow,
+        outline:m._outline===true,
+        outlineColor:m._outlineColor||'#000000',
+        outlineWidth:m._outlineWidth||1,
+    };
     visible.forEach(g=>{
         const label=(st.labels&&st.labels[g.id]!=null)?st.labels[g.id]:_goiDefaultLabel(g);
         const safeLabel=String(label).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
         html+=`<div class="gl-row" data-gid="${g.id}">`+
-              `<span class="gl-marker">${_goiMarkerSVG(g.color,g.symbol,g.size,g.opacity)}</span>`+
+              `<span class="gl-marker">${_goiMarkerSVG(g.color,g.symbol,g.size,g.opacity,styleOpts)}</span>`+
               `<span class="gl-label" contenteditable="true" spellcheck="false" data-gid="${g.id}" title="Click to edit; blur to save">${safeLabel}</span>`+
               `<button class="gl-hide" data-gid="${g.id}" title="Hide this row in this legend (does not remove the GOI)">&times;</button>`+
               `</div>`;
@@ -6969,6 +7035,11 @@ function applyGraphSettings(){
         if(JSON.stringify(before)===JSON.stringify(after)) return;
         pushUndo('graphSettings',{plotId,before,after});
     });
+    // Refresh GOI legends so their marker icons reflect the new hollow /
+    // outline / outline-color choices the user just picked. Without this,
+    // the on-chart GOI dots become hollow but the legend still shows them
+    // as solid filled circles.
+    if(typeof refreshGOILegends==='function') refreshGOILegends();
     try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
 }
 

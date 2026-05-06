@@ -3,6 +3,24 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.17] — 2026-05-06
+
+### Fixed — GOI legend icon now matches the on-chart marker exactly
+Three independent mismatches between the legend swatch and the actual marker on the chart, all visible after the v4.15.16 opacity work made marker style configurable per-GOI:
+
+1. **Size convention.** The chart's `_symbols` (in `proker-charts.js`) treat the size argument as a half-size — radius for circle, half-side for square, half-width for polygons. So `g.size = 8` paints a 16-px-wide square on the chart. The legend's `_goiMarkerSVG` was treating the same value as the full diameter, so the legend marker was rendered at exactly half the chart's visual size. Squares and diamonds were the worst offenders.
+2. **Size clamping.** Legend clamped size to `[4, 18]` against a fixed 18 × 18 SVG box, so a `g.size = 20` GOI rendered at 20 on the chart and 18 in the legend. The new clamp is gentle (`[1, 22]`) and the SVG `viewBox` scales with marker extent so the proportions stay correct at any size.
+3. **Hollow / Outline / Outline color.** Graph Settings can put the chart into hollow or outlined-marker mode — the on-chart GOI dots inherit that style automatically (they're rendered through the same chart pipeline). The legend rendered solid filled markers regardless, so the icon never matched when those modes were active.
+
+Implementation:
+
+- `_goiMarkerSVG` rewritten to use the same half-size convention as the chart, with branches for solid / hollow / outlined / cross that mirror `proker-charts.js` line ~343. Added a `styleOpts` param `{hollow, outline, outlineColor, outlineWidth}` so the caller can pass the chart's current marker state.
+- `renderGOILegend` reads the chart's first trace's marker properties (`_hollow`, `_outline`, `_outlineColor`, `_outlineWidth`) and threads them through. Reading from the live chart catches every code path — Graph Settings, restyle calls, anything that mutates marker state.
+- The internal SVG `viewBox` scales with `s * 1.3 + outlinePad`, covering the diamond's `s*1.3` extent and the star's `s*1.2` plus any outline padding. The element itself stays a fixed 22 × 22 px (the .gl-marker CSS box grew from 18 to 22 to leave 2 px on each side for outlines), so the proportional shrink/grow happens via viewBox scaling — small GOIs look small in the legend, large GOIs fill the box.
+- `applyGraphSettings` now calls `refreshGOILegends()` after applying changes, so flipping Hollow or Outline in Graph Settings immediately re-renders the legend swatches with the new style.
+
+The five other GOI properties (color / shape / size / opacity / size growth) already round-tripped — this release closes the gap for size proportions and the trace-wide marker style.
+
 ## [4.15.16] — 2026-05-06
 
 ### Added — per-GOI opacity (independent of trace-wide Graph Settings opacity)
