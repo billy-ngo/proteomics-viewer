@@ -3,6 +3,38 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.13] — 2026-05-06
+
+### Fixed — chart axis range and title positions now survive session save/load
+Two related session-persistence bugs were silently dropping user-set state on reload.
+
+**Axis ranges (the bug the user hit):** When the user zoomed the X-axis to a specific range — either via right-click drag-zoom or the right-click "Edit X range" menu — `chart.xRange` / `chart.yRange` and the `_xManual` / `_yManual` flags were updated on the chart instance but never serialized into the session JSON. On reload, `renderPlot` constructed a fresh `ProkerChart` and let `build*Config` compute auto ranges from the data, so the user's saved zoom was wiped to "show full range".
+
+**Title drag positions:** Same root cause for `_titlePos`, `_xTitlePos`, `_yTitlePos`. When the user dragged a chart title or axis title to a custom location, that position lived on the chart instance only — it never made it into the session payload, so reloading snapped every title back to its build-time default position.
+
+`buildSessionObject` now writes a per-plot `chartState` block alongside the existing `position` / `colorOverrides` / `annotations` / `goiLegend` fields:
+
+```json
+{
+    "xRange":   [-1.5, 2.0],     "yRange":   [0, 5],
+    "xManual":  true,            "yManual":  true,
+    "zoomed":   true,
+    "titlePos":  {"x": 350, "y": 18},
+    "xTitlePos": null,
+    "yTitlePos": null
+}
+```
+
+`loadSession` restores this in the same setTimeout that runs `renderPlot`, AFTER `renderPlot` has run (so `build*Config` doesn't overwrite the restored values), and triggers one extra `chart.render()` to commit the visual update. The restore is conservative: only manual ranges (`xManual === true`) are reapplied — sessions saved while a plot was at its auto range stay at auto range.
+
+### Fixed — partial card position no longer leaves plots at 0×0
+The session-restore for plot card position only applied `width` / `height` if the saved value was truthy. A schema gap (e.g. an older session saved before width/height were captured, or a corrupted entry) could leave `pw.style.height` or `pw.style.width` unset, collapsing the card to its CSS-default near-zero size.
+
+The restore now always sets explicit width and height, falling back to the create-time defaults (`700px` × `420px`) when the saved value is empty.
+
+### Hardened — saved card size falls back to actual rendered size
+`buildSessionObject` now reads `card.offsetWidth` / `offsetHeight` as a fallback when `card.style.width` / `style.height` are empty. The inline-style values are normally set by `setupPlotResize` and `addCanvasPlot`, but a defensive fallback covers any path that mutates the rendered size without writing back to inline style.
+
 ## [4.15.12] — 2026-05-01
 
 ### Reverted — title auto-shrink (v4.15.11)

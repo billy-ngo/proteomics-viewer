@@ -6629,12 +6629,45 @@ function buildSessionObject(opts){
         canvasPlots:_safeMap(CANVAS_PLOTS,p=>{
             const card=document.getElementById('card-'+p.plotId);
             const chart=CHARTS[p.plotId];
+            // Capture per-card layout. We read getBoundingClientRect's
+            // client size as a fallback for width/height because the inline
+            // style may carry the create-time defaults (700/420 px) even after
+            // a user resize that was committed via offsetWidth (rare path
+            // before setupPlotResize wrote them back). Position (left/top) is
+            // always inline because every move/drag writes wrap.style.left/top.
+            const pos=card?{
+                left:card.style.left||'',
+                top:card.style.top||'',
+                width:card.style.width||(card.offsetWidth?card.offsetWidth+'px':''),
+                height:card.style.height||(card.offsetHeight?card.offsetHeight+'px':''),
+            }:null;
+            // Capture chart-instance state that lives on the chart object
+            // (not on cp.config) so it round-trips through save/load:
+            //   xRange/yRange/_xManual/_yManual — axis zoom/range overrides
+            //     set by drag-zoom or the right-click "Edit X/Y range" menu.
+            //   _titlePos / _xTitlePos / _yTitlePos — drag positions for the
+            //     chart title and axis titles (user can drag them anywhere).
+            //   _zoomed — flag indicating "user zoomed in" so reset-zoom
+            //     button shows correctly after reload.
+            // Without this block, a user who zooms the X-axis to a range and
+            // then saves would see the full auto range on reload.
+            const chartState=chart?{
+                xRange:Array.isArray(chart.xRange)?[...chart.xRange]:null,
+                yRange:Array.isArray(chart.yRange)?[...chart.yRange]:null,
+                xManual:!!chart._xManual,
+                yManual:!!chart._yManual,
+                zoomed:!!chart._zoomed,
+                titlePos :chart._titlePos ?{...chart._titlePos }:null,
+                xTitlePos:chart._xTitlePos?{...chart._xTitlePos}:null,
+                yTitlePos:chart._yTitlePos?{...chart._yTitlePos}:null,
+            }:null;
             return{
                 type:p.type,
                 config:p.config,
                 title:p.title,
                 frozen:p.frozen||false,
-                position:card?{left:card.style.left||'',top:card.style.top||'',width:card.style.width||'',height:card.style.height||''}:null,
+                position:pos,
+                chartState,
                 colorOverrides:chart&&Array.isArray(chart._colorOverrides)?chart._colorOverrides:[],
                 annotations:chart&&Array.isArray(chart.annotations)?chart.annotations:[],
                 goiLegend:p.goiLegend||null,
@@ -6895,12 +6928,18 @@ function loadSession(file){
                     if(cp.goiLegend&&typeof cp.goiLegend==='object') plotEntry.goiLegend=cp.goiLegend;
                     CANVAS_PLOTS.push(plotEntry);
                     const pw=document.createElement('div');pw.className='canvas-plot';pw.id='card-'+plotId;
+                    // Restore card position. Always set width + height so a
+                    // partially-saved position (older session schema, or a
+                    // resize that didn't fully write back) doesn't leave the
+                    // card at 0×0. Defaults match addCanvasPlot's create-time
+                    // size (700×420 px).
                     if(cp.position&&typeof cp.position==='object'){
                         if(cp.position.left)pw.style.left=cp.position.left;
-                        if(cp.position.top)pw.style.top=cp.position.top;
-                        if(cp.position.width)pw.style.width=cp.position.width;
-                        if(cp.position.height)pw.style.height=cp.position.height;
+                        if(cp.position.top) pw.style.top =cp.position.top;
+                        pw.style.width =cp.position.width ||'700px';
+                        pw.style.height=cp.position.height||'420px';
                     } else {
+                        pw.style.width ='700px';
                         pw.style.height='420px';
                     }
                     pw.innerHTML=`<button class="cp-close" onclick="removePlot('${plotId}')" title="Remove this plot from the canvas">&times;</button><div id="${plotId}" style="width:100%;height:100%"></div>`;
@@ -6921,6 +6960,30 @@ function loadSession(file){
                                             chart.addAnnotation(a.x,a.y,a.text||'',{ax:a.ax,ay:a.ay,key:a.key});
                                         }
                                     });
+                                }
+                                // Restore chart-instance state (axis ranges
+                                // + title drag positions). This must run AFTER
+                                // renderPlot so build*Config has populated
+                                // xScale/yScale; setting xRange/yRange before
+                                // would be overwritten by build*Config.
+                                if(cp.chartState&&typeof cp.chartState==='object'){
+                                    const cs=cp.chartState;
+                                    let needRender=false;
+                                    if(Array.isArray(cs.xRange)&&cs.xRange.length===2&&cs.xManual){
+                                        chart.xRange=[cs.xRange[0],cs.xRange[1]];
+                                        chart._xManual=true;
+                                        needRender=true;
+                                    }
+                                    if(Array.isArray(cs.yRange)&&cs.yRange.length===2&&cs.yManual){
+                                        chart.yRange=[cs.yRange[0],cs.yRange[1]];
+                                        chart._yManual=true;
+                                        needRender=true;
+                                    }
+                                    if(cs.zoomed) chart._zoomed=true;
+                                    if(cs.titlePos &&typeof cs.titlePos.x ==='number'){chart._titlePos ={x:cs.titlePos.x ,y:cs.titlePos.y };needRender=true}
+                                    if(cs.xTitlePos&&typeof cs.xTitlePos.x==='number'){chart._xTitlePos={x:cs.xTitlePos.x,y:cs.xTitlePos.y};needRender=true}
+                                    if(cs.yTitlePos&&typeof cs.yTitlePos.x==='number'){chart._yTitlePos={x:cs.yTitlePos.x,y:cs.yTitlePos.y};needRender=true}
+                                    if(needRender) chart.render();
                                 }
                             }
                         }catch(plotErr){
