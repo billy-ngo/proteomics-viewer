@@ -3,6 +3,25 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.10] — 2026-05-06
+
+### Fixed — +Text now actually does something visible
+The `+Text` button in the canvas toolbar previously placed the text box at fixed coordinates `(50, 50)` from the top-left of the canvas. If the user had scrolled, zoomed, or just had a busy canvas, the text box landed off-screen and the button appeared to do nothing. Same applied when the user wanted the text in a specific location — they had to drag it from the corner every time.
+
+`addCanvasTextBox()` now enters **placement mode**:
+
+1. Cursor switches to crosshair on the canvas + viewport.
+2. A small accent-coloured banner appears at the top of the screen: *"Click on the canvas to drop a text box… (Esc to cancel)"*.
+3. The user clicks anywhere on empty canvas space → a text box drops at exactly those coordinates.
+4. The text box is **auto-focused with its placeholder text "Text" pre-selected**, so the user can immediately type to replace it. No extra double-click needed.
+5. Pressing <kbd>Escape</kbd> at any point during placement cancels and restores the cursor.
+
+Click-target detection: placement-mode clicks on plots, annotations, GOI legends, zoom controls, or other text boxes are ignored (those keep their own behaviour). Click coordinates are converted from screen space to canvas space accounting for `canvasScale` (zoom level) so the box lands exactly under the cursor regardless of zoom.
+
+The text box's drag-to-reposition behaviour was also made canvas-zoom-aware (the previous implementation moved the box at scaled pixels, so dragging a zoomed-out canvas was sluggish).
+
+A reusable `_enterCanvasPlacement(msg, onPlace)` helper handles the cursor/banner/click-listener/Esc-to-cancel boilerplate, so the same pattern can later be applied to `+Line` and `+Shape` buttons too.
+
 ## [4.15.9] — 2026-05-06
 
 ### Changed — empty-canvas hint text

@@ -5365,11 +5365,81 @@ function _showCanvasContextMenu(x,y){
     else tryAttach();
 })();
 
+// Place a text box where the user clicks. Enters "placement mode": shows a
+// crosshair cursor + a small instruction banner, listens for the next canvas
+// click, drops the text box at those coordinates, and immediately focuses it
+// so the user can start typing. Escape cancels.
 function addCanvasTextBox(){
+    const canvas=document.getElementById('canvas');if(!canvas)return;
+    if(window._placementInProgress) return;  // already waiting for a click
+    _enterCanvasPlacement('Click on the canvas to drop a text box…',(x,y)=>{
+        _createCanvasTextBoxAt(x,y);
+    });
+}
+
+// Show a banner + crosshair cursor; capture next mousedown on canvas/viewport.
+// Calls onPlace(x,y) with canvas-relative coordinates (unscaled — already
+// accounts for canvasScale via inverse-transform).
+function _enterCanvasPlacement(msg,onPlace){
+    const canvas=document.getElementById('canvas');
+    const viewport=document.getElementById('canvas-viewport');
+    if(!canvas||!viewport) return;
+    window._placementInProgress=true;
+    const prevCanvasCursor=canvas.style.cursor;
+    const prevVpCursor=viewport.style.cursor;
+    canvas.style.cursor='crosshair';
+    viewport.style.cursor='crosshair';
+    // Hint banner (matches the existing error-toast styling for visual consistency)
+    const banner=document.createElement('div');
+    banner.id='_placement-banner';
+    banner.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;z-index:99999;box-shadow:0 4px 14px rgba(0,0,0,0.4);font-family:inherit;display:flex;align-items:center;gap:10px;pointer-events:none';
+    banner.innerHTML=`<span>${msg}</span><span style="font-size:10px;opacity:0.85;font-weight:400;border-left:1px solid rgba(255,255,255,0.3);padding-left:10px">Esc to cancel</span>`;
+    document.body.appendChild(banner);
+    // Cleanup helper — restore everything
+    const cleanup=()=>{
+        window._placementInProgress=false;
+        canvas.style.cursor=prevCanvasCursor;
+        viewport.style.cursor=prevVpCursor;
+        document.getElementById('_placement-banner')?.remove();
+        canvas.removeEventListener('mousedown',onClick,true);
+        document.removeEventListener('keydown',onKey,true);
+    };
+    function onClick(e){
+        // Only act on left clicks directly inside the canvas (not on existing
+        // plots, annotations, controls, etc.)
+        if(e.button!==0) return;
+        if(e.target.closest('.canvas-plot')||
+           e.target.closest('.canvas-anno-wrap')||
+           e.target.closest('.canvas-zoom-controls')||
+           e.target.closest('.canvas-goi-legend')||
+           e.target.closest('.canvas-textbox')) return;
+        e.preventDefault();e.stopPropagation();
+        // Convert mouse position to canvas-coords. canvasScale-aware: the canvas
+        // is transform: scale()d, so getBoundingClientRect is in scaled px;
+        // divide the offset back out.
+        const rect=canvas.getBoundingClientRect();
+        const sc=typeof canvasScale==='number'&&canvasScale>0?canvasScale:1;
+        const x=(e.clientX-rect.left)/sc;
+        const y=(e.clientY-rect.top )/sc;
+        cleanup();
+        try{onPlace(x,y)}catch(err){console.error('placement onPlace failed',err)}
+    }
+    function onKey(e){
+        if(e.key==='Escape'){e.preventDefault();cleanup()}
+    }
+    // Use capture so we run before child handlers (panning etc.)
+    canvas.addEventListener('mousedown',onClick,true);
+    document.addEventListener('keydown',onKey,true);
+}
+
+// Build the text-box DOM at (x, y), with autofocus + select-all so the user
+// can immediately type to replace the placeholder. Drag, click-to-select-for-
+// toolbar, and double-click-to-edit behaviours match the original implementation.
+function _createCanvasTextBoxAt(x,y){
     const canvas=document.getElementById('canvas');if(!canvas)return;
     const wrap=document.createElement('div');
     wrap.className='canvas-anno-wrap';
-    wrap.style.cssText='position:absolute;left:50px;top:50px';
+    wrap.style.cssText=`position:absolute;left:${Math.max(0,x)}px;top:${Math.max(0,y)}px`;
     wrap.innerHTML=`<button class="canvas-anno-close" onclick="this.parentElement.remove()">&times;</button><div class="canvas-textbox" contenteditable="true">Text</div>`;
     canvas.style.position='relative';
     canvas.appendChild(wrap);
@@ -5384,15 +5454,24 @@ function addCanvasTextBox(){
     });
     document.addEventListener('mousemove',e=>{
         if(!dragging)return;
-        wrap.style.left=(origL+e.clientX-startX)+'px';
-        wrap.style.top=(origT+e.clientY-startY)+'px';
+        const sc=typeof canvasScale==='number'&&canvasScale>0?canvasScale:1;
+        wrap.style.left=(origL+(e.clientX-startX)/sc)+'px';
+        wrap.style.top=(origT+(e.clientY-startY)/sc)+'px';
     });
     document.addEventListener('mouseup',()=>{if(dragging){dragging=false;document.body.style.cursor=''}});
-    // Single click selects for toolbar; double-click enters edit mode
     tb.addEventListener('click',e=>{
         if(document.activeElement!==tb) updateToolbar(tb);
     });
     tb.addEventListener('dblclick',()=>tb.focus());
+    // Auto-focus + select the placeholder so the user can just start typing.
+    setTimeout(()=>{
+        tb.focus();
+        const range=document.createRange();
+        range.selectNodeContents(tb);
+        const sel=window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+    },10);
 }
 
 function addCanvasLine(){
