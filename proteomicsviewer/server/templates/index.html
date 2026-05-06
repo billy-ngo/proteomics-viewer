@@ -1100,8 +1100,8 @@ function _snapshotPlot(plotId){
             goiLegend: p.goiLegend||null,
         })),
         position: card?{
-            left: card.style.left||'',
-            top: card.style.top||'',
+            left: card.style.left||(card.offsetLeft?card.offsetLeft+'px':'0px'),
+            top: card.style.top||(card.offsetTop?card.offsetTop+'px':'0px'),
             width: card.style.width||(card.offsetWidth?card.offsetWidth+'px':'700px'),
             height: card.style.height||(card.offsetHeight?card.offsetHeight+'px':'420px'),
         }:null,
@@ -1126,13 +1126,18 @@ function _restorePlotFromSnapshot(snap){
     pw.className='canvas-plot';
     pw.id='card-'+p.plotId;
     pw.style.position='absolute';
+    // Always set explicit position values — without left/top a card with
+    // position:absolute defaults to (0,0), which would stack multiple
+    // restored plots on top of each other in the corner.
     if(snap.position){
-        if(snap.position.left) pw.style.left=snap.position.left;
-        if(snap.position.top)  pw.style.top =snap.position.top;
+        pw.style.left  =snap.position.left  ||'0px';
+        pw.style.top   =snap.position.top   ||'0px';
         pw.style.width =snap.position.width ||'700px';
         pw.style.height=snap.position.height||'420px';
     } else {
-        pw.style.width='700px';
+        pw.style.left  ='0px';
+        pw.style.top   ='0px';
+        pw.style.width ='700px';
         pw.style.height='420px';
     }
     pw.innerHTML=`<button class="cp-close" onclick="removePlot('${p.plotId}')" title="Remove this plot from the canvas">&times;</button><div id="${p.plotId}" style="width:100%;height:100%"></div><div class="cp-handle se" data-corner="se"></div><div class="cp-handle sw" data-corner="sw"></div><div class="cp-handle ne" data-corner="ne"></div><div class="cp-handle nw" data-corner="nw"></div>`;
@@ -4085,6 +4090,11 @@ function addPlotToCanvas(type){
             const snap=_snapshotPlot(newCp.plotId);
             if(snap) pushUndo('addPlot',{plotId:newCp.plotId,snapshot:snap});
         }catch(_){}
+        // Persist the freshly-created plot so a browser refresh / autosave
+        // restore brings it back. Without this, plots were only autosaved
+        // after the user dragged or resized them — a brand-new plot left
+        // untouched would be lost on refresh.
+        try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
     },100);
 }
 function updateStatsMethodsPanel(){
@@ -4206,6 +4216,10 @@ function duplicatePlot(plotId){
                 const snap=_snapshotPlot(newPlotId);
                 if(snap) pushUndo('addPlot',{plotId:newPlotId,snapshot:snap});
             }catch(_){}
+            // Persist so the duplicate survives a refresh (autosave was only
+            // firing on drag/resize — a freshly-duplicated plot left at its
+            // initial offset position would otherwise be lost on refresh).
+            try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
         }catch(e){
             console.error('duplicatePlot: render failed for',newPlotId,e);
             _showErrorToast('Plot duplication failed: '+(e&&e.message||e));
@@ -7307,17 +7321,19 @@ function buildSessionObject(opts){
         canvasPlots:_safeMap(CANVAS_PLOTS,p=>{
             const card=document.getElementById('card-'+p.plotId);
             const chart=CHARTS[p.plotId];
-            // Capture per-card layout. Position (left/top) is always inline
-            // because every move/drag writes wrap.style.left/top. Width/height
-            // are inline after addCanvasPlot (700/420 defaults) and after
-            // setupPlotResize commits a user resize. The offsetWidth/offsetHeight
-            // fallbacks cover any code path that mutates rendered size without
-            // writing back to inline style.
+            // Capture per-card layout. Position should always be inline
+            // (every move/drag writes wrap.style.left/top, addCanvasPlot
+            // sets both at create time) — but a defensive fallback to
+            // offsetLeft/offsetTop catches any path that mutates rendered
+            // position without writing back to inline style. offsetLeft is
+            // layout-based and unaffected by canvas transform: scale, so
+            // the captured value is in unscaled canvas coords matching the
+            // inline style. Same fallback for width/height.
             const pos=card?{
-                left:card.style.left||'',
-                top:card.style.top||'',
-                width:card.style.width||(card.offsetWidth?card.offsetWidth+'px':''),
-                height:card.style.height||(card.offsetHeight?card.offsetHeight+'px':''),
+                left:card.style.left||(card.offsetLeft?card.offsetLeft+'px':'0px'),
+                top:card.style.top||(card.offsetTop?card.offsetTop+'px':'0px'),
+                width:card.style.width||(card.offsetWidth?card.offsetWidth+'px':'700px'),
+                height:card.style.height||(card.offsetHeight?card.offsetHeight+'px':'420px'),
             }:null;
             // Snapshot the live chart instance's interactive state into
             // p.config._chartState so it round-trips through save/load AND
@@ -7480,6 +7496,33 @@ function loadSession(file){
             return;
         }
 
+        // ── Fully clear existing canvas state BEFORE rendering anything ──
+        // Without this, loading a session on top of existing plots leaves the
+        // old plots behind (CANVAS_PLOTS is never reset, the cards stay in
+        // the DOM, and CHARTS keeps stale instances). The follow-on
+        // canvas-plots loop only PUSHES new entries, so the user ended up
+        // with the old plots plus the new ones, plus a cluster of
+        // document-level event listeners from the destroyed-but-not-cleaned
+        // chart instances.
+        // _doClearCanvas (defined above the empty-canvas right-click menu)
+        // destroys every chart, empties CHARTS + CANVAS_PLOTS, wipes the
+        // canvas DOM (which also removes any .canvas-anno-wrap text/line/
+        // shape annotations), resets canvas min-dimensions, and clears the
+        // viewport scroll. It also resets the toolbar / stats panel.
+        // Sidebar lists (GOI, species highlights) are reset to empty here
+        // so a session that lacks those fields doesn't leave the user's
+        // pre-load entries hanging around.
+        if(typeof _doClearCanvas==='function') _doClearCanvas();
+        GROUPS_OF_INTEREST=[];
+        SPECIES_HIGHLIGHTS=[];
+        if(typeof renderGOIList==='function') renderGOIList();
+        if(typeof renderSpeciesHighlights==='function') renderSpeciesHighlights();
+        // Also clear any leftover canvas annotations that aren't inside the
+        // canvas innerHTML reset (defensive — _doClearCanvas wipes
+        // canvas.innerHTML which should catch them, but a future refactor
+        // could move annotations to a sibling div).
+        document.querySelectorAll('.canvas-anno-wrap').forEach(w=>w.remove());
+
         // ── Processing settings ──
         tryRun('processing settings',()=>{
             const p=s.processing||{};
@@ -7621,21 +7664,32 @@ function loadSession(file){
                     if(cp.goiLegend&&typeof cp.goiLegend==='object') plotEntry.goiLegend=cp.goiLegend;
                     CANVAS_PLOTS.push(plotEntry);
                     const pw=document.createElement('div');pw.className='canvas-plot';pw.id='card-'+plotId;
-                    // Restore card position. Always set width + height so a
-                    // partially-saved position (older session schema, or a
-                    // resize that didn't fully write back) doesn't leave the
-                    // card at 0×0. Defaults match addCanvasPlot's create-time
-                    // size (700×420 px).
+                    // position:absolute is required for left/top to position
+                    // the card. addCanvasPlot sets this on create — restore
+                    // sets it explicitly here too in case a session was saved
+                    // by a build that omitted it (defensive).
+                    pw.style.position='absolute';
+                    // Restore card position with explicit fallbacks for every
+                    // axis. Without these explicit defaults, a position whose
+                    // left/top is empty (older session schema, or a path that
+                    // didn't write back to inline style) would leave the card
+                    // at the parent's default position — which for absolute
+                    // children stacks them all at (0,0), so multiple plots
+                    // would pile up in the top-left corner. The user reported
+                    // exactly this symptom: "top-left portion saves correctly
+                    // but other graphs aren't saved appropriately".
                     if(cp.position&&typeof cp.position==='object'){
-                        if(cp.position.left)pw.style.left=cp.position.left;
-                        if(cp.position.top) pw.style.top =cp.position.top;
+                        pw.style.left  =cp.position.left  ||'0px';
+                        pw.style.top   =cp.position.top   ||'0px';
                         pw.style.width =cp.position.width ||'700px';
                         pw.style.height=cp.position.height||'420px';
                     } else {
+                        pw.style.left  ='0px';
+                        pw.style.top   ='0px';
                         pw.style.width ='700px';
                         pw.style.height='420px';
                     }
-                    pw.innerHTML=`<button class="cp-close" onclick="removePlot('${plotId}')" title="Remove this plot from the canvas">&times;</button><div id="${plotId}" style="width:100%;height:100%"></div>`;
+                    pw.innerHTML=`<button class="cp-close" onclick="removePlot('${plotId}')" title="Remove this plot from the canvas">&times;</button><div id="${plotId}" style="width:100%;height:100%"></div><div class="cp-handle se" data-corner="se"></div><div class="cp-handle sw" data-corner="sw"></div><div class="cp-handle ne" data-corner="ne"></div><div class="cp-handle nw" data-corner="nw"></div>`;
                     canvas.appendChild(pw);
                     if(typeof setupPlotResize==='function') setupPlotResize(pw,plotId);
                     setTimeout(()=>{

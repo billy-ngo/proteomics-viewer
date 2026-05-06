@@ -3,6 +3,28 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.19] — 2026-05-06
+
+### Fixed — session load fully clears existing plots before restoring
+`loadSession` was never clearing `CANVAS_PLOTS` / `CHARTS` / DOM cards before pushing the restored plots — so loading a session on top of an in-progress canvas left every old plot behind alongside the new ones, with destroyed-but-not-cleaned chart instances accumulating document-level event listeners.
+
+The load path now calls the existing `_doClearCanvas()` helper at the very start (after the confirm dialog passes). That helper destroys every chart, empties `CHARTS` and `CANVAS_PLOTS`, wipes the canvas DOM (which also removes any text/line/shape `.canvas-anno-wrap` annotations), resets canvas min-dimensions, and clears the viewport scroll. Three additional clears handle sidebar lists that the old code only reset conditionally:
+
+- `GROUPS_OF_INTEREST = []` and `renderGOIList()` — old code only ran when `s.groupsOfInterest` was a non-empty array, so a session without GOIs left the user's pre-load entries hanging around.
+- `SPECIES_HIGHLIGHTS = []` and `renderSpeciesHighlights()` — same fall-through bug.
+- `document.querySelectorAll('.canvas-anno-wrap').forEach(w => w.remove())` — defensive, in case a future refactor moves annotations to a sibling div outside the canvas innerHTML.
+
+### Fixed — plot positions now save robustly across the entire canvas
+Loading a session that was saved with multiple plots scattered across the canvas was restoring them all stacked in the top-left corner. Two related causes:
+
+1. **Position capture relied on `card.style.left`/`top` being inline.** That's normally the case (every drag/move writes back to inline style), but a code path that mutated rendered position via offsets (or any future CSS-driven layout tweak) could leave inline empty. The capture now falls back to `card.offsetLeft`/`offsetTop` when inline is empty, so the actual rendered position is always captured. `offsetLeft` is layout-based and unaffected by canvas `transform: scale`, so the captured value is in the same unscaled canvas-coords as the inline style.
+2. **Position restore used `if(cp.position.left) ...`.** Empty string is falsy, so a card whose saved `left` was empty got NO inline left set on restore — and `position: absolute` defaults that to `0`. With multiple plots in the same condition, they all stacked at `(0, 0)`. Restore now sets explicit values with explicit fallbacks (`'0px'` for left/top, `'700px'` × `'420px'` for width/height) — the card always lands somewhere defined, never at the parent's default.
+
+Bonus fix: restored cards now include the four resize-handle divs (`.cp-handle se/sw/ne/nw`) that `addCanvasPlot` adds at create time. The previous restore omitted them, so plots loaded from a session couldn't be resized until a refresh.
+
+### Fixed — freshly created plots are now autosaved
+`addCanvasPlot` and `duplicatePlot` only triggered `autoSaveSession` indirectly (via the chart's drag mouseup handler). A user who created a plot but didn't drag or resize it before refreshing the browser would lose it. Both functions now call `autoSaveSession()` immediately after the initial render, so any new or duplicated plot survives a refresh.
+
 ## [4.15.18] — 2026-05-06
 
 ### Added — axis color + thickness controls in Graph Settings
