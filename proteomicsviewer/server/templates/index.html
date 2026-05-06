@@ -7144,29 +7144,85 @@ function openGraphSettingsForPlot(plotId){
     gsTargetPlots=[plotId];
     document.getElementById('gs-title').textContent='Graph Settings';
     document.getElementById('gs-batch-selector').classList.add('hidden');
-    // Read current values from the plot
-    const el=document.getElementById(plotId);
-    if(el&&el.data&&el.data[0]){
-        const m=el.data[0].marker||{};
-        document.getElementById('gs-dot-size').value=m.size||5;
-        document.getElementById('gs-dot-size-val').textContent=m.size||5;
-        if(typeof m.color==='string') document.getElementById('gs-dot-color').value=m.color;
-        document.getElementById('gs-dot-opacity').value=Math.round((m.opacity||0.7)*100);
-        document.getElementById('gs-dot-opacity-val').textContent=(m.opacity||0.7).toFixed(1);
-        document.getElementById('gs-dot-shape').value=m.symbol||'circle';
-    }
-    if(el&&el.layout){
-        document.getElementById('gs-plot-bg').value=el.layout.plot_bgcolor||'#161b22';
-        document.getElementById('gs-paper-bg').value=el.layout.paper_bgcolor||'#0d1117';
-        const gc=el.layout.xaxis?.gridcolor||'#21262d';
-        document.getElementById('gs-grid-color').value=gc;
-        document.getElementById('gs-font-size').value=el.layout.font?.size||12;
-        document.getElementById('gs-font-size-val').textContent=el.layout.font?.size||12;
-    }
-    // Show/hide threshold toggle based on plot type
+    // Sync the Graph Settings inputs with the chart's CURRENT actual state.
+    // Without this, the inputs keep whatever was last there (initially the
+    // hardcoded dark-theme defaults #161b22 / #0d1117 / #21262d) — and any
+    // change the user makes triggers applyGraphSettings(), which reads ALL
+    // inputs and writes them back, forcing the plot's bg/grid to those stale
+    // dark-theme colours regardless of the active theme. That's the
+    // "marker color change unexpectedly switched the background" bug.
+    //
+    // Source-of-truth precedence:
+    //   1. cp.config._gsMarker / _gsLayout (user's persisted overrides)
+    //   2. chart's current rendered state (theme-derived defaults)
+    //   3. Hard-coded fallbacks if no chart yet
     const chart=CHARTS[plotId];
-    const hasRefLines=chart&&chart._refLines&&chart._refLines.length>0;
     const cp=CANVAS_PLOTS.find(c=>c.plotId===plotId);
+    const cfgM=(cp&&cp.config&&cp.config._gsMarker)||{};
+    const cfgL=(cp&&cp.config&&cp.config._gsLayout)||{};
+    // ── Marker — read from persisted override, else the live trace, else defaults
+    const trace0=chart&&chart.traces&&chart.traces[0];
+    const m=(trace0&&trace0.marker)||{};
+    // For arrays (per-point styling), pick a sensible scalar — find an index
+    // where priority is 0 (ordinary point) so we don't show a GOI's colour as
+    // the "marker colour" default.
+    const pickScalar=(val,priority)=>{
+        if(!Array.isArray(val)) return val;
+        if(Array.isArray(priority)){
+            const idx=priority.findIndex(p=>!p||p<1);
+            if(idx>=0) return val[idx];
+        }
+        return val[0];
+    };
+    const liveSize=pickScalar(m.size,m.priority)||5;
+    const liveSymbol=pickScalar(m.symbol,m.priority)||'circle';
+    const liveColor=pickScalar(m.color,m.priority);
+    const liveOpacity=m.opacity!=null?m.opacity:0.7;
+    const liveHollow=!!m._hollow;
+    const size=cfgM.size!=null?cfgM.size:liveSize;
+    const symbol=cfgM.symbol||liveSymbol;
+    const color=cfgM.color||liveColor||'#e6edf3';
+    const opacity=cfgM.opacity!=null?cfgM.opacity:liveOpacity;
+    const hollow=cfgM.hollow!==undefined?cfgM.hollow:liveHollow;
+    document.getElementById('gs-dot-size').value=size;
+    document.getElementById('gs-dot-size-num').value=size;
+    document.getElementById('gs-dot-shape').value=symbol;
+    if(typeof color==='string') document.getElementById('gs-dot-color').value=color;
+    document.getElementById('gs-dot-opacity').value=Math.round(opacity*100);
+    document.getElementById('gs-dot-opacity-num').value=Math.round(opacity*100);
+    document.getElementById('gs-hollow').checked=hollow;
+    // ── Layout — same precedence chain. The chart's theme reflects whatever
+    // the user picked OR the active theme's surface/bg colours. Reading from
+    // here means picking a marker colour doesn't drag a stale dark-theme bg
+    // into the apply call.
+    const theme=(chart&&chart.opts&&chart.opts.theme)||{};
+    const livePlotBg = theme.plot || '#161b22';
+    const livePaperBg= theme.bg   || '#0d1117';
+    const liveGridColor = theme.grid || '#21262d';
+    const liveFontSize = chart&&chart._fontSize || 12;
+    const liveShowGrid = chart ? (chart._showGrid !== false) : true;
+    const liveShowPlotBg  = chart ? !chart._hidePlotBg  : true;
+    const liveShowPaperBg = chart ? !chart._hidePaperBg : true;
+    const plotBg=cfgL.plotBg||livePlotBg;
+    const paperBg=cfgL.paperBg||livePaperBg;
+    const gridColor=cfgL.gridColor||liveGridColor;
+    const fontSize=cfgL.fontSize||liveFontSize;
+    const showGrid=cfgL.showGrid!==undefined?cfgL.showGrid:liveShowGrid;
+    // For show*Bg we infer from cfgL.plotBg/paperBg being explicitly null
+    // (applyGraphSettings sets them to null when the show checkbox is unchecked)
+    const showPlotBg = cfgL.plotBg===null ? false : liveShowPlotBg;
+    const showPaperBg= cfgL.paperBg===null ? false : liveShowPaperBg;
+    document.getElementById('gs-plot-bg').value = plotBg;
+    document.getElementById('gs-paper-bg').value= paperBg;
+    document.getElementById('gs-grid-color').value=gridColor;
+    document.getElementById('gs-show-grid').checked=showGrid;
+    document.getElementById('gs-show-plotbg').checked=showPlotBg;
+    document.getElementById('gs-show-paperbg').checked=showPaperBg;
+    document.getElementById('gs-font-size').value=fontSize;
+    document.getElementById('gs-font-size-num').value=fontSize;
+    // Show/hide threshold toggle based on plot type
+    // (chart and cp already declared above when reading current state)
+    const hasRefLines=chart&&chart._refLines&&chart._refLines.length>0;
     const isVolcano=cp&&cp.type==='volcano';
     document.getElementById('gs-threshold-row').style.display=hasRefLines?'flex':'none';
     if(hasRefLines) document.getElementById('gs-show-thresholds').checked=chart._showRefLines!==false;

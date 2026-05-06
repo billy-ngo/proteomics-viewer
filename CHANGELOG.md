@@ -3,6 +3,31 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.8] — 2026-05-06
+
+### Fixed — marker color change no longer wipes Groups-of-Interest highlights
+The v4.15.7 fix went too far: by applying `trace.marker.color = props.color` unconditionally, it overwrote the per-point colour arrays that `applyMarkerOverrides()` set for Groups-of-Interest and species highlights — so picking a marker colour in Graph Settings made every GOI lose its distinctive colour, shape, and size.
+
+Fix in `proker-charts.js`'s `restyle()`: when the trace has a `marker.priority` array (the flag that `applyMarkerOverrides` writes for highlighted points), only replace `color[i]`, `size[i]`, `symbol[i]` where `priority[i] === 0` (ordinary point). Priority `1` (species highlight) and `2` (GOI) are preserved verbatim. Per-point `_colorOverrides` set via right-click → "Color selected" continue to take precedence over both in the render loop.
+
+### Fixed — changing marker colour no longer drags a stale dark-theme background onto the plot
+On non-dark themes (light, soft, custom), picking a marker colour also unexpectedly switched the plot's background to dark surface (`#161b22`) and the paper background to dark page (`#0d1117`).
+
+Root cause: `openGraphSettingsForPlot()` was reading from `el.data` and `el.layout` to populate the panel inputs — but those are old Plotly properties that don't exist on ProkerChart. The reads silently no-op'd, so the inputs stayed at whatever was last there. Initial state for those inputs was the hardcoded dark-theme defaults from the static HTML (`<input type="color" value="#161b22">` etc). When the user then changed a marker colour, `applyGraphSettings()` read **all** form inputs — including the stale dark-theme bg/grid — and wrote them back to the chart, forcing the dark surface onto the plot.
+
+Fix: `openGraphSettingsForPlot()` now reads from the correct sources, in this precedence order:
+
+1. **`cp.config._gsMarker` / `cp.config._gsLayout`** — the user's persisted Graph Settings overrides for this plot (added in v4.15.7). If present, these win.
+2. **The ProkerChart instance's actual current state** — `chart.opts.theme.{plot,bg,grid}`, `chart._fontSize`, `chart._showGrid`, `chart._hidePlotBg`, `chart._hidePaperBg`, and `chart.traces[0].marker.{size,color,symbol,opacity,_hollow}`. Reflects whatever the active theme produced if no user override exists.
+3. **Hard-coded fallbacks** if no chart yet exists.
+
+For per-point arrays (size/color/symbol when GOI is active), a small `pickScalar(value, priority)` helper picks the value at the first index where `priority[i] === 0` (an ordinary point), so the panel doesn't show a GOI's colour as the "marker colour" default.
+
+### Effect
+- Picking a new marker colour now changes ONLY the ordinary points' colour. GOI dots keep their custom colour, shape, and size.
+- Picking a marker colour on a light-theme plot leaves the bg/paper/grid colours alone — the panel reads the live theme-derived values, and writing them back is now a no-op rather than a regression.
+- Same for any other Graph Settings combination: opening the panel always shows the plot's current state, so changing one option doesn't disturb the others.
+
 ## [4.15.7] — 2026-05-06
 
 ### Fixed — Graph Settings marker colour now actually applies

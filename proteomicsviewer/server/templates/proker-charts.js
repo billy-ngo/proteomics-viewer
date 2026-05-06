@@ -1214,25 +1214,56 @@ class ProkerChart {
 
     // ── Restyle (for graph settings) ─────────────────────────────
     restyle(props) {
-        // Apply COLOR unconditionally to every trace — overwriting any
-        // per-point color array that build*Config produced. The user
-        // explicitly chose this colour in Graph Settings; respecting it
-        // is more important than preserving categorical defaults (those
-        // can be restored by re-rendering the plot from its config).
+        // Apply marker overrides to every trace, BUT preserve any per-point
+        // GOI / species highlights (which were set by applyMarkerOverrides()
+        // in the host page and are flagged via marker.priority[i] >= 1).
+        //
+        // Without this preservation, picking a marker colour in Graph
+        // Settings would wipe every Group-of-Interest's distinctive colour
+        // and shape — making the GOI feature pointless. (v4.15.7 over-shot
+        // by applying colour unconditionally; this restores nuance.)
+        //
+        // Priority levels (set by applyMarkerOverrides):
+        //   0 = ordinary point   ← user override applies here
+        //   1 = species highlight ← preserved
+        //   2 = Groups-of-Interest ← preserved
+        //
         // Per-point _colorOverrides (right-click → Color selected) still
-        // win over this in the render loop, so individual highlights are
-        // not lost.
-        // Old condition `traces.length === 1 && !Array.isArray(...)`
-        // silently ignored colour changes for volcano (3 traces: ns/up/down),
-        // dot plots (per-point colour arrays), and PCA (per-group traces) —
-        // i.e. essentially every plot type. That was the marker-colour bug.
+        // win over this in the render loop, so explicit point selections
+        // are also preserved.
         this.traces.forEach(trace => {
             if (!trace.marker) trace.marker = {};
-            if (props.size != null) trace.marker.size = props.size;
-            if (props.symbol) trace.marker.symbol = props.symbol;
-            if (props.color) trace.marker.color = props.color;
-            if (props.opacity != null) trace.marker.opacity = props.opacity;
-            if (props.hollow !== undefined) trace.marker._hollow = props.hollow;
+            const m = trace.marker;
+            const priority = Array.isArray(m.priority) ? m.priority : null;
+            // SIZE
+            if (props.size != null) {
+                if (Array.isArray(m.size) && priority) {
+                    m.size = m.size.map((s, i) => priority[i] >= 1 ? s : props.size);
+                } else {
+                    m.size = props.size;
+                }
+            }
+            // SYMBOL
+            if (props.symbol) {
+                if (Array.isArray(m.symbol) && priority) {
+                    m.symbol = m.symbol.map((s, i) => priority[i] >= 1 ? s : props.symbol);
+                } else {
+                    m.symbol = props.symbol;
+                }
+            }
+            // COLOR
+            if (props.color) {
+                if (Array.isArray(m.color) && priority) {
+                    m.color = m.color.map((c, i) => priority[i] >= 1 ? c : props.color);
+                } else {
+                    m.color = props.color;
+                }
+            }
+            // OPACITY and HOLLOW are global per-trace (not per-point); applied
+            // to every point including highlights, since they're stylistic
+            // choices that should sweep across the whole plot.
+            if (props.opacity != null) m.opacity = props.opacity;
+            if (props.hollow !== undefined) m._hollow = props.hollow;
         });
         this.render();
         return this;
