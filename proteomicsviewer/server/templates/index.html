@@ -517,6 +517,11 @@ async function uploadFile(file,append){
             <select id="gs-dot-shape" style="width:auto;font-size:11px;padding:2px 18px 2px 4px" title="Marker shape for data points"><option value="circle">&#9679;</option><option value="square">&#9632;</option><option value="diamond">&#9670;</option><option value="cross">+</option><option value="triangle-up">&#9650;</option><option value="star">&#9733;</option></select>
             <label class="checkbox-row" style="margin:0"><input type="checkbox" id="gs-hollow" onchange="applyGraphSettings()" title="Render markers as outlines only"> Hollow</label>
         </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+            <label class="checkbox-row" style="margin:0"><input type="checkbox" id="gs-outline" onchange="applyGraphSettings()" title="Draw an outline around filled markers"> Outline</label>
+            <span class="gs-swatch" id="gs-outline-color-sw" onclick="gsOpenPicker('gs-outline-color')" onmouseenter="gsOpenPicker('gs-outline-color')" ondblclick="gsNative('gs-outline-color')" title="Click or hover: swatches, Double-click: picker"></span>
+            <span style="font-size:11px;color:var(--text-sec)">Outline color</span>
+        </div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:11px;color:var(--text-sec)">
             Size <input type="range" id="gs-dot-size" min="2" max="16" value="5" style="flex:1" title="Marker diameter in pixels"> <input type="number" id="gs-dot-size-num" min="1" max="30" value="5" style="width:40px;font-size:11px;padding:2px;text-align:center">
         </div>
@@ -562,6 +567,7 @@ async function uploadFile(file,append){
     </div>
     <!-- Hidden native color inputs -->
     <input type="color" id="gs-dot-color" value="#e6edf3" style="display:none">
+    <input type="color" id="gs-outline-color" value="#000000" style="display:none">
     <input type="color" id="gs-plot-bg" value="#161b22" style="display:none">
     <input type="color" id="gs-paper-bg" value="#0d1117" style="display:none">
     <input type="color" id="gs-grid-color" value="#21262d" style="display:none">
@@ -6324,6 +6330,8 @@ function applyGraphSettings(){
     const color=document.getElementById('gs-dot-color').value;
     const opacity=(+document.getElementById('gs-dot-opacity').value)/100;
     const hollow=document.getElementById('gs-hollow').checked;
+    const outline=document.getElementById('gs-outline').checked;
+    const outlineColor=document.getElementById('gs-outline-color').value;
     const fontSize=+document.getElementById('gs-font-size').value;
     const plotBg=document.getElementById('gs-plot-bg').value;
     const paperBg=document.getElementById('gs-paper-bg').value;
@@ -6340,7 +6348,7 @@ function applyGraphSettings(){
     // re-render (filter change, freeze toggle, session reload, plot duplicate)
     // calls build*Config which rebuilds traces/layout from scratch and silently
     // wipes the user's Graph Settings choices.
-    const markerOverride={size,symbol:shape,color,opacity,hollow};
+    const markerOverride={size,symbol:shape,color,opacity,hollow,outline,outlineColor};
     const layoutOverride={plotBg:showPlotBg?plotBg:null,paperBg:showPaperBg?paperBg:null,gridColor,showGrid,showRefLines:showThresholds,transparentBg:!showPaperBg&&!showPlotBg,fontSize};
     gsTargetPlots.forEach(plotId=>{
         const chart=CHARTS[plotId];if(!chart)return;
@@ -7201,12 +7209,12 @@ gsSync('gs-dot-opacity','gs-dot-opacity-num');
 gsSync('gs-font-size','gs-font-size-num');
 document.getElementById('gs-dot-shape').addEventListener('change',applyGraphSettings);
 // Hidden color inputs — triggered by swatch picker or native
-['gs-dot-color','gs-plot-bg','gs-paper-bg','gs-grid-color'].forEach(id=>{
+['gs-dot-color','gs-outline-color','gs-plot-bg','gs-paper-bg','gs-grid-color'].forEach(id=>{
     document.getElementById(id).addEventListener('input',function(){gsUpdateSwatches();applyGraphSettings()});
 });
 
 function gsUpdateSwatches(){
-    const ids=['gs-dot-color','gs-plot-bg','gs-paper-bg','gs-grid-color'];
+    const ids=['gs-dot-color','gs-outline-color','gs-plot-bg','gs-paper-bg','gs-grid-color'];
     ids.forEach(id=>{const sw=document.getElementById(id+'-sw');const inp=document.getElementById(id);if(sw&&inp)sw.style.background=inp.value});
 }
 function gsOpenPicker(inputId){
@@ -7258,11 +7266,15 @@ function openGraphSettingsForPlot(plotId){
     const liveColor=pickScalar(m.color,m.priority);
     const liveOpacity=m.opacity!=null?m.opacity:0.7;
     const liveHollow=!!m._hollow;
+    const liveOutline=!!m._outline;
+    const liveOutlineColor=m._outlineColor||'#000000';
     const size=cfgM.size!=null?cfgM.size:liveSize;
     const symbol=cfgM.symbol||liveSymbol;
     const color=cfgM.color||liveColor||'#e6edf3';
     const opacity=cfgM.opacity!=null?cfgM.opacity:liveOpacity;
     const hollow=cfgM.hollow!==undefined?cfgM.hollow:liveHollow;
+    const outline=cfgM.outline!==undefined?cfgM.outline:liveOutline;
+    const outlineColor=cfgM.outlineColor||liveOutlineColor;
     document.getElementById('gs-dot-size').value=size;
     document.getElementById('gs-dot-size-num').value=size;
     document.getElementById('gs-dot-shape').value=symbol;
@@ -7270,6 +7282,8 @@ function openGraphSettingsForPlot(plotId){
     document.getElementById('gs-dot-opacity').value=Math.round(opacity*100);
     document.getElementById('gs-dot-opacity-num').value=Math.round(opacity*100);
     document.getElementById('gs-hollow').checked=hollow;
+    document.getElementById('gs-outline').checked=outline;
+    document.getElementById('gs-outline-color').value=outlineColor;
     // ── Layout — same precedence chain. The chart's theme reflects whatever
     // the user picked OR the active theme's surface/bg colours. Reading from
     // here means picking a marker colour doesn't drag a stale dark-theme bg

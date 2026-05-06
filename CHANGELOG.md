@@ -3,6 +3,38 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.15.12] — 2026-05-01
+
+### Reverted — title auto-shrink (v4.15.11)
+v4.15.11 introduced dynamic font scaling + ellipsis truncation for chart and axis titles when the plot card was small enough to clip them. Per user feedback this was the wrong approach: titles should be allowed to be **larger than their graphs** rather than be silently shrunk or truncated.
+
+The auto-shrink path is removed:
+- `_textWidth()` and `_fitTitle()` helpers deleted from `proker-charts.js`.
+- All three titles (chart, X-axis, Y-axis) render at their original fixed font sizes (`fs+1` for chart title, `fs` for axes).
+- The SVG element gains `style="overflow:visible"` so glyphs that extend past the SVG's `width`/`height` bounds still paint into the parent `.canvas-plot` wrapper instead of being clipped at the SVG edge.
+- `<svg:title>` hover-tooltip elements removed (no longer needed — full text is always rendered).
+
+Net effect: a long Y-axis title on a narrow plot now renders at full size and naturally extends into the canvas margin around the chart card. PNG and SVG exports inherit the same overflow-visible behaviour, so titles export at their full rendered width.
+
+### Added — marker outline as a Graph Settings option (off by default)
+Until this release every filled marker drew with a hard-coded `stroke="${T.plot}"` 1 px outline — visible as a faint ring around every dot, matching the plot background colour. This was a debug-era styling artefact that survived too many revisions.
+
+Outlines are now **off by default** and **opt-in via Graph Settings**:
+
+1. The default fill-only render path emits no `stroke` attribute, so dots are pure fills with the chosen colour and opacity.
+2. A new **Outline** checkbox appears in the Graph Settings panel, immediately below the Hollow checkbox, alongside an **Outline color** swatch.
+3. The colour swatch uses the same UI affordance as the marker / plot-bg / paper-bg / grid swatches: click for the in-app palette, hover to peek, double-click for the OS native colour picker.
+4. Outline default colour is `#000000`; users can pick any colour and it's persisted on the plot's `_gsMarker` override so it survives re-renders, plot duplication, and session save/load.
+
+Wiring:
+- `proker-charts.js`: marker render at line ~324 now branches on `marker._outline === true` to add `stroke="${marker._outlineColor}" stroke-width="${marker._outlineWidth || 1}"`. The default branch emits no stroke.
+- `proker-charts.js` `restyle()`: accepts `outline`, `outlineColor`, and `outlineWidth` props and stores them as `marker._outline / _outlineColor / _outlineWidth` on the trace.
+- `index.html` `applyGraphSettings()`: reads `gs-outline` checkbox and `gs-outline-color` input, includes both in the `markerOverride` object so they round-trip through `cp.config._gsMarker` on every future render.
+- `index.html` `openGraphSettingsForPlot()`: populates the new inputs from the persisted override first, falling back to the chart's first trace's marker `_outline / _outlineColor` properties.
+- The `gsUpdateSwatches()` helper and the input listener registration both include `gs-outline-color`, so the swatch colour stays in sync with the picker value.
+
+The Hollow render path (which uses the marker's own colour as a stroke) is unaffected — Outline only applies to the filled-marker branch. Hollow + Outline cannot conflict because they're mutually exclusive render paths.
+
 ## [4.15.11] — 2026-05-06
 
 ### Fixed — chart and axis titles no longer clipped when the plot is shrunk

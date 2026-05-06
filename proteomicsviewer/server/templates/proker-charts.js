@@ -73,45 +73,6 @@ class ProkerChart {
     _emit(event, data) { (this.callbacks[event] || []).forEach(cb => cb(data)); }
 
     // ── Compute scales ──────────────────────────────────────────
-    // Measure rendered text width using a hidden canvas. Used to fit titles
-    // inside the available chart-width / chart-height when the user shrinks
-    // the plot card so long titles don't get clipped at the SVG boundary.
-    _textWidth(text, fontSize, fontFamily) {
-        if (!text) return 0;
-        if (!this._measureCtx) {
-            try { this._measureCtx = document.createElement('canvas').getContext('2d'); }
-            catch (_) { return text.length * fontSize * 0.55; /* fallback heuristic */ }
-        }
-        this._measureCtx.font = `${fontSize}px ${fontFamily || 'Arial,Helvetica,sans-serif'}`;
-        return this._measureCtx.measureText(text).width;
-    }
-
-    // Fit a title into maxWidth pixels by progressively shrinking the font
-    // (down to minFontSize), then truncating with an ellipsis if it still
-    // doesn't fit. Returns {text, fontSize}. Use a small (3px) safety pad
-    // so antialiasing/kerning doesn't push the rendered glyphs over the edge.
-    _fitTitle(text, maxWidth, baseFontSize, minFontSize) {
-        if (!text) return { text: '', fontSize: baseFontSize };
-        const min = minFontSize || 8;
-        const cap = Math.max(0, maxWidth - 6);  // 3 px padding each side
-        if (cap <= 0) return { text, fontSize: baseFontSize };
-        // Step 1: try the base size; shrink in 0.5px steps until it fits or hits min
-        let size = baseFontSize;
-        while (size > min && this._textWidth(text, size) > cap) size -= 0.5;
-        if (this._textWidth(text, size) <= cap) return { text, fontSize: size };
-        // Step 2: still doesn't fit at minimum size — truncate with ellipsis.
-        // Binary search for the longest prefix that fits with "…" appended.
-        let lo = 0, hi = text.length;
-        while (lo < hi) {
-            const mid = (lo + hi + 1) >> 1;
-            const candidate = text.slice(0, mid).trimEnd() + '…';
-            if (this._textWidth(candidate, size) <= cap) lo = mid;
-            else hi = mid - 1;
-        }
-        const out = text.slice(0, lo).trimEnd() + (lo > 0 ? '…' : '');
-        return { text: out, fontSize: size };
-    }
-
     _computeScales(w, h) {
         const m = this.opts.margin;
         const pw = w - m.left - m.right;
@@ -205,7 +166,7 @@ class ProkerChart {
         const yFmt = this._niceFormat(yScale.domain());
 
         // Build SVG
-        let svg = `<svg class="proker-svg" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased">`;
+        let svg = `<svg class="proker-svg" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="overflow:visible;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased">`;
 
         // Background
         if (!this._transparentBg && !this._hidePaperBg) {
@@ -247,35 +208,26 @@ class ProkerChart {
         });
         svg += `</g>`;
 
-        // Chart title (centered, draggable). Auto-shrinks (and as a last
-        // resort, ellipsis-truncates) so it never gets clipped at the SVG
-        // boundary when the user shrinks the plot card. Available width is
-        // the plot width — the title is centred over the plot area.
+        // Chart title (centered, draggable). Renders at the user's chosen font
+        // size in full — long titles are intentionally allowed to extend past
+        // the SVG bounds rather than being shrunk or truncated. The SVG
+        // element below carries `overflow: visible` so the overflow renders
+        // outside the chart's box.
         if (this._chartTitle) {
             const tx = this._titlePos ? this._titlePos.x : m.left + pw / 2;
             const ty = this._titlePos ? this._titlePos.y : 18;
-            const fit = this._fitTitle(this._chartTitle, pw, fs + 1);
-            // Title attribute carries the FULL untruncated text so hover shows it
-            const fullEsc = this._esc(this._chartTitle);
-            svg += `<text x="${tx}" y="${ty}" text-anchor="middle" fill="${T.text}" font-size="${fit.fontSize}" font-weight="400" class="chart-title draggable-text" style="cursor:move"><title>${fullEsc}</title>${this._esc(fit.text)}</text>`;
+            svg += `<text x="${tx}" y="${ty}" text-anchor="middle" fill="${T.text}" font-size="${fs+1}" font-weight="400" class="chart-title draggable-text" style="cursor:move">${this._esc(this._chartTitle)}</text>`;
         }
 
-        // X axis title (draggable). Same shrink-then-ellipsis fit, with the
-        // plot width as the available canvas.
+        // X axis title (draggable)
         const xTitleX = this._xTitlePos ? this._xTitlePos.x : m.left + pw / 2;
         const xTitleY = this._xTitlePos ? this._xTitlePos.y : h - 6;
-        const xFit = this._fitTitle(this.xTitle, pw, fs);
-        const xFullEsc = this._esc(this.xTitle);
-        svg += `<text x="${xTitleX}" y="${xTitleY}" text-anchor="middle" fill="${T.text}" font-size="${xFit.fontSize}" font-weight="400" class="axis-title draggable-text" data-axis="x" style="cursor:move"><title>${xFullEsc}</title>${this._esc(xFit.text)}</text>`;
+        svg += `<text x="${xTitleX}" y="${xTitleY}" text-anchor="middle" fill="${T.text}" font-size="${fs}" font-weight="400" class="axis-title draggable-text" data-axis="x" style="cursor:move">${this._esc(this.xTitle)}</text>`;
 
-        // Y axis title (rotated, draggable). After rotate(-90), the text
-        // extends along the chart's HEIGHT (so available "width" along the
-        // rotated axis = plot height ph). Same shrink-then-ellipsis logic.
+        // Y axis title (rotated, draggable)
         const yTitleX = this._yTitlePos ? this._yTitlePos.x : 15;
         const yTitleY = this._yTitlePos ? this._yTitlePos.y : m.top + ph / 2;
-        const yFit = this._fitTitle(this.yTitle, ph, fs);
-        const yFullEsc = this._esc(this.yTitle);
-        svg += `<text x="${yTitleX}" y="${yTitleY}" text-anchor="middle" fill="${T.text}" font-size="${yFit.fontSize}" font-weight="400" class="axis-title draggable-text" data-axis="y" transform="rotate(-90,${yTitleX},${yTitleY})" style="cursor:move"><title>${yFullEsc}</title>${this._esc(yFit.text)}</text>`;
+        svg += `<text x="${yTitleX}" y="${yTitleY}" text-anchor="middle" fill="${T.text}" font-size="${fs}" font-weight="400" class="axis-title draggable-text" data-axis="y" transform="rotate(-90,${yTitleX},${yTitleY})" style="cursor:move">${this._esc(this.yTitle)}</text>`;
 
         // Data points (clip to plot area)
         svg += `<defs><clipPath id="clip-${this._uid()}"><rect x="${m.left}" y="${m.top}" width="${pw}" height="${ph}"/></clipPath></defs>`;
@@ -358,6 +310,9 @@ class ProkerChart {
                 const customData = trace.customdata ? trace.customdata[i] || '' : '';
 
                 const isHollow = marker._hollow;
+                const hasOutline = marker._outline === true;
+                const outlineColor = marker._outlineColor || '#000000';
+                const outlineWidth = marker._outlineWidth || 1;
                 const attrs = `class="data-pt" data-ti="${ti}" data-i="${i}" data-x="${vx}" data-y="${vy}" data-hover="${this._esc(hoverText)}" data-custom="${this._esc(customData)}" style="cursor:pointer"`;
                 // Invisible hit area for small points (min 8px radius)
                 const minHit = 8;
@@ -368,8 +323,10 @@ class ProkerChart {
                     svg += symFn(px, py, ptSize) + `stroke="${c}" opacity="${opacity}" ${attrs}/>`;
                 } else if (isHollow) {
                     svg += symFn(px, py, ptSize) + `fill="none" stroke="${c}" stroke-width="1.5" opacity="${opacity}" ${attrs}/>`;
+                } else if (hasOutline) {
+                    svg += symFn(px, py, ptSize) + `fill="${c}" fill-opacity="${opacity}" stroke="${outlineColor}" stroke-width="${outlineWidth}" ${attrs}/>`;
                 } else {
-                    svg += symFn(px, py, ptSize) + `fill="${c}" fill-opacity="${opacity}" stroke="${T.plot}" stroke-width="1" ${attrs}/>`;
+                    svg += symFn(px, py, ptSize) + `fill="${c}" fill-opacity="${opacity}" ${attrs}/>`;
                 }
             }
         });
@@ -1316,6 +1273,9 @@ class ProkerChart {
             // choices that should sweep across the whole plot.
             if (props.opacity != null) m.opacity = props.opacity;
             if (props.hollow !== undefined) m._hollow = props.hollow;
+            if (props.outline !== undefined) m._outline = props.outline;
+            if (props.outlineColor !== undefined) m._outlineColor = props.outlineColor;
+            if (props.outlineWidth !== undefined) m._outlineWidth = props.outlineWidth;
         });
         this.render();
         return this;
