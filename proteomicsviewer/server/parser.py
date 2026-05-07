@@ -154,11 +154,21 @@ def _auto_groups(samples):
         "TM7x A1"…"A4", "TM7x B1"…"B4"                -> "TM7x A", "TM7x B"
         "Ctrl_1"…"Ctrl_3", "Treated_1"…"Treated_3"    -> "Ctrl", "Treated"
 
+    Also strips a separator + single trailing letter (``Un_A``→``Un``,
+    ``Un_B``→``Un``) when no numeric replicate suffix was found. This is
+    the common biological-replicate naming convention for RNA-seq and
+    splits ``Un_A/B/C/D`` and ``At_A/B/C/D`` into ``Un`` and ``At`` groups.
+
     Falls back to leading-letters grouping when stripping yields an empty stem.
     """
     groups = defaultdict(list)
     for sample in samples:
         stem = re.sub(r"[\s_\-]?\d+\s*$", "", sample).rstrip(" _-")
+        if stem == sample:
+            # No numeric replicate suffix. Try a single-letter suffix
+            # (``Un_A``→``Un``) but only when preceded by a separator so we
+            # don't chop the trailing letter off plain words like ``Sample``.
+            stem = re.sub(r"[\s_\-][A-Za-z]\s*$", "", sample).rstrip(" _-")
         if not stem:
             m = re.match(r"^([A-Za-z]+)", sample)
             stem = m.group(1) if m else "Ungrouped"
@@ -348,6 +358,154 @@ def parse_protein_groups(filepath):
             "dropped_aggregate_columns": dropped_aggregates,
         },
         # Original-file preservation for downstream Excel/CSV export
+        "raw_headers": raw_headers,
+        "raw_rows": raw_rows,
+    }
+
+
+# Reserved column names that hold annotation / pre-computed-stats fields in
+# typical RNA-seq differential-expression output (edgeR, DESeq2, limma).
+# Anything NOT in this list is treated as a per-sample count column.
+_RNA_RESERVED_COLUMNS = {
+    "Locustag", "locus_tag", "LocusTag", "locustag",
+    "Gene", "gene", "GeneID", "gene_id", "ID", "id",
+    "Description", "description", "Product", "product",
+    "FeatureType", "feature_type", "Feature", "Type",
+    "logFC", "log2FC", "log2FoldChange", "log2_fold_change",
+    "PValue", "P.Value", "p_value", "pvalue",
+    "Benjamini_Hochberg_Adjusted_PValue", "BH_PValue", "adj.P.Val",
+    "padj", "FDR", "qvalue",
+    "AveExpr", "logCPM", "F", "t", "B",
+    "Chr", "Start", "End", "Strand", "Length",
+}
+
+
+def parse_transcriptomics(filepath):
+    """Parse an RNA-seq differential-expression TSV (or similar tab-delimited
+    transcriptomics output) into the same RAW shape that the frontend uses
+    for proteomics. The columns we care about are the per-sample count
+    columns — everything else is annotation or pre-computed statistics that
+    the volcano-plot pipeline will recompute itself from the counts.
+
+    Recognised non-count columns (skipped): Locustag, Gene, Description,
+    FeatureType, logFC, PValue, Benjamini_Hochberg_Adjusted_PValue,
+    plus a handful of common edgeR/DESeq2/limma equivalents.
+
+    Every other column is assumed to be a per-sample count value. The user
+    chose this format by toggling "Transcriptomics" in the upload panel —
+    we don't try to be clever about format sniffing here; if the toggle
+    misclassifies the file, the user gets a clear error from the upload
+    flow rather than silent garbage.
+
+    Counts are taken AS-IS — caller has indicated they're already
+    normalised (the toggle's accompanying note states this) so no
+    additional normalisation is applied. The dataset emerges with a
+    single quant type called "Counts" so the frontend's processing UI
+    stays simple.
+    """
+    csv.field_size_limit(10_000_000)
+    encoding = _detect_encoding(filepath)
+
+    with open(filepath, "r", encoding=encoding, errors="replace") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        headers = reader.fieldnames
+        if not headers:
+            raise ValueError("Empty file or unrecognized format")
+
+        # Sample columns = headers not in the reserved annotation/stats list.
+        samples = [h for h in headers if h and h not in _RNA_RESERVED_COLUMNS]
+        if not samples:
+            raise ValueError(
+                "Could not detect sample count columns. "
+                "Expected per-sample columns (e.g. 'Sample_A', 'Sample_B') alongside "
+                "annotation columns (Locustag, Gene, Description, etc.)."
+            )
+
+        # Pick the gene-id and gene-name columns we'll use.
+        id_col = next((c for c in ("Locustag", "locus_tag", "LocusTag", "GeneID",
+                                   "gene_id", "ID", "id") if c in headers), None)
+        gene_col = next((c for c in ("Gene", "gene", "Symbol", "gene_name")
+                         if c in headers), None)
+        desc_col = next((c for c in ("Description", "description", "Product",
+                                     "product") if c in headers), None)
+        feat_col = next((c for c in ("FeatureType", "feature_type", "Feature",
+                                     "Type") if c in headers), None)
+
+        groups = _auto_groups(samples)
+
+        proteins = []
+        quant_data = {"Counts": {s: [] for s in samples}}
+        raw_headers = list(headers)
+        raw_rows = []
+
+        for idx, row in enumerate(reader):
+            raw_rows.append([(row.get(h, "") or "") for h in raw_headers])
+
+            gene_id = row.get(id_col, "") if id_col else ""
+            if not gene_id:
+                gene_id = f"gene_{idx + 1}"
+            gene_name = row.get(gene_col, "") if gene_col else ""
+            description = row.get(desc_col, "") if desc_col else ""
+            feature = row.get(feat_col, "") if feat_col else ""
+
+            # Build a "protein" record. The frontend operates on this shape
+            # (id, gene_name, peptides, etc.) so we keep the same keys; the
+            # transcriptomics-specific bits (description, feature type) sit
+            # alongside without the frontend caring.
+            proteins.append({
+                "id": gene_id,
+                "majority_id": gene_id,
+                "gene_name": gene_name,
+                "fasta_header": description,  # Reuse for hover-tooltip text
+                "mol_weight": 0.0,
+                "sequence_length": 0,
+                # peptides=1 keeps the default min-peptides filter (>=1) from
+                # silently dropping every gene. Transcriptomics has no peptide
+                # concept; the field is only relevant to MS data.
+                "peptides": 1,
+                "unique_peptides": 0,
+                "razor_unique_peptides": 0,
+                "sequence_coverage": 0.0,
+                "score": 0.0,
+                "only_identified_by_site": False,
+                "reverse": False,
+                "potential_contaminant": False,
+                "peptide_sequences": "",
+                "feature_type": feature,
+                "description": description,
+                "source_file": str(filepath),
+            })
+
+            for sample in samples:
+                quant_data["Counts"][sample].append(_float(row.get(sample, "0")))
+
+    return {
+        "filename": str(filepath),
+        "proteins": proteins,
+        "samples": samples,
+        "quant_types": ["Counts"],
+        "quant_data": quant_data,
+        "suggested_groups": groups,
+        "total_proteins": len(proteins),
+        "contaminants": 0,
+        "reverse_hits": 0,
+        "only_by_site": 0,
+        "format_info": {
+            "data_type": "transcriptomics",
+            "id_column": id_col,
+            "gene_column": gene_col,
+            "description_column": desc_col,
+            "feature_column": feat_col,
+            "has_peptide_counts": False,
+            "has_contaminant_column": False,
+            "has_reverse_column": False,
+            "has_only_by_site_column": False,
+            "dropped_aggregate_columns": [],
+            # Hint the frontend that no normalisation should be applied — the
+            # count values came in already normalised (RPM/TPM/CPM/DESeq2's
+            # rlog/vst etc.) and re-normalising would compound the transform.
+            "pre_normalized": True,
+        },
         "raw_headers": raw_headers,
         "raw_rows": raw_rows,
     }

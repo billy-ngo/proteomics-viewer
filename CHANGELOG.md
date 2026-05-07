@@ -3,6 +3,30 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.16.0] — 2026-05-07
+
+### Added — Transcriptomics (RNA-seq) data support
+Pro-ker now accepts tab-delimited RNA-seq differential-expression output alongside MaxQuant proteomics files. A new **Proteomics / Transcriptomics** toggle sits at the top of the upload section; selecting Transcriptomics routes the next upload to a new RNA-seq parser that expects per-sample count columns alongside the standard annotation columns:
+
+```
+Locustag  Gene  Description  FeatureType  logFC  PValue  Benjamini_Hochberg_Adjusted_PValue  Un_A  Un_B  Un_C  Un_D  At_A  At_B  At_C  At_D
+```
+
+Anything in the reserved-column list (Locustag, Gene, Description, FeatureType, logFC, PValue, BH/FDR, plus a handful of edgeR/DESeq2/limma equivalents) is treated as annotation or pre-computed stats; everything else is read as a per-sample count column. The precomputed logFC/PValue columns are read but not relied on — the frontend's volcano pipeline recomputes them with Welch's t-test + Benjamini-Hochberg correction so the same statistical defaults apply across both data types.
+
+Counts are read **as-is** because the user's workflow already supplies normalised values (RPM/TPM/CPM/DESeq2 rlog/vst/etc.). The `format_info.pre_normalized` flag in the parsed payload tells the frontend to skip the normalisation step entirely — `buildProcessedData` hard-disables it regardless of the checkbox state, and the checkbox itself is greyed out with a tooltip explaining why.
+
+The auto-grouping heuristic was extended to handle letter-suffix replicate naming (`Un_A`/`Un_B`/`Un_C`/`Un_D` → group `Un`) in addition to the existing numeric suffix path. Mass-spec-only format notes (peptide counts / contaminants / reverse-decoy) are suppressed for transcriptomics files since RNA-seq data inherently lacks those columns.
+
+Wiring:
+
+- **`proteomicsviewer/server/parser.py`** — new `parse_transcriptomics(filepath)` returns the same `RAW` shape the frontend already understands (samples, quant_types, quant_data, proteins, suggested_groups, format_info), so `buildProcessedData`, the volcano pipeline, GOI/highlight overlays, session save/load, and exports all work without per-feature plumbing. Single quant type called `"Counts"`. Each gene becomes a "protein" record with feature_type/description fields tucked alongside the existing keys.
+- **`proteomicsviewer/server/main.py`** — `/api/upload` accepts an optional `mode` form field. `mode="transcriptomics"` runs the RNA-seq parser; anything else (default `"proteomics"`) runs the MaxQuant parser. Identical response shape from both paths.
+- **`index.html`** — new toggle in the upload panel + JS state variable (`uploadMode`) that's appended as a form field on every upload. Dropzone label updates ("Drop transcriptomics TSV here" vs "Drop proteinGroups.txt here") so the user has a visible cue of which parser will run.
+
+### Verification
+Smoke test on the user-supplied file (705 TM7x genes, Un_A/B/C/D vs At_A/B/C/D): all 8 sample columns detected; auto-groups split correctly into `Un` and `At` (4 replicates each); log2 fold-change computed from raw counts matches the file's precomputed `logFC` column exactly (e.g. file `-5.098` → computed `-5.10`; file `3.825` → computed `3.83`); Welch's t statistics flag the same up/down-regulated genes the upstream RNA-seq pipeline did.
+
 ## [4.15.19] — 2026-05-06
 
 ### Fixed — session load fully clears existing plots before restoring

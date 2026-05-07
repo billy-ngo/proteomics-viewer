@@ -325,6 +325,25 @@ window.__reset=function(){
 };
 // Early-defined upload functions so inline handlers work
 var RAW=null, pendingFile=null, pendingFileQueue=[];
+// Which parser the next upload should use. Toggled by the Proteomics /
+// Transcriptomics buttons next to the dropzone. "transcriptomics" routes
+// to the RNA-seq parser (per-sample count columns, no normalisation step);
+// anything else uses the MaxQuant proteinGroups parser.
+var uploadMode='proteomics';
+function setUploadMode(mode){
+    uploadMode=mode;
+    const pBtn=document.getElementById('upload-mode-proteomics');
+    const tBtn=document.getElementById('upload-mode-transcriptomics');
+    const txt=document.getElementById('upload-zone-text');
+    const accent=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#58a6ff';
+    if(pBtn&&tBtn){
+        const setActive=(b,active)=>{b.style.background=active?accent:'transparent';b.style.color=active?'#fff':'var(--text-sec)'};
+        setActive(pBtn,mode==='proteomics');
+        setActive(tBtn,mode==='transcriptomics');
+    }
+    // Update dropzone label so it's obvious which file type is expected.
+    if(txt) txt.textContent=mode==='transcriptomics'?'Drop transcriptomics TSV here':'Drop proteinGroups.txt here';
+}
 function handleIncoming(file){
     if(RAW){pendingFile=file;document.getElementById('file-modal').classList.remove('hidden');return}
     uploadFile(file,false);
@@ -356,6 +375,9 @@ function handleMultipleFiles(files){
 async function uploadFile(file,append){
     document.getElementById('upload-error').textContent='';
     var form=new FormData();form.append('file',file);
+    // Tell the backend which parser to use. Default 'proteomics' is the
+    // MaxQuant path; 'transcriptomics' switches to the RNA-seq TSV parser.
+    form.append('mode',(typeof uploadMode==='string'?uploadMode:'proteomics'));
     // Snapshot the prior state so a post-upload error can't leave RAW in a
     // half-mutated state (e.g. data assigned but initGrouping threw).
     var priorRAW=RAW;
@@ -772,14 +794,24 @@ async function uploadFile(file,append){
     </div>
     <div id="upload-section" class="panel-section" data-tour="upload-zone">
         <div class="section-label">Load Data</div>
+        <!-- Data-type toggle. Persists which parser the next upload should
+             use. "Proteomics" (default) runs the MaxQuant proteinGroups.txt
+             parser; "Transcriptomics" runs the RNA-seq tab-delimited parser
+             which expects Locustag/Gene/Description/FeatureType columns
+             alongside per-sample count columns and treats counts as already
+             normalised (skips the frontend normalisation step). -->
+        <div id="upload-mode-toggle" style="display:flex;gap:4px;margin-bottom:10px;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:2px">
+            <button id="upload-mode-proteomics" class="upload-mode-btn active" onclick="setUploadMode('proteomics')" style="flex:1;padding:5px 8px;font-size:11px;border:none;background:var(--accent);color:#fff;border-radius:3px;cursor:pointer;font-family:inherit;font-weight:600" title="MaxQuant proteinGroups.txt or compatible mass-spec output">Proteomics</button>
+            <button id="upload-mode-transcriptomics" class="upload-mode-btn" onclick="setUploadMode('transcriptomics')" style="flex:1;padding:5px 8px;font-size:11px;border:none;background:transparent;color:var(--text-sec);border-radius:3px;cursor:pointer;font-family:inherit;font-weight:600" title="RNA-seq differential-expression TSV with per-sample normalised counts (Locustag/Gene/Description/FeatureType + per-sample columns)">Transcriptomics</button>
+        </div>
         <div class="upload-zone" id="upload-zone"
              onclick="document.getElementById('file-input').click()"
              ondragover="event.preventDefault();event.stopPropagation();this.classList.add('dragover')"
              ondragleave="this.classList.remove('dragover')"
              ondrop="event.preventDefault();event.stopPropagation();this.classList.remove('dragover');if(event.dataTransfer.files.length)handleMultipleFiles([...event.dataTransfer.files])">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="pointer-events:none"><path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
-            <div class="uz-text" style="pointer-events:none">Drop proteinGroups.txt here</div>
-            <div class="uz-hint" style="pointer-events:none">or click to browse</div>
+            <div class="uz-text" id="upload-zone-text" style="pointer-events:none">Drop proteinGroups.txt here</div>
+            <div class="uz-hint" id="upload-zone-hint" style="pointer-events:none">or click to browse</div>
         </div>
         <div class="upload-error" id="upload-error"></div>
     </div>
@@ -1992,6 +2024,18 @@ function initGrouping(){
     document.getElementById('grouping-section').classList.remove('hidden');
     document.getElementById('compact-upload').classList.remove('hidden');
     document.getElementById('cu-filename').textContent=RAW.filename;
+    // Transcriptomics: hard-disable the normalisation checkbox so the user
+    // doesn't toggle a step that the buildProcessedData pipeline will
+    // ignore anyway. Same for the prune controls (peptide-based pruning
+    // doesn't apply to RNA-seq counts).
+    const fi=RAW&&RAW.format_info;
+    const isTrans=fi&&fi.pre_normalized;
+    const normCb=document.getElementById('proc-norm');
+    if(normCb){
+        normCb.disabled=!!isTrans;
+        if(isTrans){normCb.checked=false;normCb.title='Disabled: transcriptomics counts are already normalised.'}
+        else{normCb.title='Normalize intensities to equalize sample loading'}
+    }
     renderFormatNotes();
     renderAll();startHeartbeat();
 }
@@ -2004,17 +2048,30 @@ function renderFormatNotes(){
     const fi=RAW&&RAW.format_info;
     if(!fi){el.classList.add('hidden');el.innerHTML='';return}
     const notes=[];
+    // Transcriptomics path — quieter notes, since the missing-MS-columns
+    // warnings would just be noise (RNA-seq files don't have peptides,
+    // contaminants, or reverse hits by design). Tell the user what KIND
+    // of file was loaded and that normalisation is bypassed.
+    const isTranscriptomics=fi.data_type==='transcriptomics';
+    if(isTranscriptomics){
+        notes.push('Loaded as <b>transcriptomics</b> data. Per-sample count columns: <b>'+(RAW.samples||[]).length+'</b>. Values are treated as already normalised — the normalization step is skipped automatically.');
+    }
     if(fi.dropped_aggregate_columns&&fi.dropped_aggregate_columns.length){
         notes.push('Per-group aggregate columns ignored as samples: <b>'+fi.dropped_aggregate_columns.join(', ')+'</b>. Only per-replicate columns are used for analysis.');
     }
-    if(!fi.has_peptide_counts){
-        notes.push('No peptide-count column found — peptide-based filters (e.g. "prune below N peptides") will not work for this file. All proteins are treated as having 1 peptide.');
-    }
-    if(!fi.has_contaminant_column){
-        notes.push('No "Potential contaminant" column found — contaminant filtering is unavailable for this file.');
-    }
-    if(!fi.has_reverse_column){
-        notes.push('No "Reverse" column found — decoy filtering is unavailable for this file.');
+    // MS-specific notes only for proteomics files. Transcriptomics inherently
+    // lacks peptides/contaminants/reverse columns; surfacing those warnings
+    // would just confuse the user.
+    if(!isTranscriptomics){
+        if(!fi.has_peptide_counts){
+            notes.push('No peptide-count column found — peptide-based filters (e.g. "prune below N peptides") will not work for this file. All proteins are treated as having 1 peptide.');
+        }
+        if(!fi.has_contaminant_column){
+            notes.push('No "Potential contaminant" column found — contaminant filtering is unavailable for this file.');
+        }
+        if(!fi.has_reverse_column){
+            notes.push('No "Reverse" column found — decoy filtering is unavailable for this file.');
+        }
     }
     if(!fi.id_column){
         notes.push('No protein-ID column found. Synthetic IDs (row_1, row_2, …) were assigned so the UI has something to display.');
@@ -2721,8 +2778,12 @@ function buildProcessedData(){
         : PROC_QT;
     const pruneQd = RAW.quant_data[pruneQt] || rawQd;
 
-    // Organism filter (Processing: normalization scope)
-    const normOn = document.getElementById('proc-norm')?.checked;
+    // Organism filter (Processing: normalization scope). Transcriptomics
+    // datasets carry pre-normalised counts (RPM/TPM/etc.) so we hard-disable
+    // the normalisation step regardless of what the checkbox says — re-
+    // normalising would compound the transform and distort the volcano.
+    const isTranscriptomics = RAW && RAW.format_info && RAW.format_info.pre_normalized;
+    const normOn = !isTranscriptomics && document.getElementById('proc-norm')?.checked;
     const normScope = document.getElementById('norm-scope')?.value || 'all';
     const selOrgs = getSelOrgs();
     const filterByOrganism = normOn && normScope === 'organism' && selOrgs.length > 0;

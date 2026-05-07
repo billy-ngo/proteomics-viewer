@@ -11,12 +11,12 @@ import tempfile
 import threading
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from proteomicsviewer.server.state import state
-from proteomicsviewer.server.parser import parse_protein_groups
+from proteomicsviewer.server.parser import parse_protein_groups, parse_transcriptomics
 
 app = FastAPI(title="Pro-ker Proteomics Viewer API", version="2.0.0")
 
@@ -44,8 +44,16 @@ def serve_charts_js():
 
 # ── API routes ────────────────────────────────────────────────────
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...)):
-    """Upload and parse a proteinGroups.txt file."""
+async def upload_file(file: UploadFile = File(...), mode: str = Form("proteomics")):
+    """Upload and parse a data file.
+
+    ``mode`` controls which parser is used:
+      - ``proteomics`` (default): MaxQuant proteinGroups.txt or variant.
+      - ``transcriptomics``: tab-delimited RNA-seq output with a Locustag/
+        Gene/Description/FeatureType header convention plus per-sample count
+        columns. The values are taken as already-normalised — the frontend's
+        normalisation step is bypassed for these uploads.
+    """
     if not file.filename:
         raise HTTPException(400, "No file provided")
 
@@ -56,7 +64,10 @@ async def upload_file(file: UploadFile = File(...)):
         tmp_path = tmp.name
 
     try:
-        data = parse_protein_groups(tmp_path)
+        if mode == "transcriptomics":
+            data = parse_transcriptomics(tmp_path)
+        else:
+            data = parse_protein_groups(tmp_path)
         data["filename"] = file.filename
         # Tag every protein and sample with the source filename so the frontend
         # can detect multi-file mixing and reject incompatible comparisons.
