@@ -490,21 +490,222 @@ def parse_protein_groups(filepath):
     }
 
 
-# Reserved column names that hold annotation / pre-computed-stats fields in
-# typical RNA-seq differential-expression output (edgeR, DESeq2, limma).
-# Anything NOT in this list is treated as a per-sample count column.
-_RNA_RESERVED_COLUMNS = {
-    "Locustag", "locus_tag", "LocusTag", "locustag",
-    "Gene", "gene", "GeneID", "gene_id", "ID", "id",
-    "Description", "description", "Product", "product",
-    "FeatureType", "feature_type", "Feature", "Type",
-    "logFC", "log2FC", "log2FoldChange", "log2_fold_change",
-    "PValue", "P.Value", "p_value", "pvalue",
-    "Benjamini_Hochberg_Adjusted_PValue", "BH_PValue", "adj.P.Val",
-    "padj", "FDR", "qvalue",
-    "AveExpr", "logCPM", "F", "t", "B",
-    "Chr", "Start", "End", "Strand", "Length",
-}
+# Sample-column detection for transcriptomics tables.
+#
+# Naive "exclude-everything-on-this-list" approaches are fragile because
+# real-world RNA-seq output (featureCounts, htseq-count, salmon/kallisto,
+# edgeR, DESeq2, limma, plus various per-pipeline glue scripts) introduces
+# annotation and stats columns the static list never anticipated — gene
+# coordinates, biotypes, transcript IDs, raw / scaled / shrunken estimates,
+# per-comparison p-values, etc. So instead of a single hard list, we use
+# two complementary signals:
+#
+#   1. NAME signal  — case-insensitively normalise the header (lower, drop
+#      separators) and check against a comprehensive set of known metadata
+#      names AND a list of substring patterns. The substring patterns catch
+#      labelled stats columns like ``Adj.P.Val.GroupA_vs_B`` (which exact
+#      match would miss).
+#
+#   2. VALUE signal — peek at the first ~40 rows. A column whose non-empty
+#      cells are >= 80% numeric is a sample-counts CANDIDATE; a column with
+#      strings (gene symbols, descriptions, chromosome names) is not.
+#
+# A column is treated as a sample iff the name signal does NOT mark it as
+# annotation/stats AND the value signal says it's numeric. Both signals
+# need to agree, so even a column with an unfamiliar name like
+# ``Replicate_FB1`` will be picked up correctly (numeric values, name not
+# on the exclusion list), and a column called ``log2_FoldChange.Cond1``
+# will be correctly excluded (substring matches ``log2foldchange``).
+#
+# Exact-match metadata names (after lowercasing + replacing space/dot/hyphen
+# with underscore + collapsing repeats). Single-letter entries like ``f``,
+# ``t``, ``b``, ``p`` only fire on exact match — they would never appear as
+# a sample column on their own anyway.
+_RNA_META_NAMES = frozenset({
+    # Identifiers
+    "locustag", "locus_tag", "geneid", "gene_id", "id", "name",
+    "transcript_id", "transcriptid", "ensemblid", "ensembl_id",
+    "ensembl_gene_id", "ensembl_transcript_id", "refseq", "refseq_id",
+    "uniprot", "uniprot_id", "entrez", "entrez_id", "ncbi_id",
+    "symbol", "gene", "gene_name", "gene_symbol", "genename",
+    "transcript_name", "transcriptname", "protein_id", "proteinid",
+    # Description & annotation
+    "description", "product", "function", "annotation", "note",
+    "comment", "comments", "title",
+    # Genomic coordinates
+    "chr", "chrom", "chromosome", "seqname", "seqid",
+    "start", "end", "strand", "length", "transcript_length",
+    "gene_length", "exon_length", "cds_length",
+    # Feature classification
+    "featuretype", "feature_type", "feature", "type", "class",
+    "biotype", "gene_biotype", "transcript_biotype", "category",
+    # Summary statistics (per-row aggregates across samples — NOT samples
+    # themselves; if these slipped through they'd skew the stats pipeline)
+    "basemean", "base_mean", "mean", "median", "min", "max",
+    "var", "variance", "sd", "stddev", "std_dev", "std",
+    "se", "lfcse", "lfc_se", "lfc_standard_error",
+    "ave_expr", "aveexpr", "avg_expr", "avg_expression",
+    "average", "total", "sum",
+    # Differential-expression statistics
+    "f", "t", "b", "z", "stat", "statistic", "test_statistic",
+    "fc", "foldchange", "fold_change",
+    "logfc", "log2fc", "log2foldchange", "log_fc", "log2_fold_change",
+    "logcpm", "log_cpm", "cpm", "rpm", "rpkm", "fpkm", "tpm",
+    # P-values
+    "p", "pvalue", "p_value", "pval", "p_val",
+    # Adjusted P-values / FDR
+    "padj", "p_adj", "adj_p", "adj_p_val", "adj_p_value",
+    "fdr", "qvalue", "q_value", "q_val",
+    "benjamini_hochberg_adjusted_pvalue", "bh_pvalue", "bh_p_value",
+    "bonferroni",
+})
+
+# Substring patterns matched against the normalised name. Used to catch
+# labelled stats columns the exact-match list can't (e.g. edgeR's
+# ``logFC.GroupA_vs_GroupB`` becomes ``logfc_groupa_vs_groupb`` and matches
+# the substring ``logfc``). Kept short so a sample called ``Sample_FDR1``
+# doesn't accidentally get excluded — only patterns that are very unlikely
+# to appear inside a sample identifier are listed.
+_RNA_META_SUBSTRINGS = (
+    "log2foldchange", "log2fc", "logfc",
+    "log_cpm", "logcpm",
+    "ave_expr", "aveexpr",
+    "biotype", "ensembl",
+)
+
+# Word-bounded patterns: stats names that need to appear as a complete
+# token (preceded by ``_`` or start, followed by ``_`` or end) so we don't
+# false-positive on sample names like ``Sample_FDR1`` while still catching
+# labelled stats columns like ``adj.P.Val.GroupA_vs_GroupB`` which
+# normalises to ``adj_p_val_groupa_vs_groupb``. Stored as compiled regex
+# at module-load time for speed.
+import re as _re
+_RNA_META_TOKEN_PATTERN = _re.compile(
+    r"(^|_)("
+    r"padj|p_value|pvalue|p_val|pval|"
+    r"adj_p_val|adj_p_value|adj_p|"
+    r"fdr|qvalue|q_value|q_val|"
+    r"basemean|base_mean|"
+    r"lfcse|lfc_se"
+    r")(_|$)"
+)
+
+
+def _normalize_col_name(name):
+    """Lower-case, replace space/dot/hyphen with underscore, collapse
+    repeated underscores. Mirrors how the various tools format names so
+    minor punctuation differences (``P.Value`` vs ``P_Value`` vs
+    ``p value``) all collapse to the same canonical form."""
+    if not name:
+        return ""
+    out = []
+    prev_us = False
+    for ch in str(name).strip().lower():
+        if ch in (" ", "\t", ".", "-", "/"):
+            if not prev_us:
+                out.append("_")
+                prev_us = True
+        else:
+            out.append(ch)
+            prev_us = False
+    return "".join(out).strip("_")
+
+
+def _is_meta_column_by_name(name):
+    """Return True if this column header looks like RNA-seq annotation or
+    pre-computed stats (so it should NOT be treated as a sample). Three
+    layers of matching, in order of strictness:
+
+      1. Exact match against the comprehensive ``_RNA_META_NAMES`` set
+         (after lower/separator-normalisation). Catches the canonical
+         names every tool uses.
+      2. Word-bounded regex against ``_RNA_META_TOKEN_PATTERN``. Catches
+         labelled stats columns like ``adj.P.Val.GroupA_vs_B`` while
+         leaving sample names like ``Sample_FDR1`` alone (the stats
+         token must be a complete underscore-bounded segment).
+      3. Plain substring against ``_RNA_META_SUBSTRINGS``. Catches the
+         remaining patterns that are unique enough to never appear inside
+         a real sample name (``logfc``, ``biotype``, ``ensembl``, etc.).
+    """
+    n = _normalize_col_name(name)
+    if not n:
+        return True  # Empty header — definitely not a sample column
+    if n in _RNA_META_NAMES:
+        return True
+    if _RNA_META_TOKEN_PATTERN.search(n):
+        return True
+    for pat in _RNA_META_SUBSTRINGS:
+        if pat in n:
+            return True
+    return False
+
+
+def _column_numeric_score(rows, header, n_check=40):
+    """Return (numeric_count, total_count) over the first ``n_check`` rows.
+
+    Empty / NA / NaN / "." cells don't count toward either total — they're
+    "missing", not "non-numeric". Only non-empty non-parseable strings
+    count as a non-numeric.
+    """
+    n_total = 0
+    n_numeric = 0
+    NA_TOKENS = {"", "NA", "N/A", "NAN", "NULL", "NONE", ".", "-", "#N/A"}
+    for row in rows[:n_check]:
+        v = row.get(header, "")
+        if v is None:
+            continue
+        s = str(v).strip()
+        if s.upper() in NA_TOKENS:
+            continue
+        n_total += 1
+        try:
+            float(s)
+            n_numeric += 1
+        except (ValueError, TypeError):
+            pass
+    return n_numeric, n_total
+
+
+def _detect_rna_samples(headers, rows):
+    """Identify per-sample columns in an RNA-seq table.
+
+    Returns ``(samples, exclusion_log)`` where ``exclusion_log`` is a list
+    of ``(header, reason)`` tuples for every header that didn't make it.
+    Reasons are surfaced via ``format_info.detection_log`` so the user can
+    see why a column they expected to be a sample was filtered out.
+
+    A header is treated as a sample iff:
+      1. It's non-empty.
+      2. The name doesn't match the metadata/stats list or substring
+         patterns (``logFC``, ``P.Value``, ``Adj.P.Val.GroupA_vs_B``,
+         ``Chr``, ``gene_biotype``, etc.).
+      3. The first ~40 rows show >= 80% numeric values among non-empty
+         cells. A column with text values can't be a sample-counts column
+         no matter what its name says.
+    """
+    samples = []
+    exclusion_log = []
+    for h in headers:
+        if not h:
+            exclusion_log.append(("(empty header)", "empty"))
+            continue
+        if _is_meta_column_by_name(h):
+            exclusion_log.append((h, "annotation/stats column name"))
+            continue
+        n_numeric, n_total = _column_numeric_score(rows, h)
+        # Pure-empty column — can't tell if it's intended as a sample. Skip
+        # it conservatively rather than raising; the user gets a 0-value
+        # column in the output if they really wanted it included, but that's
+        # easier to debug than silent exclusion.
+        if n_total == 0:
+            exclusion_log.append((h, "no values in first 40 rows"))
+            continue
+        if (n_numeric / n_total) < 0.8:
+            exclusion_log.append(
+                (h, f"non-numeric ({n_numeric}/{n_total} rows parse as float)"))
+            continue
+        samples.append(h)
+    return samples, exclusion_log
 
 
 def parse_transcriptomics(filepath):
@@ -538,13 +739,22 @@ def parse_transcriptomics(filepath):
     if not headers:
         raise ValueError("Empty file or unrecognized format")
 
-    # Sample columns = headers not in the reserved annotation/stats list.
-    samples = [h for h in headers if h and h not in _RNA_RESERVED_COLUMNS]
+    # Detect sample columns via combined name+value classifier (see
+    # _detect_rna_samples). This handles the long tail of RNA-seq tool
+    # outputs that the simple "exclude these names" approach used to miss.
+    samples, exclusion_log = _detect_rna_samples(headers, rows)
     if not samples:
+        # Build a useful error pointing the user at WHY no samples were
+        # detected — listing what was excluded helps them fix the file.
+        excluded_summary = "; ".join(
+            f"{h} ({reason})" for h, reason in exclusion_log[:10]
+        )
         raise ValueError(
             "Could not detect sample count columns. "
-            "Expected per-sample columns (e.g. 'Sample_A', 'Sample_B') alongside "
-            "annotation columns (Locustag, Gene, Description, etc.)."
+            "Expected per-sample columns with numeric values alongside "
+            "annotation columns (Locustag, Gene, Description, etc.).\n\n"
+            f"Excluded columns: {excluded_summary}"
+            + ("..." if len(exclusion_log) > 10 else "")
         )
 
     # Pick the gene-id and gene-name columns we'll use.
@@ -627,6 +837,14 @@ def parse_transcriptomics(filepath):
             "has_reverse_column": False,
             "has_only_by_site_column": False,
             "dropped_aggregate_columns": [],
+            # Surface what got excluded from the sample list and why so the
+            # user can spot misclassifications. Format: list of {column,
+            # reason}. Truncated to first 20 entries to keep the JSON payload
+            # bounded for files with many annotation columns.
+            "non_sample_columns": [
+                {"column": h, "reason": r} for h, r in exclusion_log[:20]
+            ],
+            "non_sample_columns_truncated": len(exclusion_log) > 20,
             # Hint the frontend that no normalisation should be applied — the
             # count values came in already normalised (RPM/TPM/CPM/DESeq2's
             # rlog/vst etc.) and re-normalising would compound the transform.

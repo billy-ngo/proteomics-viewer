@@ -3,6 +3,35 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.16.3] — 2026-05-08
+
+### Improved — robust transcriptomics sample-column detection
+The static "exclude these names" approach in v4.16.0 was fragile: it only caught the canonical names from the user's specific TSV format, so files from other RNA-seq tools (DESeq2 with its `lfcSE`/`baseMean`/`stat`/`padj`, limma's `adj.P.Val.GroupA_vs_B` labelled comparisons, featureCounts' `Chr/Start/End/Strand/Length`, salmon/kallisto's transcript-level annotations, etc.) would either silently skip real samples or, worse, classify pre-computed stats columns as "samples" and feed garbage into the volcano pipeline.
+
+The detector now uses three layers of complementary signals:
+
+1. **Exact-name match** against a comprehensive case-insensitive set covering identifier columns (Locustag, GeneID, transcript_id, ensembl_*, refseq, uniprot, entrez, symbol, gene_name, etc.), description fields, genomic coordinates (Chr, Start, End, Strand, Length, etc.), feature classification (FeatureType, biotype, gene_biotype, etc.), per-row summary statistics (baseMean, AveExpr, lfcSE, mean/median/var/sd, etc.), and DE statistics (logFC, logCPM, F, t, B, stat, plus the full p-value family). All names go through a normalisation step (lowercase + space/dot/hyphen → underscore) so `P.Value`, `P_Value`, `p value`, and `pvalue` all collapse to the same canonical form.
+2. **Word-bounded regex match** for stats names that frequently appear with appended labels — `adj.P.Val.GroupA_vs_GroupB` (limma's labelled topTable form), `padj.contrast1`, `pvalue_treated_vs_control`, etc. The word boundary is what separates `Sample_FDR1` (a legitimate sample name — the `FDR` is part of the sample's own label) from `condition_FDR` (a stats column with a contrast suffix). The regex requires the stats token to be a complete underscore-bounded segment.
+3. **Plain substring match** for tokens that are unique enough to never appear inside a real sample name (`logfc`, `biotype`, `ensembl`, `aveexpr`).
+
+Plus a **value-based check**: any column whose name passes all three name-signal layers must also have at least 80 % numeric values across the first 40 non-empty rows. A column with text values can't be a sample-counts column regardless of what its header says, so an unfamiliar text column (e.g. `gene_biotype` from an Ensembl annotation file the parser didn't know about) gets caught even if its name slipped through.
+
+Excluded columns are surfaced via `format_info.non_sample_columns` (truncated to 20 entries with a `non_sample_columns_truncated` flag) so a user diagnosing a misclassification can see exactly what was filtered and why.
+
+### Verification
+Smoke-tested across six RNA-seq tool output formats:
+
+| Format | Detected samples | Result |
+|---|---|---|
+| Original TM7x file (Un_A..At_D) | 8 | unchanged ✓ |
+| edgeR exactTest (Sample_1..4 + logFC/logCPM/PValue/FDR) | 4 | correct |
+| DESeq2 (gene_id, baseMean, log2FoldChange, lfcSE, stat, pvalue, padj + Cond1_rep1..3, Cond2_rep1..3) | 6 | correct |
+| limma topTable with labelled comparisons (`adj.P.Val.AvsB` etc.) | 6 | now correctly excludes the labelled stats column |
+| featureCounts (Geneid + Chr/Start/End/Strand/Length + WT_rep1.bam etc.) | 4 | correct |
+| Defensive: samples named `Sample_FDR1`, `Sample_pvalue1`, `Sample_padj1` | 6 | correct (word boundary keeps these as samples) |
+
+The previously-buggy limma case (`adj.P.Val.AvsB` was being classified as a sample column) is now correctly excluded. Sample names that happen to contain stats keywords as suffixes (`Sample_FDR1` etc.) stay classified as samples thanks to the word-bounded regex.
+
 ## [4.16.2] — 2026-05-08
 
 ### Added — uploads now accept Excel (.xlsx) and auto-detect text delimiters
