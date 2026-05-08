@@ -3,6 +3,37 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.16.2] — 2026-05-08
+
+### Added — uploads now accept Excel (.xlsx) and auto-detect text delimiters
+The upload pipeline previously only handled tab-delimited text. Now supported:
+
+- **Excel workbooks** (`.xlsx` / `.xlsm`) — first sheet is read via openpyxl. Empty trailing rows and columns from Excel's padded rectangle are stripped. Numeric cells stringify with full precision so float values round-trip exactly. Charts & formulas are ignored (read-only mode).
+- **CSV** (`.csv`) — comma-delimited, the most common Save-As format from Excel and statistical tools.
+- **Other delimiters** — semicolon (`;`), pipe (`|`), and any other delimiter recognised by Python's `csv.Sniffer`. Picked automatically from the first 8 KB of the file; tab still wins ties so existing proteinGroups.txt files behave identically to before.
+- **TSV** (`.tsv` / `.txt`) — unchanged, still the default for proteinGroups output.
+
+The new dispatcher in `parser.py` is `_read_table(filepath)` which routes by file extension to either `_read_xlsx` (openpyxl) or `_read_delimited` (csv with auto-sniffed delimiter). Both `parse_protein_groups` and `parse_transcriptomics` now call it instead of opening the file directly, so any of the supported formats works for both data types.
+
+`.xls` (legacy binary Excel) is intentionally rejected with a clear error: *"Open the file in Excel and Save As .xlsx (or .csv / .tsv)"*. Supporting `.xls` would require pulling in `xlrd` (which Microsoft has effectively deprecated for new file formats and which adds another dependency for a format users almost never have on hand any more).
+
+### Wiring
+- `parser.py`: new `_detect_delimiter`, `_read_xlsx`, `_read_delimited`, `_read_table` helpers. Both parsers refactored to consume `(headers, rows, raw_rows)` from `_read_table` instead of opening files themselves. Behaviour for existing TSV files is byte-for-byte identical.
+- `pyproject.toml`: added `openpyxl>=3.1.0` as a hard dependency. Pure-Python, ~250 KB, no native build deps — safe to require unconditionally so users who upload Excel files don't hit a "missing optional dep" error.
+- `index.html`: file-input `accept` attribute extended to `.txt,.tsv,.csv,.xlsx,.xlsm,.xls`. Drop-zone hint text now reads "or click to browse · .txt · .tsv · .csv · .xlsx" so the supported formats are visible to the user. The Proteomics/Transcriptomics toggle's drop-zone label simplified from "Drop proteinGroups.txt here" / "Drop transcriptomics TSV here" to "Drop proteinGroups table here" / "Drop RNA-seq table here" since any table format is now accepted.
+
+### Verification
+Round-trip smoke test against the existing TSV files:
+
+| Format | Test file | Samples | Rows | Match |
+|---|---|---|---|---|
+| TSV | proteinGroups.txt (10 samples / 1492 proteins) | 10 | 1492 | baseline |
+| XLSX | TSV → openpyxl → re-parse | 10 | 1492 | identical |
+| TSV | RNA-seq TM7x (8 samples / 705 genes) | 8 | 705 | baseline |
+| CSV | RNA-seq TSV → CSV → re-parse | 8 | 705 | identical |
+| XLSX | RNA-seq TSV → openpyxl → re-parse | 8 | 705 | identical (values exact to full precision) |
+| Semi | `A;B;C\n1;2;3\n` direct sniff | 3 | 2 | parses correctly |
+
 ## [4.16.1] — 2026-05-07
 
 ### Added — Smart auto-scale across multiple plots in Graph Settings

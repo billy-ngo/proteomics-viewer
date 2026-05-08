@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "proker"
-version = "4.16.1"
+version = "4.16.2"
 description = "Pro-ker Proteomics Analysis — an interactive browser-based proteomics data visualization tool"
 readme = "README.md"
 license = "LicenseRef-Proprietary"
@@ -28,6 +28,10 @@ dependencies = [
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.29.0",
     "python-multipart>=0.0.9",
+    # openpyxl is used for .xlsx upload parsing. Pure-Python, ~250 KB, no
+    # native build dependencies — safe to require unconditionally so users
+    # who upload Excel files don't hit a "missing optional dep" error.
+    "openpyxl>=3.1.0",
 ]
 
 [project.scripts]

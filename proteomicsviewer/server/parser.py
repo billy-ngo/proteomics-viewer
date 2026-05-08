@@ -203,137 +203,264 @@ def _detect_encoding(filepath):
     return "utf-8"
 
 
-def parse_protein_groups(filepath):
-    """Parse a MaxQuant proteinGroups.txt (or variant) and return structured data."""
+def _detect_delimiter(sample_text):
+    """Pick the most likely delimiter from a sample of the first ~8 KB.
+
+    Tries ``csv.Sniffer`` first (handles edge cases like quoted fields
+    containing commas). Falls back to a count-based heuristic if Sniffer
+    raises — preferring tab (proteinGroups.txt is tab-delimited and is
+    the historical default), then comma, then semicolon, then pipe.
+    """
+    candidates = "\t,;|"
+    # Sniffer needs at least one full line — skip it on tiny samples
+    if len(sample_text) >= 16:
+        try:
+            return csv.Sniffer().sniff(sample_text, delimiters=candidates).delimiter
+        except csv.Error:
+            pass
+    # Count-based fallback. Look at the first line only — header row should
+    # contain the strongest delimiter signal regardless of data shape.
+    first_line = sample_text.split("\n", 1)[0]
+    counts = [(d, first_line.count(d)) for d in candidates]
+    counts = [c for c in counts if c[1] > 0]
+    if not counts:
+        return "\t"  # Single-column file (unlikely useful but won't crash)
+    counts.sort(key=lambda c: (-c[1], candidates.index(c[0])))
+    return counts[0][0]
+
+
+def _read_xlsx(filepath):
+    """Read the FIRST sheet of an .xlsx workbook into ``(headers, rows)``.
+
+    ``rows`` is a list of dicts mapping each header to the cell value as a
+    string (so downstream parsers see the same shape as csv.DictReader).
+    Empty cells become empty strings. Numeric cells are stringified with
+    enough precision that ``float()`` round-trips exactly; this matches the
+    behaviour the user gets when they "Save As .csv" from Excel.
+    """
+    try:
+        from openpyxl import load_workbook
+    except ImportError as e:
+        raise ValueError(
+            "Excel (.xlsx) upload requires the 'openpyxl' package. "
+            "Reinstall pro-ker (pip install --upgrade proker) to pick it up."
+        ) from e
+    try:
+        wb = load_workbook(filepath, read_only=True, data_only=True)
+    except Exception as e:
+        raise ValueError(f"Could not read .xlsx file: {e}") from e
+    try:
+        ws = wb[wb.sheetnames[0]] if wb.sheetnames else None
+        if ws is None:
+            raise ValueError("Excel workbook has no sheets")
+        rows_iter = ws.iter_rows(values_only=True)
+        try:
+            header_row = next(rows_iter)
+        except StopIteration:
+            return [], [], []
+        # Strip trailing all-None columns (Excel often pads to a wider rectangle)
+        headers = [("" if h is None else str(h)).strip() for h in header_row]
+        while headers and headers[-1] == "":
+            headers.pop()
+        n_cols = len(headers)
+        rows = []
+        raw_rows = []
+        for row in rows_iter:
+            # Skip fully-blank rows (Excel files often have a blank trailing row)
+            if all(c is None or (isinstance(c, str) and not c.strip()) for c in row):
+                continue
+            cells = [(""  if c is None else str(c)) for c in row[:n_cols]]
+            # Pad if a row is shorter than the header (rare but possible)
+            while len(cells) < n_cols:
+                cells.append("")
+            raw_rows.append(cells)
+            rows.append({h: cells[i] for i, h in enumerate(headers) if h})
+        return headers, rows, raw_rows
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
+
+
+def _read_delimited(filepath):
+    """Read a text file with auto-detected delimiter (tab/comma/semi/pipe)
+    into ``(headers, rows, raw_rows)`` — same shape as ``_read_xlsx``."""
     csv.field_size_limit(10_000_000)
     encoding = _detect_encoding(filepath)
-
+    # Sniff a sample to guess the delimiter
+    try:
+        with open(filepath, "r", encoding=encoding, errors="replace") as f:
+            sample = f.read(8192)
+    except OSError as e:
+        raise ValueError(f"Could not read file: {e}") from e
+    delim = _detect_delimiter(sample)
     with open(filepath, "r", encoding=encoding, errors="replace") as f:
-        reader = csv.DictReader(f, delimiter="\t")
-        headers = reader.fieldnames
+        reader = csv.DictReader(f, delimiter=delim)
+        headers = list(reader.fieldnames or [])
         if not headers:
-            raise ValueError("Empty file or unrecognized format")
-
-        header_set = set(headers)
-
-        # Detect samples, then strip per-group aggregate columns
-        raw_samples = _detect_samples(headers)
-        if not raw_samples:
-            raise ValueError(
-                "Could not detect sample columns. "
-                "Ensure the file has per-sample columns like 'Intensity A1'."
-            )
-        samples, dropped_aggregates = _filter_aggregate_samples(raw_samples)
-        if not samples:
-            raise ValueError(
-                "Detected only per-group aggregate columns, no per-sample columns. "
-                "Make sure your file has per-sample quant columns (e.g. 'Intensity A1')."
-            )
-
-        quant_columns = _detect_quant_columns(header_set, samples)
-        if not quant_columns:
-            raise ValueError("No quantification data columns detected.")
-
-        groups = _auto_groups(samples)
-
-        # Discover the best identity & gene-name columns to use
-        id_col = next((c for c in ID_COLUMNS if c in header_set), None)
-        majority_col = "Majority protein IDs" if "Majority protein IDs" in header_set else id_col
-        gene_col = next((c for c in GENE_NAME_COLUMNS if c in header_set), None)
-        fasta_col = "Fasta headers" if "Fasta headers" in header_set else None
-
-        # File-level metadata: which standard columns are present
-        has_peptides_col = any(c in header_set for c in
-                               ("Peptides", "Razor + unique peptides", "Unique peptides"))
-        has_contam_col = "Potential contaminant" in header_set
-        has_reverse_col = "Reverse" in header_set
-        has_byside_col = "Only identified by site" in header_set
-
-        # Parse all rows
-        proteins = []
-        quant_data = {qt: {s: [] for s in samples} for qt in quant_columns}
-        raw_headers = list(headers)
+            return [], [], []
+        rows = []
         raw_rows = []
-
-        contaminant_count = 0
-        reverse_count = 0
-        only_by_site_count = 0
-
         for row in reader:
-            raw_rows.append([(row.get(h, "") or "") for h in raw_headers])
+            raw_rows.append([(row.get(h, "") or "") for h in headers])
+            rows.append(row)
+        return headers, rows, raw_rows
 
-            is_contaminant = row.get("Potential contaminant", "") == "+"
-            is_reverse = row.get("Reverse", "") == "+"
-            is_only_by_site = row.get("Only identified by site", "") == "+"
 
-            if is_contaminant:
-                contaminant_count += 1
-            if is_reverse:
-                reverse_count += 1
-            if is_only_by_site:
-                only_by_site_count += 1
+def _read_table(filepath):
+    """Single entry point: dispatch by file extension.
 
-            # Identity — fall back to the first non-empty column we know about
-            protein_id = row.get(id_col, "") if id_col else ""
-            majority_id = row.get(majority_col, "") if majority_col else protein_id
-            if not majority_id:
-                majority_id = protein_id
-            fasta_header = row.get(fasta_col, "") if fasta_col else ""
+    Returns ``(headers, rows, raw_rows)`` where ``rows`` is a list of dicts
+    (mirrors csv.DictReader shape) and ``raw_rows`` is a list-of-lists in
+    header order suitable for round-trip export. Both parsers use this so
+    ``.xlsx`` / ``.xls`` / ``.csv`` / ``.tsv`` / ``.txt`` and other delimited
+    text files all flow through the same downstream code.
+    """
+    ext = ""
+    try:
+        from pathlib import Path as _P
+        ext = _P(filepath).suffix.lower()
+    except Exception:
+        pass
+    if ext in (".xlsx", ".xlsm"):
+        return _read_xlsx(filepath)
+    # .xls (legacy binary Excel) needs xlrd, which we don't ship — give a
+    # clear error pointing the user at the easy fix.
+    if ext == ".xls":
+        raise ValueError(
+            "Legacy .xls binary Excel files aren't supported. "
+            "Open the file in Excel and Save As .xlsx (or .csv / .tsv), "
+            "then upload that instead."
+        )
+    return _read_delimited(filepath)
 
-            # Gene name: from dedicated column, or from fasta header
-            if gene_col:
-                gene_name = row.get(gene_col, "") or _extract_gene_name(fasta_header)
-            else:
-                gene_name = _extract_gene_name(fasta_header)
 
-            # Peptide counts — read what's there; if NO peptide-count column
-            # exists at all in the file, default to 1 so downstream filters
-            # (e.g. peptides<1) don't drop every protein.
-            if has_peptides_col:
-                peptides = _int(row.get("Peptides", ""))
-                unique_peptides = _int(row.get("Unique peptides", ""))
-                razor = _int(row.get("Razor + unique peptides", ""))
-            else:
-                peptides = 1
-                unique_peptides = 0
-                razor = 0
+def parse_protein_groups(filepath):
+    """Parse a MaxQuant proteinGroups.txt (or variant) and return structured
+    data. Accepts ``.txt`` / ``.tsv`` / ``.csv`` / other delimited text via
+    auto-detected delimiter, plus ``.xlsx`` workbooks (first sheet)."""
+    headers, rows, raw_rows = _read_table(filepath)
+    if not headers:
+        raise ValueError("Empty file or unrecognized format")
 
-            protein = {
-                "id": protein_id,
-                "majority_id": majority_id,
-                "gene_name": gene_name,
-                "fasta_header": fasta_header,
-                "mol_weight": _float(row.get("Mol. weight [kDa]", "")),
-                "sequence_length": _int(row.get("Sequence length", "")),
-                "peptides": peptides,
-                "unique_peptides": unique_peptides,
-                "razor_unique_peptides": razor,
-                "sequence_coverage": _float(row.get("Sequence coverage [%]", "")),
-                "score": _float(row.get("Score", "")),
-                "only_identified_by_site": is_only_by_site,
-                "reverse": is_reverse,
-                "potential_contaminant": is_contaminant,
-                "peptide_sequences": row.get("Peptide sequences", ""),
-                # Tag every protein with its source file for multi-file workflows.
-                # main.py overwrites this with the user-facing filename.
-                "source_file": str(filepath),
-            }
-            proteins.append(protein)
+    header_set = set(headers)
 
-            # Collect quantification values; missing cols (sample present in
-            # `samples` but missing for this quant type) are padded with 0.
-            for qt, sample_cols in quant_columns.items():
-                for sample in samples:
-                    col_name = sample_cols.get(sample)
-                    val = _float(row.get(col_name, "0")) if col_name else 0.0
-                    quant_data[qt][sample].append(val)
+    # Detect samples, then strip per-group aggregate columns
+    raw_samples = _detect_samples(headers)
+    if not raw_samples:
+        raise ValueError(
+            "Could not detect sample columns. "
+            "Ensure the file has per-sample columns like 'Intensity A1'."
+        )
+    samples, dropped_aggregates = _filter_aggregate_samples(raw_samples)
+    if not samples:
+        raise ValueError(
+            "Detected only per-group aggregate columns, no per-sample columns. "
+            "Make sure your file has per-sample quant columns (e.g. 'Intensity A1')."
+        )
 
-        # If the file had NO id column at all, synthesize one from the row index
-        # so the UI has something to display.
-        if not id_col:
-            for idx, p in enumerate(proteins):
-                p["id"] = f"row_{idx + 1}"
-                p["majority_id"] = p["majority_id"] or f"row_{idx + 1}"
+    quant_columns = _detect_quant_columns(header_set, samples)
+    if not quant_columns:
+        raise ValueError("No quantification data columns detected.")
+
+    groups = _auto_groups(samples)
+
+    # Discover the best identity & gene-name columns to use
+    id_col = next((c for c in ID_COLUMNS if c in header_set), None)
+    majority_col = "Majority protein IDs" if "Majority protein IDs" in header_set else id_col
+    gene_col = next((c for c in GENE_NAME_COLUMNS if c in header_set), None)
+    fasta_col = "Fasta headers" if "Fasta headers" in header_set else None
+
+    # File-level metadata: which standard columns are present
+    has_peptides_col = any(c in header_set for c in
+                           ("Peptides", "Razor + unique peptides", "Unique peptides"))
+    has_contam_col = "Potential contaminant" in header_set
+    has_reverse_col = "Reverse" in header_set
+    has_byside_col = "Only identified by site" in header_set
+
+    # Parse all rows
+    proteins = []
+    quant_data = {qt: {s: [] for s in samples} for qt in quant_columns}
+    raw_headers = list(headers)
+
+    contaminant_count = 0
+    reverse_count = 0
+    only_by_site_count = 0
+
+    for row in rows:
+        is_contaminant = row.get("Potential contaminant", "") == "+"
+        is_reverse = row.get("Reverse", "") == "+"
+        is_only_by_site = row.get("Only identified by site", "") == "+"
+
+        if is_contaminant:
+            contaminant_count += 1
+        if is_reverse:
+            reverse_count += 1
+        if is_only_by_site:
+            only_by_site_count += 1
+
+        # Identity — fall back to the first non-empty column we know about
+        protein_id = row.get(id_col, "") if id_col else ""
+        majority_id = row.get(majority_col, "") if majority_col else protein_id
+        if not majority_id:
+            majority_id = protein_id
+        fasta_header = row.get(fasta_col, "") if fasta_col else ""
+
+        # Gene name: from dedicated column, or from fasta header
+        if gene_col:
+            gene_name = row.get(gene_col, "") or _extract_gene_name(fasta_header)
+        else:
+            gene_name = _extract_gene_name(fasta_header)
+
+        # Peptide counts — read what's there; if NO peptide-count column
+        # exists at all in the file, default to 1 so downstream filters
+        # (e.g. peptides<1) don't drop every protein.
+        if has_peptides_col:
+            peptides = _int(row.get("Peptides", ""))
+            unique_peptides = _int(row.get("Unique peptides", ""))
+            razor = _int(row.get("Razor + unique peptides", ""))
+        else:
+            peptides = 1
+            unique_peptides = 0
+            razor = 0
+
+        protein = {
+            "id": protein_id,
+            "majority_id": majority_id,
+            "gene_name": gene_name,
+            "fasta_header": fasta_header,
+            "mol_weight": _float(row.get("Mol. weight [kDa]", "")),
+            "sequence_length": _int(row.get("Sequence length", "")),
+            "peptides": peptides,
+            "unique_peptides": unique_peptides,
+            "razor_unique_peptides": razor,
+            "sequence_coverage": _float(row.get("Sequence coverage [%]", "")),
+            "score": _float(row.get("Score", "")),
+            "only_identified_by_site": is_only_by_site,
+            "reverse": is_reverse,
+            "potential_contaminant": is_contaminant,
+            "peptide_sequences": row.get("Peptide sequences", ""),
+            # Tag every protein with its source file for multi-file workflows.
+            # main.py overwrites this with the user-facing filename.
+            "source_file": str(filepath),
+        }
+        proteins.append(protein)
+
+        # Collect quantification values; missing cols (sample present in
+        # `samples` but missing for this quant type) are padded with 0.
+        for qt, sample_cols in quant_columns.items():
+            for sample in samples:
+                col_name = sample_cols.get(sample)
+                val = _float(row.get(col_name, "0")) if col_name else 0.0
+                quant_data[qt][sample].append(val)
+
+    # If the file had NO id column at all, synthesize one from the row index
+    # so the UI has something to display.
+    if not id_col:
+        for idx, p in enumerate(proteins):
+            p["id"] = f"row_{idx + 1}"
+            p["majority_id"] = p["majority_id"] or f"row_{idx + 1}"
 
     return {
         "filename": str(filepath),
@@ -402,82 +529,81 @@ def parse_transcriptomics(filepath):
     additional normalisation is applied. The dataset emerges with a
     single quant type called "Counts" so the frontend's processing UI
     stays simple.
+
+    Accepts the same file formats as the proteomics parser: ``.txt`` /
+    ``.tsv`` / ``.csv`` / other delimited text via auto-detected
+    delimiter, plus ``.xlsx`` workbooks (first sheet).
     """
-    csv.field_size_limit(10_000_000)
-    encoding = _detect_encoding(filepath)
+    headers, rows, _ = _read_table(filepath)
+    if not headers:
+        raise ValueError("Empty file or unrecognized format")
 
-    with open(filepath, "r", encoding=encoding, errors="replace") as f:
-        reader = csv.DictReader(f, delimiter="\t")
-        headers = reader.fieldnames
-        if not headers:
-            raise ValueError("Empty file or unrecognized format")
+    # Sample columns = headers not in the reserved annotation/stats list.
+    samples = [h for h in headers if h and h not in _RNA_RESERVED_COLUMNS]
+    if not samples:
+        raise ValueError(
+            "Could not detect sample count columns. "
+            "Expected per-sample columns (e.g. 'Sample_A', 'Sample_B') alongside "
+            "annotation columns (Locustag, Gene, Description, etc.)."
+        )
 
-        # Sample columns = headers not in the reserved annotation/stats list.
-        samples = [h for h in headers if h and h not in _RNA_RESERVED_COLUMNS]
-        if not samples:
-            raise ValueError(
-                "Could not detect sample count columns. "
-                "Expected per-sample columns (e.g. 'Sample_A', 'Sample_B') alongside "
-                "annotation columns (Locustag, Gene, Description, etc.)."
-            )
+    # Pick the gene-id and gene-name columns we'll use.
+    id_col = next((c for c in ("Locustag", "locus_tag", "LocusTag", "GeneID",
+                               "gene_id", "ID", "id") if c in headers), None)
+    gene_col = next((c for c in ("Gene", "gene", "Symbol", "gene_name")
+                     if c in headers), None)
+    desc_col = next((c for c in ("Description", "description", "Product",
+                                 "product") if c in headers), None)
+    feat_col = next((c for c in ("FeatureType", "feature_type", "Feature",
+                                 "Type") if c in headers), None)
 
-        # Pick the gene-id and gene-name columns we'll use.
-        id_col = next((c for c in ("Locustag", "locus_tag", "LocusTag", "GeneID",
-                                   "gene_id", "ID", "id") if c in headers), None)
-        gene_col = next((c for c in ("Gene", "gene", "Symbol", "gene_name")
-                         if c in headers), None)
-        desc_col = next((c for c in ("Description", "description", "Product",
-                                     "product") if c in headers), None)
-        feat_col = next((c for c in ("FeatureType", "feature_type", "Feature",
-                                     "Type") if c in headers), None)
+    groups = _auto_groups(samples)
 
-        groups = _auto_groups(samples)
+    proteins = []
+    quant_data = {"Counts": {s: [] for s in samples}}
+    raw_headers = list(headers)
+    raw_rows = []
 
-        proteins = []
-        quant_data = {"Counts": {s: [] for s in samples}}
-        raw_headers = list(headers)
-        raw_rows = []
+    for idx, row in enumerate(rows):
+        raw_rows.append([(row.get(h, "") or "") for h in raw_headers])
 
-        for idx, row in enumerate(reader):
-            raw_rows.append([(row.get(h, "") or "") for h in raw_headers])
+        gene_id = row.get(id_col, "") if id_col else ""
+        if not gene_id:
+            gene_id = f"gene_{idx + 1}"
+        gene_name = row.get(gene_col, "") if gene_col else ""
+        description = row.get(desc_col, "") if desc_col else ""
+        feature = row.get(feat_col, "") if feat_col else ""
 
-            gene_id = row.get(id_col, "") if id_col else ""
-            if not gene_id:
-                gene_id = f"gene_{idx + 1}"
-            gene_name = row.get(gene_col, "") if gene_col else ""
-            description = row.get(desc_col, "") if desc_col else ""
-            feature = row.get(feat_col, "") if feat_col else ""
+        # Build a "protein" record. The frontend operates on this shape
+        # (id, gene_name, peptides, etc.) so we keep the same keys; the
+        # transcriptomics-specific bits (description, feature type) sit
+        # alongside without the frontend caring.
+        proteins.append({
+            "id": gene_id,
+            "majority_id": gene_id,
+            "gene_name": gene_name,
+            "fasta_header": description,  # Reuse for hover-tooltip text
+            "mol_weight": 0.0,
+            "sequence_length": 0,
+            # peptides=1 keeps the default min-peptides filter (>=1) from
+            # silently dropping every gene. Transcriptomics has no peptide
+            # concept; the field is only relevant to MS data.
+            "peptides": 1,
+            "unique_peptides": 0,
+            "razor_unique_peptides": 0,
+            "sequence_coverage": 0.0,
+            "score": 0.0,
+            "only_identified_by_site": False,
+            "reverse": False,
+            "potential_contaminant": False,
+            "peptide_sequences": "",
+            "feature_type": feature,
+            "description": description,
+            "source_file": str(filepath),
+        })
 
-            # Build a "protein" record. The frontend operates on this shape
-            # (id, gene_name, peptides, etc.) so we keep the same keys; the
-            # transcriptomics-specific bits (description, feature type) sit
-            # alongside without the frontend caring.
-            proteins.append({
-                "id": gene_id,
-                "majority_id": gene_id,
-                "gene_name": gene_name,
-                "fasta_header": description,  # Reuse for hover-tooltip text
-                "mol_weight": 0.0,
-                "sequence_length": 0,
-                # peptides=1 keeps the default min-peptides filter (>=1) from
-                # silently dropping every gene. Transcriptomics has no peptide
-                # concept; the field is only relevant to MS data.
-                "peptides": 1,
-                "unique_peptides": 0,
-                "razor_unique_peptides": 0,
-                "sequence_coverage": 0.0,
-                "score": 0.0,
-                "only_identified_by_site": False,
-                "reverse": False,
-                "potential_contaminant": False,
-                "peptide_sequences": "",
-                "feature_type": feature,
-                "description": description,
-                "source_file": str(filepath),
-            })
-
-            for sample in samples:
-                quant_data["Counts"][sample].append(_float(row.get(sample, "0")))
+        for sample in samples:
+            quant_data["Counts"][sample].append(_float(row.get(sample, "0")))
 
     return {
         "filename": str(filepath),
