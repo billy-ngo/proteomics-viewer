@@ -2079,6 +2079,13 @@ function renderFormatNotes(){
     if(isTranscriptomics){
         notes.push('Loaded as <b>transcriptomics</b> data. Per-sample count columns: <b>'+(RAW.samples||[]).length+'</b>. Values are treated as already normalised — the normalization step is skipped automatically.');
     }
+    // Multi-sheet xlsx hint — tell the user we picked the first sheet and
+    // list the others so they can re-export with a different one if needed.
+    if(Array.isArray(fi.xlsx_sheet_names)&&fi.xlsx_sheet_names.length>1){
+        const others=fi.xlsx_sheet_names.filter(s=>s!==fi.xlsx_active_sheet);
+        const safe=arr=>arr.map(s=>String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))).join(', ');
+        notes.push('This workbook has <b>'+fi.xlsx_sheet_names.length+' sheets</b>. Using <b>'+safe([fi.xlsx_active_sheet])+'</b> (the first sheet). Other sheets ignored: '+safe(others)+'. To load a different sheet, re-save the workbook with that sheet first.');
+    }
     if(fi.dropped_aggregate_columns&&fi.dropped_aggregate_columns.length){
         notes.push('Per-group aggregate columns ignored as samples: <b>'+fi.dropped_aggregate_columns.join(', ')+'</b>. Only per-replicate columns are used for analysis.');
     }
