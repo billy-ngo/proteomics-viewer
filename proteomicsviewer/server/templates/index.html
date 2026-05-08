@@ -292,6 +292,22 @@ function _showErrorToast(msg){
         setTimeout(()=>{try{toast.remove()}catch(e){}},12000);
     }catch(e){/* never let the toast fail */}
 }
+// Brief informational toast (success / status messages — the green-flavour
+// counterpart to _showErrorToast). Auto-dismisses after 4s. Used by
+// gsSmartAutoScale / gsResetZoomSelected to confirm what just happened.
+function _showToast(msg){
+    try{
+        var existing=document.getElementById('__info_toast');
+        if(existing) existing.remove();
+        var toast=document.createElement('div');
+        toast.id='__info_toast';
+        toast.style.cssText='position:fixed;bottom:14px;right:14px;max-width:360px;background:var(--accent,#58a6ff);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;line-height:1.4;box-shadow:0 4px 14px rgba(0,0,0,0.4);z-index:99999;font-family:-apple-system,Segoe UI,sans-serif;font-weight:600';
+        var safe=String(msg||'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+        toast.textContent=safe;
+        document.body.appendChild(toast);
+        setTimeout(()=>{try{toast.remove()}catch(e){}},4000);
+    }catch(e){/* never let the toast fail */}
+}
 window.onerror=function(msg,url,line){
     try{
         window.__errorCount++;
@@ -537,6 +553,10 @@ async function uploadFile(file,append){
                 </div>
             </div>
             <div id="gs-plot-checks" style="max-height:120px;overflow-y:auto"></div>
+            <div style="display:flex;gap:6px;margin-top:8px">
+                <button onclick="gsSmartAutoScale()" style="flex:1;font-size:11px;padding:4px 8px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:inherit;font-weight:600" title="Set every selected plot of the same type to share the smallest range that encompasses all data points across the group. Plots of different types are auto-scaled within their own type group.">Smart auto-scale selected</button>
+                <button onclick="gsResetZoomSelected()" style="font-size:10px;padding:4px 8px;background:transparent;border:1px solid var(--border);color:var(--text-sec);border-radius:4px;cursor:pointer;font-family:inherit" title="Reset every selected plot to its individual auto range">Reset</button>
+            </div>
         </div>
         <!-- Markers -->
         <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Markers</div>
@@ -8240,6 +8260,135 @@ function gsBatchChanged(){
 function gsBatchSelectAll(state){
     document.querySelectorAll('#gs-plot-checks input[type=checkbox]').forEach(cb=>{cb.checked=!!state});
     gsBatchChanged();
+}
+
+// Compute the union of finite (x, y) extents across an array of charts.
+// Returns null if no chart has any finite data — caller should bail out.
+// Reads each chart.traces[*].x / y arrays directly so the extent reflects
+// the actual data on the plot, not whatever zoom range happens to be set.
+function _gsUnionDataExtent(charts){
+    let xMin=Infinity,xMax=-Infinity,yMin=Infinity,yMax=-Infinity;
+    let any=false;
+    charts.forEach(ch=>{
+        if(!ch||!Array.isArray(ch.traces)) return;
+        ch.traces.forEach(tr=>{
+            if(!tr||!Array.isArray(tr.x)||!Array.isArray(tr.y)) return;
+            const n=Math.min(tr.x.length,tr.y.length);
+            for(let i=0;i<n;i++){
+                const vx=tr.x[i],vy=tr.y[i];
+                if(!isFinite(vx)||!isFinite(vy)) continue;
+                if(vx<xMin) xMin=vx;
+                if(vx>xMax) xMax=vx;
+                if(vy<yMin) yMin=vy;
+                if(vy>yMax) yMax=vy;
+                any=true;
+            }
+        });
+    });
+    if(!any) return null;
+    // Add a small padding (3% of range, min 0.05 in absolute terms) so points
+    // on the very edge don't sit on the axis line. Mirrors the chart's own
+    // d3-scale "nice()" padding feel without depending on d3's specific math.
+    const padX=Math.max((xMax-xMin)*0.03,0.05);
+    const padY=Math.max((yMax-yMin)*0.03,0.05);
+    return {xMin:xMin-padX,xMax:xMax+padX,yMin:yMin-padY,yMax:yMax+padY};
+}
+
+// "Smart auto-scale selected" — for every selected plot, group by plot type
+// (volcano with volcanoes, dotplot with dotplots, etc.), compute the union
+// of (x,y) data extents across the group, and apply that range to every
+// chart in the group. Plots of different types each get their own group
+// computation; one click handles a mixed selection of e.g. 2 volcanoes +
+// 3 PCAs and produces two unified-axis cohorts.
+//
+// Persists via cp.config._chartState so the change survives every render
+// path AND session save/load. Pushes one undo entry per plot so Ctrl+Z
+// rolls back individual changes.
+function gsSmartAutoScale(){
+    if(!Array.isArray(gsTargetPlots)||!gsTargetPlots.length){
+        alert('No plots selected. Tick at least two plots in the Apply-to list, then click Smart auto-scale.');
+        return;
+    }
+    // Group selected plots by type. Each group becomes its own union scope.
+    const byType={};
+    gsTargetPlots.forEach(plotId=>{
+        const cp=CANVAS_PLOTS.find(c=>c.plotId===plotId);
+        if(!cp) return;
+        if(!byType[cp.type]) byType[cp.type]=[];
+        byType[cp.type].push(cp);
+    });
+    let appliedGroups=0,appliedPlots=0;
+    Object.entries(byType).forEach(([type,group])=>{
+        // Need at least 2 plots of the same type to share an axis range —
+        // a single plot doesn't have anything to share with so skip it.
+        if(group.length<2) return;
+        const charts=group.map(cp=>CHARTS[cp.plotId]).filter(Boolean);
+        if(charts.length<2) return;
+        const ext=_gsUnionDataExtent(charts);
+        if(!ext) return;
+        // Apply the unioned range to every chart in the group. Capture the
+        // pre-state per chart so undo rolls back to where each plot was.
+        group.forEach(cp=>{
+            const chart=CHARTS[cp.plotId];if(!chart) return;
+            const oldX=Array.isArray(chart.xRange)?[...chart.xRange]:null;
+            const oldY=Array.isArray(chart.yRange)?[...chart.yRange]:null;
+            chart.setXRange(ext.xMin,ext.xMax);
+            chart.setYRange(ext.yMin,ext.yMax);
+            chart._zoomed=true;
+            // Mirror to cp.config._chartState so the range survives every
+            // future renderPlot call (filter change, freeze toggle, etc.).
+            if(!cp.config._chartState) cp.config._chartState={};
+            const cs=cp.config._chartState;
+            cs.xRange=[ext.xMin,ext.xMax];cs.xManual=true;
+            cs.yRange=[ext.yMin,ext.yMax];cs.yManual=true;
+            cs.zoomed=true;
+            chart.render();
+            // Push undo so Ctrl+Z restores the per-plot pre-state. Same
+            // axisRange action type as zoom-to-selection / range edit.
+            const newX=[ext.xMin,ext.xMax],newY=[ext.yMin,ext.yMax];
+            pushUndo('axisRange',{plotId:cp.plotId,oldX,oldY,newX,newY});
+            appliedPlots++;
+        });
+        appliedGroups++;
+    });
+    if(!appliedPlots){
+        alert('Smart auto-scale needs at least two plots of the same type selected. Tick more plots in the Apply-to list and try again.');
+        return;
+    }
+    if(typeof refreshGOILegends==='function') refreshGOILegends();
+    try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
+    // Brief feedback so the user knows it ran. Format: "5 plots across 2 types".
+    const groupCount=Object.keys(byType).filter(t=>byType[t].length>=2).length;
+    if(typeof _showToast==='function') _showToast('Auto-scaled '+appliedPlots+' plot'+(appliedPlots!==1?'s':'')+' across '+groupCount+' plot type'+(groupCount!==1?'s':''));
+}
+
+// Reset every selected plot to its individual auto range (clear xRange /
+// yRange so the chart's _computeScales path takes over). Mirrors the
+// per-plot right-click "Reset zoom" action but applied in batch.
+function gsResetZoomSelected(){
+    if(!Array.isArray(gsTargetPlots)||!gsTargetPlots.length) return;
+    let count=0;
+    gsTargetPlots.forEach(plotId=>{
+        const chart=CHARTS[plotId];if(!chart) return;
+        const cp=CANVAS_PLOTS.find(c=>c.plotId===plotId);
+        const oldX=Array.isArray(chart.xRange)?[...chart.xRange]:null;
+        const oldY=Array.isArray(chart.yRange)?[...chart.yRange]:null;
+        if(!oldX&&!oldY) return;  // already auto
+        chart.xRange=null;chart.yRange=null;
+        chart._xManual=false;chart._yManual=false;
+        chart._zoomed=false;
+        if(cp&&cp.config._chartState){
+            const cs=cp.config._chartState;
+            delete cs.xRange;delete cs.yRange;
+            delete cs.xManual;delete cs.yManual;
+            delete cs.zoomed;
+        }
+        chart.render();
+        pushUndo('axisRange',{plotId,oldX,oldY,newX:null,newY:null});
+        count++;
+    });
+    try{if(typeof autoSaveSession==='function') autoSaveSession()}catch(_){}
+    if(count&&typeof _showToast==='function') _showToast('Reset '+count+' plot'+(count!==1?'s':'')+' to auto range');
 }
 
 

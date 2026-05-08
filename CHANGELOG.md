@@ -3,6 +3,22 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.16.1] — 2026-05-07
+
+### Added — Smart auto-scale across multiple plots in Graph Settings
+The Graph Settings panel's **Apply to** section now has two new buttons:
+
+- **Smart auto-scale selected** — for every selected plot, group by plot type (volcano with volcanoes, dotplot with dotplots, PCA with PCAs, etc.), compute the union of (x, y) data extents across the group, and apply that range to every chart in the group. One click on a mixed selection of e.g. 2 volcanoes + 3 PCAs produces two unified-axis cohorts (volcanoes share an X/Y range, PCAs share their own). Plots of different types each get their own union scope; a plot with no peer of its type in the selection is skipped.
+- **Reset** — clear the manual range on every selected plot so the chart's auto-fit takes over again. Mirrors the per-plot right-click "Reset zoom" but applied in batch.
+
+Implementation:
+
+- `_gsUnionDataExtent(charts)` walks `chart.traces[*].x / y` arrays directly so the extent reflects the actual data on the plot, not whatever zoom range happens to be set. Filters infinite values, adds a 3 % padding (min 0.05) on each side so points at the edge don't sit on the axis line — same feel as the chart's d3 `nice()` defaults.
+- `gsSmartAutoScale()` reads `gsTargetPlots`, groups by `cp.type`, and for each group with ≥ 2 plots applies `chart.setXRange` / `setYRange` and mirrors the result to `cp.config._chartState` so the unified range survives every renderPlot path (filter change, freeze toggle, session save/load). One `axisRange` undo entry pushed per plot so Ctrl+Z rolls back individual plots.
+- `gsResetZoomSelected()` clears `xRange / yRange / _xManual / _yManual / _zoomed` on every selected plot, mirrors the clear to `cp.config._chartState`, pushes per-plot undo entries.
+
+A new `_showToast(msg)` helper provides info-flavour status messages (the accent-color counterpart to the existing red `_showErrorToast`). Auto-dismisses after 4 seconds. Used by both new buttons to confirm "Auto-scaled N plots across M plot types" / "Reset N plots to auto range".
+
 ## [4.16.0] — 2026-05-07
 
 ### Added — Transcriptomics (RNA-seq) data support
