@@ -3,6 +3,42 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.16.5] — 2026-05-09
+
+### Fixed — server now reliably shuts down when the browser closes
+The previous auto-shutdown had three latent bugs that left the server running indefinitely in common scenarios:
+
+1. **Heartbeat only started after a file was uploaded.** `startHeartbeat()` was called from `initGrouping()`, so a user who opened the browser, never uploaded a file, and walked away never sent a single heartbeat. The watchdog's `if _last_heartbeat > 0` check failed forever and the server lived on.
+2. **No explicit shutdown signal.** When the user closed the tab, the server had to wait the full 30 s heartbeat-timeout before exiting — there was no faster path for the common "user clicks close" case.
+3. **`startHeartbeat()` could stack intervals.** Re-entries (session restore re-runs `initGrouping`) registered additional 10 s intervals without clearing the old ones, so the heartbeat rate doubled / tripled / etc.
+
+Two complementary signals now drive shutdown:
+
+**Heartbeat path** — frontend pings `/api/heartbeat` every 10 s. If the backend doesn't see a heartbeat for **15 s** (down from 30 s), the watchdog exits. This is the catch-all that fires regardless of HOW the browser went away (close, crash, suspend, network glitch).
+
+**Explicit-shutdown path** — frontend's `pagehide` handler calls `navigator.sendBeacon('/api/shutdown')`. The server arms a **3 s grace window** during which any new heartbeat cancels the pending shutdown. So:
+
+| Scenario | What happens |
+|---|---|
+| User closes the tab | `pagehide` → `/api/shutdown` → no heartbeat in 3 s → server exits at ~3 s |
+| User reloads the tab | `pagehide` → `/api/shutdown`, but the new page heartbeats within ~500 ms → shutdown cancelled → server keeps running |
+| Browser crashes / network drops | No `pagehide`, no further heartbeats → server exits at 15 s via the silent-timeout path |
+| User opens browser, never uploads, walks away | Heartbeat starts at page load (not at upload), so the 15 s silent-timeout path catches this case too |
+
+Specific changes:
+
+- **`main.py`** — `_last_heartbeat` initialised to `time.time()` at module load (was 0.0) so the watchdog has a value from the start. New `_shutdown_armed_at` flag tracks the explicit-shutdown grace window. New `/api/shutdown` endpoint (POST + GET — POST is what `sendBeacon` emits, GET is for manual debug) arms the flag. The heartbeat handler clears the flag if it fires during the grace window. Watchdog polls every 2 s (was 10 s) so the explicit-shutdown grace resolves with ~2 s precision. `_shutdown_cleanup()` extracted as a helper so both shutdown paths drop the same lock file.
+- **`index.html`** — heartbeat now starts at page-load time via a `DOMContentLoaded` listener (with a `_heartbeatTimer` guard so re-entries are no-ops) instead of waiting for `initGrouping`. New `pagehide` handler sends `navigator.sendBeacon('/api/shutdown')` (with a sync XHR fallback for ancient browsers); skipped when `event.persisted === true` so going into the back-forward cache doesn't kill the server. Existing `beforeunload` data-loss warning is unchanged.
+
+### Verification
+Three timing scenarios simulated end-to-end with the actual watchdog logic:
+
+| Test | Result |
+|---|---|
+| Realistic close (pagehide → no reload) | Server exits at t=4 s (1 s setup + 3 s grace) ✓ |
+| Realistic reload (pagehide + new heartbeat at +500 ms) | Server still alive at t=5 s — heartbeat cancelled the pending shutdown ✓ |
+| Silent timeout (no signals) | Server exits at t=1 s (was already 14 s into the 15 s window) ✓ |
+
 ## [4.16.4] — 2026-05-08
 
 ### Fixed — title rows above the headers are now skipped automatically

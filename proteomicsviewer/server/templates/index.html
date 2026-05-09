@@ -2190,14 +2190,66 @@ function addBin(){const id=nextBinId++;let i=BINS.length+1,lbl='Group '+i;while(
 function updateContinueBtn(){const ok=BINS.filter(b=>b.samples.length>0).length>=2;document.getElementById('continue-btn').disabled=!ok;['tab-processing','tab-analysis','tab-viz'].forEach(id=>document.getElementById(id).disabled=!ok)}
 document.getElementById('continue-btn').addEventListener('click',()=>{populatePruneGrp();switchTab('processing')});
 function updateStatus(){if(!RAW)return;const filtered=PROC_FIDX.length;const removed=RAW.total_proteins-filtered;document.getElementById('status-text').textContent=filtered+' proteins'+(removed>0?' ('+removed+' filtered)':'');const a=BINS.reduce((n,b)=>n+b.samples.length,0);document.getElementById('status-groups').textContent=BINS.length+' groups | '+a+'/'+RAW.samples.length+' assigned';document.getElementById('header-subtitle').textContent=RAW.filename+' \u00B7 '+RAW.samples.length+' samples'}
-function startHeartbeat(){setInterval(()=>fetch('/api/heartbeat').catch(()=>{}),10000)}
+// Heartbeat — every 10 s tells the backend "browser is still here". The
+// backend's auto-shutdown watchdog kills the server if no heartbeat
+// arrives for 15 s. Stored on a module-level handle so re-entries (session
+// restore re-runs initGrouping which used to call startHeartbeat) don't
+// stack up multiple intervals.
+var _heartbeatTimer=null;
+function startHeartbeat(){
+    if(_heartbeatTimer) return;  // Already running — don't double-up
+    // Fire one immediately so the backend resets its timer right away
+    // instead of waiting up to 10 s for the first interval tick.
+    fetch('/api/heartbeat').catch(()=>{});
+    _heartbeatTimer=setInterval(()=>fetch('/api/heartbeat').catch(()=>{}),10000);
+}
+// Start heartbeat IMMEDIATELY on page load — not just after a file
+// upload. Without this, a user who opens the browser, never uploads
+// anything, and walks away would leave the server running forever (the
+// backend never saw a heartbeat, so its silent-timeout watchdog had
+// nothing to time-out from). The redundant call inside initGrouping is
+// a no-op thanks to the _heartbeatTimer guard above.
+if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',startHeartbeat);
+} else {
+    startHeartbeat();
+}
 
-// Exit guard — warn user before closing tab if data is loaded
+// Exit guard — warn user before closing tab if data is loaded.
+// pagehide ALSO fires (and is more reliable than beforeunload across
+// browsers / bfcache cases), so the explicit shutdown signal lives there.
 window.addEventListener('beforeunload',e=>{
     if(RAW||CANVAS_PLOTS.length){
         e.preventDefault();
         e.returnValue='';
     }
+});
+
+// Explicit shutdown signal — sent when the page is going away (close,
+// reload, navigation). The backend arms a 3 s grace window during which
+// any heartbeat cancels the shutdown, so a reload (new page heartbeats
+// within ~500 ms) keeps the server alive while a real close lets it die
+// in ~3 s instead of waiting the full 15 s silent-timeout.
+//
+// `event.persisted === true` means the page is going into the back-
+// forward cache and will likely come back — don't signal shutdown then.
+//
+// sendBeacon fires reliably during page unload (regular fetch can be
+// cancelled mid-flight by the browser as the page goes away). It POSTs
+// a tiny payload — empty body is fine here, the URL is the signal.
+window.addEventListener('pagehide',e=>{
+    if(e.persisted) return;  // Going to bfcache — page will resume
+    try{
+        if(navigator.sendBeacon){
+            navigator.sendBeacon('/api/shutdown',new Blob([],{type:'text/plain'}));
+        } else {
+            // Older browsers without sendBeacon — fall back to a sync XHR
+            // (fetch may be cancelled on unload).
+            var xhr=new XMLHttpRequest();
+            xhr.open('POST','/api/shutdown',false);
+            try{xhr.send()}catch(_){}
+        }
+    }catch(_){}
 });
 
 // ================================================================
