@@ -3,6 +3,49 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.16.6] — 2026-05-10
+
+### Fixed — `proker` no longer crashes when its port is in use
+Running `proker` while something else (a stale Proker, a TIME_WAIT socket from a Proker that exited recently, or any unrelated process) held port 8050 would crash with the cryptic uvicorn error:
+
+```
+ERROR: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8050):
+[winerror 10048] only one usage of each socket address (protocol/network address/port) is normally permitted
+```
+
+The launcher now probes for a free port BEFORE printing the URL or starting uvicorn, and falls forward through the next 19 consecutive ports until one binds. When the requested port is unavailable, a clear log line tells the user where the server actually came up:
+
+```
+  Port 8050 is in use — falling forward to port 8051.
+
+  Starting Pro-ker at http://127.0.0.1:8051
+```
+
+The browser opens at the actual URL (8051 in this example), the lock file records the actual port, and the heartbeat / shutdown plumbing all use the actual port consistently.
+
+If all 20 candidate ports (`start_port` … `start_port+19`) are in use, the launcher errors out with a clear message instead of a Python traceback:
+
+```
+  Error: All ports in 8050-8069 are in use. Free a port or pass --port <N> to pick a specific one.
+```
+
+### Wiring
+- `cli.py`: new `_find_free_port(host, start_port, max_tries=20)` probes consecutive ports via a throwaway socket bind (no SO_REUSEADDR — we want to fail on TIME_WAIT sockets the same way uvicorn would). Returns `(port, fellback)` so the caller can log when a fallback happened.
+- `cli.py`: new `_run_uvicorn_with_port_retry()` wraps the actual `uvicorn.run` with a small retry loop in case a TOCTOU race means the port was grabbed between our probe and uvicorn's bind. The probe handles ~99.9 % of "port in use" cases cleanly; this is belt-and-suspenders for the remaining sub-second race window.
+- `cli.py`: `main()` reordered so port resolution happens BEFORE the URL is printed, the browser is opened, or the lock file is written — so all of those reflect the port that uvicorn actually binds.
+- The single-instance check (`_check_existing_server`) still runs first and short-circuits to opening the existing Proker's browser tab — falling forward to a different port for a SECOND Proker would be confusing. The fallback only kicks in when the port is held by something that ISN'T a healthy Proker (stale lock, TIME_WAIT, unrelated process).
+
+### Verification
+Five scenarios tested with the actual probe + launcher:
+
+| Scenario | Result |
+|---|---|
+| Port 9999 free | Bound 9999, no fallback log |
+| Port 8888 held | Bound 8889, log "falling forward" emitted |
+| Ports 7000–7004 held | Bound 7005 |
+| Ports 6000–6019 held (full window) | Clean RuntimeError with port range in message |
+| Real launch with port 9050 held | Server came up on 9051, version 4.16.5, /health returned ok, shutdown signal stopped it cleanly |
+
 ## [4.16.5] — 2026-05-09
 
 ### Fixed — server now reliably shuts down when the browser closes

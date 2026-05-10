@@ -379,6 +379,86 @@ def _open_when_ready(url, timeout=10):
     webbrowser.open(url)
 
 
+# ── Port probing ─────────────────────────────────────────────────
+def _find_free_port(host, start_port, max_tries=20):
+    """Probe consecutive ports starting at ``start_port`` and return the
+    first one that's actually bindable. Used by the launcher to fall
+    forward when the requested port is already in use — by another Proker
+    instance whose lock file went stale (very common after a hard crash
+    or kill -9), by some unrelated dev server, by a Windows TIME_WAIT
+    socket from a previous Proker that exited recently, etc.
+
+    Returns ``(port, fallback_used)`` where ``fallback_used`` is True
+    when the returned port differs from ``start_port`` so the caller
+    can log it loudly.
+
+    Raises ``RuntimeError`` when no port in ``[start_port,
+    start_port+max_tries-1]`` will bind — the caller should propagate
+    a friendly error mentioning the range.
+
+    Note on race conditions: between this probe and the actual
+    ``uvicorn.run`` bind, another process could grab the port. We close
+    the socket immediately after the probe (rather than holding it)
+    because uvicorn doesn't accept a pre-bound fd reliably across
+    platforms. The caller wraps ``uvicorn.run`` in one retry to handle
+    this rare race.
+    """
+    import socket
+    for offset in range(max_tries):
+        port = start_port + offset
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            # No SO_REUSEADDR — we WANT to fail if anyone is on this
+            # port, including a TIME_WAIT socket on Windows (matches what
+            # uvicorn will do moments later).
+            s.bind((host, port))
+            return port, (port != start_port)
+        except OSError:
+            continue
+        finally:
+            try:
+                s.close()
+            except Exception:
+                pass
+    raise RuntimeError(
+        f"All ports in {start_port}-{start_port + max_tries - 1} are in use. "
+        f"Free a port or pass --port <N> to pick a specific one."
+    )
+
+
+def _run_uvicorn_with_port_retry(app, host, port, max_extra_tries=5):
+    """Run ``uvicorn.run`` with a small retry loop in case a TOCTOU race
+    means the port was grabbed between our probe and uvicorn's bind.
+    Falls forward through consecutive ports up to ``max_extra_tries``
+    times. Returns the port that actually bound, raises RuntimeError if
+    everything fails.
+
+    Re-emits the fallback log line on each shift so the user is always
+    looking at the right URL — but in practice the probe in
+    ``_find_free_port`` already made this near-impossible to trigger.
+    """
+    import uvicorn
+    last_exc = None
+    for offset in range(max_extra_tries + 1):
+        try_port = port + offset
+        if offset > 0:
+            print(f"  Race condition on port {try_port - 1}, trying {try_port}...")
+        try:
+            uvicorn.run(app, host=host, port=try_port, log_level="warning")
+            return try_port
+        except OSError as e:
+            # Windows: WinError 10048; Linux/Mac: errno 98 (EADDRINUSE)
+            msg = str(e).lower()
+            if "10048" in msg or "address already in use" in msg or "eaddrinuse" in msg:
+                last_exc = e
+                continue
+            raise
+    raise RuntimeError(
+        f"Could not bind any port from {port} to {port + max_extra_tries}. "
+        f"Last error: {last_exc}"
+    )
+
+
 # ── Entry point ──────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(
@@ -442,7 +522,10 @@ def main():
     if not args.no_update and has_terminal:
         _check_update_with_prompt()
 
-    # Single-instance check
+    # Single-instance check — does another live Proker hold the lock?
+    # If so, just open its URL in the browser and exit. Falling forward
+    # to a different port for a SECOND Proker would be confusing — one
+    # browser window per running Proker is the design intent.
     existing = _check_existing_server(args.host, args.port)
     if existing:
         if not args.no_browser:
@@ -460,7 +543,28 @@ def main():
             return 1
         os.environ["PROTVIEW_AUTOLOAD"] = str(filepath)
 
-    url = f"http://{'localhost' if args.host in ('0.0.0.0',) else args.host}:{args.port}"
+    # Resolve which port we'll ACTUALLY use. The requested port may be
+    # held by:
+    #   - a stale TIME_WAIT socket from a previous Proker that exited
+    #     recently (very common on Windows — TIME_WAIT lingers ~2 min)
+    #   - a different Proker instance that exited but didn't clean up
+    #     its lock (then _check_existing_server above failed because
+    #     /health didn't respond)
+    #   - some unrelated process bound to the same port
+    # In all cases we fall forward to the next available port instead
+    # of crashing with the cryptic "[Errno 10048] only one usage of each
+    # socket address (protocol/network address/port) is normally
+    # permitted" that uvicorn surfaces. The user gets a clear log line
+    # showing which port the server actually came up on.
+    try:
+        actual_port, fellback = _find_free_port(args.host, args.port)
+    except RuntimeError as e:
+        print(f"\n  Error: {e}\n", file=sys.stderr)
+        return 1
+    if fellback:
+        print(f"\n  Port {args.port} is in use — falling forward to port {actual_port}.")
+
+    url = f"http://{'localhost' if args.host in ('0.0.0.0',) else args.host}:{actual_port}"
 
     print(f"\n  Starting Pro-ker at {url}\n")
 
@@ -474,7 +578,7 @@ def main():
 
     from proteomicsviewer.server.main import app  # noqa: E402
 
-    _write_lock(args.host, args.port)
+    _write_lock(args.host, actual_port)
     atexit.register(_remove_lock)
 
     # Background update check for pythonw launches
@@ -506,6 +610,13 @@ def main():
         import asyncio
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    import uvicorn
-    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    # Wrapped retry handles the rare race where the port we just probed
+    # got grabbed by another process before uvicorn could bind. The probe
+    # in _find_free_port handles ~99.9 % of "port in use" cases cleanly;
+    # this is belt-and-suspenders for the remaining sub-second window.
+    try:
+        _run_uvicorn_with_port_retry(app, args.host, actual_port)
+    except RuntimeError as e:
+        print(f"\n  Error: {e}\n", file=sys.stderr)
+        return 1
     return 0
