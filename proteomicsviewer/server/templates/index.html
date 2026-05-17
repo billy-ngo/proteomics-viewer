@@ -353,8 +353,13 @@ function setUploadMode(mode){
     // buttons (visible after the first load). Without syncing both, the
     // active-state visual would drift between the two bars and the user
     // wouldn't know which mode is currently selected.
-    const pBtns=document.querySelectorAll('#upload-mode-proteomics, #cu-mode-proteomics, #fm-mode-proteomics');
-    const tBtns=document.querySelectorAll('#upload-mode-transcriptomics, #cu-mode-transcriptomics, #fm-mode-transcriptomics');
+    // The compact bar's per-mode buttons were replaced by a single "Add
+    // file" dropdown in v4.16.10 — only the upload-section's full toggle
+    // and the file-modal's parser selector remain. Both sets are kept in
+    // sync so the visual selection stays consistent across whichever
+    // surface the user is currently looking at.
+    const pBtns=document.querySelectorAll('#upload-mode-proteomics, #fm-mode-proteomics');
+    const tBtns=document.querySelectorAll('#upload-mode-transcriptomics, #fm-mode-transcriptomics');
     const txt=document.getElementById('upload-zone-text');
     const accent=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#58a6ff';
     const setActive=(b,active)=>{b.style.background=active?accent:'transparent';b.style.color=active?'#fff':'var(--text-sec)'};
@@ -365,6 +370,38 @@ function setUploadMode(mode){
     // any of those file types work for both modes; the toggle just chooses
     // which parser the backend uses.
     if(txt) txt.textContent=mode==='transcriptomics'?'Drop RNA-seq table here':'Drop proteinGroups table here';
+}
+// Show/hide the compact-bar "Add file" dropdown menu. Click anywhere
+// outside it dismisses (registered as a one-shot document mousedown
+// listener so we don't accumulate). Stops propagation on the toggle
+// click so the same click that opens it isn't read as an outside-click.
+function cuToggleAddMenu(e){
+    if(e) e.stopPropagation();
+    const m=document.getElementById('cu-add-menu');
+    if(!m) return;
+    const willOpen=m.classList.contains('hidden');
+    m.classList.toggle('hidden');
+    if(willOpen){
+        setTimeout(()=>{
+            const onDoc=ev=>{
+                if(!m.contains(ev.target)){
+                    m.classList.add('hidden');
+                    document.removeEventListener('mousedown',onDoc,true);
+                }
+            };
+            document.addEventListener('mousedown',onDoc,true);
+        },0);
+    }
+}
+// Menu-item handler: set parser mode, close the menu, open the file
+// picker. The subsequent change event on #file-input flows through
+// handleMultipleFiles → handleIncoming → the file modal (Replace /
+// Append) if RAW is already loaded, OR directly through uploadFile if
+// the canvas is empty.
+function cuAddFileAs(mode){
+    setUploadMode(mode);
+    document.getElementById('cu-add-menu')?.classList.add('hidden');
+    document.getElementById('file-input').click();
 }
 function handleIncoming(file){
     if(RAW){pendingFile=file;document.getElementById('file-modal').classList.remove('hidden');return}
@@ -861,20 +898,28 @@ async function uploadFile(file,append){
     style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0,0,0,0)">
 <div class="tab-panel" data-for="upload">
     <!-- Compact re-upload (shown after file loaded).
-         The Proteomics / Transcriptomics toggle is repeated here so the user
-         can pick which parser the NEXT upload should use. Without this
-         toggle, once any file was loaded the user was stuck in whatever
-         mode they picked first — appending a transcriptomics TSV after a
-         proteomics MaxQuant upload tried the proteomics parser on the
-         RNA-seq file and failed silently. setUploadMode keeps both copies
-         (this bar's buttons + the full upload-section's buttons) in sync. -->
-    <div id="compact-upload" class="compact-upload hidden">
+         A single "Add file ▾" split-button opens a small menu where the
+         user picks Proteomics OR Transcriptomics. Each menu item sets the
+         parser mode AND opens the file picker in one click, so the user
+         can't accidentally upload with the wrong parser. Drag-drop still
+         goes through the file modal which carries its own toggle for the
+         out-of-band case where the user dropped a file without picking. -->
+    <div id="compact-upload" class="compact-upload hidden" style="position:relative">
         <span class="cu-file" id="cu-filename"></span>
-        <div style="display:flex;gap:2px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px">
-            <button id="cu-mode-proteomics" onclick="setUploadMode('proteomics')" style="padding:2px 8px;font-size:10px;border:none;background:var(--accent);color:#fff;border-radius:3px;cursor:pointer;font-family:inherit;font-weight:600" title="Next upload uses the MaxQuant proteinGroups.txt parser">Proteomics</button>
-            <button id="cu-mode-transcriptomics" onclick="setUploadMode('transcriptomics')" style="padding:2px 8px;font-size:10px;border:none;background:transparent;color:var(--text-sec);border-radius:3px;cursor:pointer;font-family:inherit;font-weight:600" title="Next upload uses the RNA-seq counts parser">Transcriptomics</button>
+        <button class="btn-sm cu-btn" id="cu-add-btn" onclick="event.stopPropagation();cuToggleAddMenu(event)" title="Add another data file to this analysis">Add file &#9662;</button>
+        <!-- Dropdown menu — absolutely positioned, hidden by default.
+             cuToggleAddMenu shows/hides it; cuAddFileAs is the click
+             handler for each menu item (sets uploadMode + opens picker). -->
+        <div id="cu-add-menu" class="hidden" style="position:absolute;top:100%;right:12px;background:var(--surface);border:1px solid var(--border);border-radius:5px;box-shadow:0 4px 14px rgba(0,0,0,0.4);z-index:200;min-width:200px;padding:4px;margin-top:2px">
+            <button onclick="cuAddFileAs('proteomics')" style="display:block;width:100%;text-align:left;padding:8px 10px;background:transparent;border:none;color:var(--text);cursor:pointer;font-family:inherit;font-size:12px;border-radius:3px" onmouseover="this.style.background='var(--card)'" onmouseout="this.style.background='transparent'" title="MaxQuant proteinGroups.txt or compatible mass-spec output">
+                <div style="font-weight:600">Proteomics file</div>
+                <div style="font-size:10px;color:var(--text-sec);margin-top:2px">MaxQuant proteinGroups.txt / similar</div>
+            </button>
+            <button onclick="cuAddFileAs('transcriptomics')" style="display:block;width:100%;text-align:left;padding:8px 10px;background:transparent;border:none;color:var(--text);cursor:pointer;font-family:inherit;font-size:12px;border-radius:3px" onmouseover="this.style.background='var(--card)'" onmouseout="this.style.background='transparent'" title="RNA-seq counts table with per-sample columns">
+                <div style="font-weight:600">Transcriptomics file</div>
+                <div style="font-size:10px;color:var(--text-sec);margin-top:2px">RNA-seq counts (pre-normalised)</div>
+            </button>
         </div>
-        <button class="btn-sm cu-btn" onclick="document.getElementById('file-input').click()">Add / change file</button>
     </div>
     <div id="upload-section" class="panel-section" data-tour="upload-zone">
         <div class="section-label">Load Data</div>

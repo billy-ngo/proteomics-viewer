@@ -3,6 +3,25 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.16.10] — 2026-05-10
+
+### Improved — compact upload bar uses a single "Add file ▾" dropdown for parser choice
+The v4.16.9 fix put a persistent Proteomics / Transcriptomics toggle next to the "Change file" button. That worked but left the parser choice ambient — easy to forget which mode is selected before clicking. Replaced with a single **Add file ▾** split-button that, on click, opens a small menu:
+
+- **Proteomics file** — MaxQuant proteinGroups.txt / similar
+- **Transcriptomics file** — RNA-seq counts (pre-normalised)
+
+Each menu item sets the parser mode AND opens the file picker in one click, so the parser choice is bound to the moment of action and can't drift. Each option carries a short subtitle describing the expected file shape so users picking a parser for the first time get inline guidance.
+
+The file modal still has its own parser toggle for the out-of-band drag-drop case where the user dropped a file onto the dropzone without going through the menu — that's the one place the parser choice has to happen AFTER the file arrives, so the modal-time toggle is the right place for it.
+
+Renamed the button from "Change file" / "Add / change file" to plain "**Add file ▾**" since appending is the common case (replacement is a one-click choice inside the file modal that opens after).
+
+### Wiring
+- `cuToggleAddMenu(event)` — open/close the dropdown; registers a one-shot document-mousedown listener for click-outside dismissal so we don't accumulate stale handlers.
+- `cuAddFileAs(mode)` — sets `uploadMode` via `setUploadMode`, closes the dropdown, triggers the file picker. The subsequent change event flows through the existing `handleMultipleFiles → handleIncoming → file-modal` pipeline.
+- `setUploadMode`'s sync selector cleaned up — the now-removed `#cu-mode-*` buttons are no longer matched, only `#upload-mode-*` (original section, pre-load) and `#fm-mode-*` (file modal, post-load) remain.
+
 ## [4.16.9] — 2026-05-10
 
 ### Fixed — can now append transcriptomics data after loading proteomics (or vice-versa)
