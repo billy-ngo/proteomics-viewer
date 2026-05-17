@@ -348,15 +348,18 @@ var RAW=null, pendingFile=null, pendingFileQueue=[];
 var uploadMode='proteomics';
 function setUploadMode(mode){
     uploadMode=mode;
-    const pBtn=document.getElementById('upload-mode-proteomics');
-    const tBtn=document.getElementById('upload-mode-transcriptomics');
+    // Sync BOTH copies of the toggle — the full upload-section's buttons
+    // (visible before any file is loaded) AND the compact-upload bar's
+    // buttons (visible after the first load). Without syncing both, the
+    // active-state visual would drift between the two bars and the user
+    // wouldn't know which mode is currently selected.
+    const pBtns=document.querySelectorAll('#upload-mode-proteomics, #cu-mode-proteomics, #fm-mode-proteomics');
+    const tBtns=document.querySelectorAll('#upload-mode-transcriptomics, #cu-mode-transcriptomics, #fm-mode-transcriptomics');
     const txt=document.getElementById('upload-zone-text');
     const accent=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#58a6ff';
-    if(pBtn&&tBtn){
-        const setActive=(b,active)=>{b.style.background=active?accent:'transparent';b.style.color=active?'#fff':'var(--text-sec)'};
-        setActive(pBtn,mode==='proteomics');
-        setActive(tBtn,mode==='transcriptomics');
-    }
+    const setActive=(b,active)=>{b.style.background=active?accent:'transparent';b.style.color=active?'#fff':'var(--text-sec)'};
+    pBtns.forEach(b=>setActive(b,mode==='proteomics'));
+    tBtns.forEach(b=>setActive(b,mode==='transcriptomics'));
     // Update dropzone label so it's obvious which kind of data is expected.
     // The format hint underneath (txt / tsv / csv / xlsx) stays the same —
     // any of those file types work for both modes; the toggle just chooses
@@ -417,7 +420,19 @@ async function uploadFile(file,append){
             data.sample_source={};
             (data.samples||[]).forEach(s=>{data.sample_source[s]=data.filename});
         }
-        if(append&&RAW){mergeData(data)}
+        if(append&&RAW){
+            // Detect mixed data types (e.g. transcriptomics appended onto
+            // proteomics) so we can surface a clear status toast — silent
+            // mixed merges were leaving users confused about why their
+            // plots looked weird. Read BEFORE the merge so we know what
+            // each side carried.
+            const existingType=(RAW.format_info&&RAW.format_info.data_type)||'proteomics';
+            const newType=(data.format_info&&data.format_info.data_type)||'proteomics';
+            mergeData(data);
+            if(existingType!==newType&&typeof _showToast==='function'){
+                _showToast('Appended '+newType+' data ('+(data.samples||[]).length+' samples, '+(data.proteins||[]).length+' rows). Mixed-type dataset — plots auto-restrict to their source file when groups span a single data type.');
+            }
+        }
         else{
             RAW=data;
             // Promote sample_source to top-level for downstream code
@@ -446,6 +461,15 @@ async function uploadFile(file,append){
     <div class="modal-box">
         <h3>Data Already Loaded</h3>
         <p>An analysis is already in progress. What would you like to do?</p>
+        <!-- Parser-mode toggle so the user can pick which parser to run on
+             the pending file BEFORE confirming Replace/Append. Sync'd with
+             the sidebar toggle via setUploadMode. Common case: user loaded
+             a proteinGroups.txt first, now wants to append RNA-seq counts. -->
+        <div style="margin:8px 0 4px;font-size:11px;color:var(--text-sec)">Parse incoming file as:</div>
+        <div style="display:flex;gap:2px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px;margin-bottom:12px">
+            <button id="fm-mode-proteomics" onclick="setUploadMode('proteomics')" style="flex:1;padding:4px 8px;font-size:11px;border:none;background:var(--accent);color:#fff;border-radius:3px;cursor:pointer;font-family:inherit;font-weight:600">Proteomics</button>
+            <button id="fm-mode-transcriptomics" onclick="setUploadMode('transcriptomics')" style="flex:1;padding:4px 8px;font-size:11px;border:none;background:transparent;color:var(--text-sec);border-radius:3px;cursor:pointer;font-family:inherit;font-weight:600">Transcriptomics</button>
+        </div>
         <div class="modal-actions">
             <button class="m-cancel" onclick="closeFileModal()">Cancel</button>
             <button class="m-danger" onclick="fileModalReplace()">Replace Current</button>
@@ -836,10 +860,21 @@ async function uploadFile(file,append){
     onchange="if(this.files.length){handleMultipleFiles([...this.files]);this.value=''}"
     style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0,0,0,0)">
 <div class="tab-panel" data-for="upload">
-    <!-- Compact re-upload (shown after file loaded) -->
+    <!-- Compact re-upload (shown after file loaded).
+         The Proteomics / Transcriptomics toggle is repeated here so the user
+         can pick which parser the NEXT upload should use. Without this
+         toggle, once any file was loaded the user was stuck in whatever
+         mode they picked first — appending a transcriptomics TSV after a
+         proteomics MaxQuant upload tried the proteomics parser on the
+         RNA-seq file and failed silently. setUploadMode keeps both copies
+         (this bar's buttons + the full upload-section's buttons) in sync. -->
     <div id="compact-upload" class="compact-upload hidden">
         <span class="cu-file" id="cu-filename"></span>
-        <button class="btn-sm cu-btn" onclick="document.getElementById('file-input').click()">Change file</button>
+        <div style="display:flex;gap:2px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px">
+            <button id="cu-mode-proteomics" onclick="setUploadMode('proteomics')" style="padding:2px 8px;font-size:10px;border:none;background:var(--accent);color:#fff;border-radius:3px;cursor:pointer;font-family:inherit;font-weight:600" title="Next upload uses the MaxQuant proteinGroups.txt parser">Proteomics</button>
+            <button id="cu-mode-transcriptomics" onclick="setUploadMode('transcriptomics')" style="padding:2px 8px;font-size:10px;border:none;background:transparent;color:var(--text-sec);border-radius:3px;cursor:pointer;font-family:inherit;font-weight:600" title="Next upload uses the RNA-seq counts parser">Transcriptomics</button>
+        </div>
+        <button class="btn-sm cu-btn" onclick="document.getElementById('file-input').click()">Add / change file</button>
     </div>
     <div id="upload-section" class="panel-section" data-tour="upload-zone">
         <div class="section-label">Load Data</div>
@@ -2048,6 +2083,26 @@ function mergeData(newData){
     if(newData.raw_headers||newData.raw_rows){
         RAW.raw_files.push({filename:newData.filename,headers:newData.raw_headers||[],rows:newData.raw_rows||[]});
     }
+    // Track per-source data type so downstream code can tell which samples
+    // came from a transcriptomics file vs a proteomics file. Without this,
+    // a mixed-type dataset has no record of where each row came from at the
+    // data_type level (sample_source only tracks the FILENAME, not whether
+    // that file was an RNA-seq table or a MaxQuant output).
+    //
+    // The global format_info.data_type stays at whatever the FIRST file's
+    // type was (for backward compatibility — existing UI checks key off
+    // it). New code can iterate RAW.source_data_types[filename] to make
+    // per-source decisions (e.g. skip normalisation for transcriptomics
+    // source files while still normalising the proteomics ones).
+    if(!RAW.source_data_types){
+        RAW.source_data_types={};
+        // Backfill the original source
+        const origType=(RAW.format_info&&RAW.format_info.data_type)||'proteomics';
+        const origFile=(RAW.raw_files&&RAW.raw_files[0]&&RAW.raw_files[0].filename)||RAW.filename.split(' + ')[0]||'';
+        if(origFile) RAW.source_data_types[origFile]=origType;
+    }
+    const newType=(newData.format_info&&newData.format_info.data_type)||'proteomics';
+    RAW.source_data_types[newData.filename]=newType;
 }
 
 // Boot autoload. Wrapped so a failure here (network glitch, init error,

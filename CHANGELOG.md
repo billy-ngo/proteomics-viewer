@@ -3,6 +3,38 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.16.9] — 2026-05-10
+
+### Fixed — can now append transcriptomics data after loading proteomics (or vice-versa)
+The Proteomics / Transcriptomics parser toggle lived ONLY in the full upload section, which is hidden after the first file load (replaced by a compact "Change file" bar). Once any file was loaded, the user had no way to switch the parser for subsequent uploads — the global `uploadMode` stayed at whatever was selected first, so a follow-up upload tried the wrong parser and failed silently.
+
+User scenario: load a MaxQuant proteinGroups.txt → toggle (gone) → drop an RNA-seq TSV → backend uses the proteomics parser on the RNA-seq data → "Could not detect sample columns" error.
+
+Three places now carry the toggle, all kept in sync by `setUploadMode`:
+
+1. **The compact upload bar** (shown after the first file loaded) gets a small Proteomics / Transcriptomics toggle next to the filename. The "Change file" button was also relabelled "Add / change file" to make the append-via-modal flow more discoverable.
+2. **The file modal** (the Replace / Append confirmation dialog) gains a "Parse incoming file as:" toggle so the user can confirm parser choice immediately before clicking Append. Useful when the user dropped the file from an external app and didn't pre-select a mode.
+3. **The original upload section** (visible before any file is loaded) still has its toggle, unchanged.
+
+`setUploadMode(mode)` now updates all three toggle copies in one call via a unified `querySelectorAll` over `#upload-mode-*`, `#cu-mode-*`, and `#fm-mode-*` IDs.
+
+### Added — per-source `data_type` tracking + mixed-type append toast
+When appending data of a different type than what's already loaded (e.g. transcriptomics onto proteomics), the merge now:
+
+- Records the new file's data type on `RAW.source_data_types[filename]` so downstream code can tell which file each sample/protein came from at the data-type level (not just the filename via `sample_source`). Backfills the original source on first append.
+- Surfaces a status toast: *"Appended transcriptomics data (8 samples, 705 rows). Mixed-type dataset — plots auto-restrict to their source file when groups span a single data type."* — telling the user exactly what was added and how the multi-file plot restriction already in place will handle the mix.
+
+The multi-file source-restriction logic that's already in `renderPlot` (introduced in v4.10.x) ensures that creating a volcano plot from groups containing only transcriptomics samples will restrict the plot to transcriptomics rows, and a plot from proteomics groups stays on proteomics rows. No further changes needed — mixed datasets cleanly partition into per-source plots.
+
+### Verification
+Validated the underlying merge mechanics on the test corpus:
+
+- Proteomics RAW: 10 samples, 1492 proteins, 7 quant types
+- RNA-seq data: 8 samples (Un_A..At_D), 705 genes, 1 quant type ("Counts")
+- Sample-name overlap: 0 (no collision blocker)
+- Schema overlap: identical protein-record keys plus 2 transcriptomics-only fields (`description`, `feature_type`) which sit alongside without confusing the frontend
+- Post-merge expectation: 18 samples, 2197 rows, 8 quant types — all reachable
+
 ## [4.16.8] — 2026-05-10
 
 ### Fixed — delimiter detection no longer picks ';' on proteinGroups.txt files with multi-protein groups
