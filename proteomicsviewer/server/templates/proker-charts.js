@@ -1352,8 +1352,15 @@ class ProkerChart {
                     m.symbol = props.symbol;
                 }
             }
-            // COLOR
-            if (props.color) {
+            // COLOR — skipped entirely when the trace has m._lockColor set.
+            // Used by the volcano plot, which assigns each trace (NS, Up,
+            // Down, presence-only side bands) its own base colour via the
+            // per-region overrides on cp.config._volcanoColors. Without
+            // this lock, picking a marker colour in Graph Settings (or
+            // even just changing size/opacity, which re-passes the panel's
+            // current colour) would wipe every region's distinct colour
+            // and merge them into one uniform hue.
+            if (props.color && !m._lockColor) {
                 if (Array.isArray(m.color) && priority) {
                     m.color = m.color.map((c, i) => priority[i] >= 1 ? c : props.color);
                 } else {

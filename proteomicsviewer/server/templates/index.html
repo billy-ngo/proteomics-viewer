@@ -620,6 +620,29 @@ async function uploadFile(file,append){
                 Axis thickness <input type="range" id="gs-axis-width" min="0.5" max="5" step="0.5" value="1" style="flex:1" title="Axis line + tick mark thickness in pixels"> <input type="number" id="gs-axis-width-num" min="0.5" max="10" step="0.5" value="1" style="width:40px;font-size:11px;padding:2px;text-align:center">
             </div>
         </div>
+        <!-- Volcano regions — only visible when the active plot (or any
+             plot in batch mode) is a volcano. Each picker controls one
+             region's marker fill colour: NS (not significant, grey by
+             default), Up (right side of the plot, group X colour), Down
+             (left side, group Y colour). Side bands inherit Up/Down so
+             the relationship between the cloud and the band is preserved. -->
+        <div id="gs-volcano-regions-row" class="hidden" style="margin-bottom:10px">
+            <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Volcano regions</div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+                <div style="display:flex;align-items:center;gap:6px">
+                    <span style="font-size:11px;color:var(--text-sec);flex:1">NS (not significant)</span>
+                    <span class="gs-swatch" id="gs-volc-ns-color-sw" onclick="gsOpenPicker('gs-volc-ns-color')" onmouseenter="gsOpenPicker('gs-volc-ns-color')" ondblclick="gsNative('gs-volc-ns-color')" title="Click or hover: swatches, Double-click: picker"></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px">
+                    <span style="font-size:11px;color:var(--text-sec);flex:1">Up (right side)</span>
+                    <span class="gs-swatch" id="gs-volc-up-color-sw" onclick="gsOpenPicker('gs-volc-up-color')" onmouseenter="gsOpenPicker('gs-volc-up-color')" ondblclick="gsNative('gs-volc-up-color')" title="Right-side significant proteins + presence-only band"></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px">
+                    <span style="font-size:11px;color:var(--text-sec);flex:1">Down (left side)</span>
+                    <span class="gs-swatch" id="gs-volc-down-color-sw" onclick="gsOpenPicker('gs-volc-down-color')" onmouseenter="gsOpenPicker('gs-volc-down-color')" ondblclick="gsNative('gs-volc-down-color')" title="Left-side significant proteins + presence-only band"></span>
+                </div>
+            </div>
+        </div>
         <!-- Text -->
         <div style="font-size:10px;color:var(--text-sec);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Text</div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;font-size:11px;color:var(--text-sec)">
@@ -634,6 +657,9 @@ async function uploadFile(file,append){
     <input type="color" id="gs-paper-bg" value="#0d1117" style="display:none">
     <input type="color" id="gs-grid-color" value="#21262d" style="display:none">
     <input type="color" id="gs-axis-color" value="#30363d" style="display:none">
+    <input type="color" id="gs-volc-ns-color"   value="#6e7681" style="display:none">
+    <input type="color" id="gs-volc-up-color"   value="#f85149" style="display:none">
+    <input type="color" id="gs-volc-down-color" value="#3fb950" style="display:none">
 </div>
 
 <div id="export-panel" class="modal-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
@@ -1430,6 +1456,16 @@ function applyUndoEntry(entry,isRedo){
             cp.config.showFClines  =target.showFClines;
             cp.config.showFDRline  =target.showFDRline;
             if(cp.type==='pca') cp.config.showEllipses=target.showEllipses;
+            // Volcano per-region colours — restore if present, clear when
+            // the target snapshot has null (so undo back to "no override"
+            // works, returning the plot to its group-derived defaults).
+            if(cp.type==='volcano'){
+                if(target.volcanoColors){
+                    cp.config._volcanoColors=JSON.parse(JSON.stringify(target.volcanoColors));
+                } else {
+                    delete cp.config._volcanoColors;
+                }
+            }
             cp._forceUpdate=true;
             const{data:qd}=getQData();renderPlot(cp,qd,getFilteredIdx());
             break;
@@ -5238,18 +5274,31 @@ function buildVolcanoConfig(chart,p,qd,fidx){
 
     const traces=[];
 
+    // Per-region color overrides \u2014 populated from cp.config._volcanoColors
+    // (set by Graph Settings \u2192 Volcano regions). Falls back to the group's
+    // assigned color for Up/Down (so the colour scheme follows the user's
+    // group palette) and a neutral grey for NS. Setting _lockColor=true on
+    // each volcano trace tells chart.restyle() to skip the global marker-
+    // colour update \u2014 without that lock, changing marker size in Graph
+    // Settings would also pass the panel's current "marker colour" through
+    // restyle and wipe these per-region colours every time.
+    const volcanoColors = (p.config && p.config._volcanoColors) || {};
+    const colorNS   = volcanoColors.ns   || '#6e7681';
+    const colorUp   = volcanoColors.up   || grpColor(gx);
+    const colorDown = volcanoColors.down || grpColor(gy);
+
     // Main cloud \u2014 categorize by significance
     const cats=both.map((b,i)=>adjP[i]<fdrT&&Math.abs(b.fc)>=fcT?(b.fc>0?'up':'down'):'ns');
     ['ns','up','down'].forEach(cat=>{
         const idx=cats.map((c,i)=>c===cat?i:-1).filter(i=>i>=0);
         if(!idx.length)return;
-        const baseColor=cat==='up'?grpColor(gx):cat==='down'?grpColor(gy):'#6e7681';
+        const baseColor=cat==='up'?colorUp:cat==='down'?colorDown:colorNS;
         const mo=applyMarkerOverrides(idx.map(i=>both[i].pidx),baseColor,5,'circle');
         traces.push({
             x:idx.map(i=>both[i].fc),
             y:idx.map(i=>negLog[i]),
             mode:'markers',
-            marker:{size:mo.size,color:mo.color,opacity:cat==='ns'?0.5:0.85,symbol:mo.symbol,priority:mo.priority,_pointOpacity:mo.pointOpacity},
+            marker:{size:mo.size,color:mo.color,opacity:cat==='ns'?0.5:0.85,symbol:mo.symbol,priority:mo.priority,_pointOpacity:mo.pointOpacity,_lockColor:true},
             text:idx.map(i=>{
                 const b=both[i];
                 let h=b.hover+'<br>Log2FC: '+b.fc.toFixed(2)+'<br>-Log10(FDR): '+negLog[i].toFixed(2);
@@ -5274,7 +5323,7 @@ function buildVolcanoConfig(chart,p,qd,fidx){
         const mo=applyMarkerOverrides(items.map(it=>it.pidx),signColor,5,'diamond');
         return{
             x:xs,y:ys,mode:'markers',
-            marker:{size:mo.size,color:mo.color,opacity:0.85,symbol:mo.symbol,priority:mo.priority,_pointOpacity:mo.pointOpacity},
+            marker:{size:mo.size,color:mo.color,opacity:0.85,symbol:mo.symbol,priority:mo.priority,_pointOpacity:mo.pointOpacity,_lockColor:true},
             text:items.map(it=>{
                 const v=it.mA!=null?it.mA:it.mB;
                 return it.hover+'<br><em>Only in '+labelGroup+'</em><br>Mean '+labelGroup+': '+fmtVal(v)+'<br>Mean '+otherGroup+': 0 (not detected)<br><em>Log2FC and p-value not defined</em>';
@@ -5282,8 +5331,11 @@ function buildVolcanoConfig(chart,p,qd,fidx){
             customdata:items.map(it=>it.full)
         };
     }
-    const upTrace=_bandTrace(upOnly,xUpBand,gx,gy,grpColor(gx));
-    const downTrace=_bandTrace(downOnly,xDownBand,gy,gx,grpColor(gy));
+    // Side bands share Up/Down region colours so the visual relationship
+    // between the cloud and the band is preserved when the user changes
+    // either region's colour.
+    const upTrace=_bandTrace(upOnly,xUpBand,gx,gy,colorUp);
+    const downTrace=_bandTrace(downOnly,xDownBand,gy,gx,colorDown);
     if(upTrace) traces.push(upTrace);
     if(downTrace) traces.push(downTrace);
 
@@ -7140,6 +7192,11 @@ function applyGraphSettings(){
     // they round-trip through cp.config._gsLayout like the other layout props.
     const axisColor=document.getElementById('gs-axis-color').value;
     const axisWidth=parseFloat(document.getElementById('gs-axis-width').value)||1;
+    // Per-region volcano colours — only meaningful for volcano plots. Read
+    // unconditionally; only applied to plots whose type === 'volcano'.
+    const volcNS  =document.getElementById('gs-volc-ns-color').value;
+    const volcUp  =document.getElementById('gs-volc-up-color').value;
+    const volcDown=document.getElementById('gs-volc-down-color').value;
     // Build the persisted overrides up front so we can stash them on each
     // plot's config and reapply on every future render. Without this, every
     // re-render (filter change, freeze toggle, session reload, plot duplicate)
@@ -7162,6 +7219,10 @@ function applyGraphSettings(){
             showFClines:    cp.config.showFClines,
             showFDRline:    cp.config.showFDRline,
             showEllipses:   cp.config.showEllipses,
+            // Volcano per-region colours — preserved across undo too. null
+            // when the plot has never had per-region overrides set (so undo
+            // can restore to "use defaults").
+            volcanoColors:  cp.config._volcanoColors?JSON.parse(JSON.stringify(cp.config._volcanoColors)):null,
         };
     });
     gsTargetPlots.forEach(plotId=>{
@@ -7190,6 +7251,15 @@ function applyGraphSettings(){
                 cp._forceUpdate=true;
                 const{data:qd}=getQData();renderPlot(cp,qd,getFilteredIdx());
             }
+            // Volcano per-region colours — persist on cp.config so
+            // buildVolcanoConfig picks them up, then force a full re-render
+            // (chart.restyle alone won't change the per-trace base colour
+            // because the volcano traces carry _lockColor=true).
+            if(cp.type==='volcano'){
+                cp.config._volcanoColors={ns:volcNS,up:volcUp,down:volcDown};
+                cp._forceUpdate=true;
+                const{data:qd}=getQData();renderPlot(cp,qd,getFilteredIdx());
+            }
         }
     });
     // Push one undo entry per affected plot. Multi-plot batch becomes one
@@ -7198,10 +7268,15 @@ function applyGraphSettings(){
     gsTargetPlots.forEach(plotId=>{
         const before=beforeStates[plotId];
         if(!before) return;
+        const cp=CANVAS_PLOTS.find(c=>c.plotId===plotId);
         const after={
             gsMarker:Object.assign({},markerOverride),
             gsLayout:Object.assign({},layoutOverride),
             showThresholds,showFClines,showFDRline,showEllipses,
+            // Only include volcanoColors in the after-snapshot for actual
+            // volcano plots — non-volcano plots' after-state shouldn't
+            // carry a stale colour blob that undo would then write.
+            volcanoColors: (cp&&cp.type==='volcano')?{ns:volcNS,up:volcUp,down:volcDown}:null,
         };
         // Skip pushing if nothing actually changed (user opened panel, didn't
         // touch anything). Compares the JSON representation — cheap, exact.
@@ -8143,13 +8218,18 @@ gsSync('gs-dot-opacity','gs-dot-opacity-num');
 gsSync('gs-font-size','gs-font-size-num');
 gsSync('gs-axis-width','gs-axis-width-num');
 document.getElementById('gs-dot-shape').addEventListener('change',applyGraphSettings);
-// Hidden color inputs — triggered by swatch picker or native
-['gs-dot-color','gs-outline-color','gs-plot-bg','gs-paper-bg','gs-grid-color','gs-axis-color'].forEach(id=>{
+// Hidden color inputs — triggered by swatch picker or native. The three
+// gs-volc-*-color pickers are included so flipping them via the in-app
+// palette OR the OS native picker triggers applyGraphSettings the same
+// way the other swatch-driven colours do.
+['gs-dot-color','gs-outline-color','gs-plot-bg','gs-paper-bg','gs-grid-color','gs-axis-color',
+ 'gs-volc-ns-color','gs-volc-up-color','gs-volc-down-color'].forEach(id=>{
     document.getElementById(id).addEventListener('input',function(){gsUpdateSwatches();applyGraphSettings()});
 });
 
 function gsUpdateSwatches(){
-    const ids=['gs-dot-color','gs-outline-color','gs-plot-bg','gs-paper-bg','gs-grid-color','gs-axis-color'];
+    const ids=['gs-dot-color','gs-outline-color','gs-plot-bg','gs-paper-bg','gs-grid-color','gs-axis-color',
+               'gs-volc-ns-color','gs-volc-up-color','gs-volc-down-color'];
     ids.forEach(id=>{const sw=document.getElementById(id+'-sw');const inp=document.getElementById(id);if(sw&&inp)sw.style.background=inp.value});
 }
 function gsOpenPicker(inputId){
@@ -8274,6 +8354,24 @@ function openGraphSettingsForPlot(plotId){
     const isPCA=cp&&cp.type==='pca';
     document.getElementById('gs-ellipses-row').style.display=isPCA?'flex':'none';
     if(isPCA&&cp.config) document.getElementById('gs-show-ellipses').checked=cp.config.showEllipses!==false;
+    // Volcano-only "Volcano regions" section — hidden for every other
+    // plot type. Pickers populate from cp.config._volcanoColors when set,
+    // otherwise from the same defaults buildVolcanoConfig uses (group
+    // colour for Up/Down, neutral grey for NS) so the swatches always
+    // reflect what's actually on the plot.
+    const volcRow=document.getElementById('gs-volcano-regions-row');
+    if(volcRow) volcRow.classList.toggle('hidden',!isVolcano);
+    if(isVolcano&&cp.config){
+        const vc=cp.config._volcanoColors||{};
+        // Defaults match buildVolcanoConfig's fallback chain — grpColor
+        // for Up/Down so the picker reflects the group palette colour
+        // currently on the plot, neutral grey for NS.
+        const gxColor=(typeof grpColor==='function'&&cp.config.gx)?grpColor(cp.config.gx):'#f85149';
+        const gyColor=(typeof grpColor==='function'&&cp.config.gy)?grpColor(cp.config.gy):'#3fb950';
+        document.getElementById('gs-volc-ns-color'  ).value=vc.ns   ||'#6e7681';
+        document.getElementById('gs-volc-up-color'  ).value=vc.up   ||gxColor;
+        document.getElementById('gs-volc-down-color').value=vc.down ||gyColor;
+    }
     closePanels();
     document.getElementById('graph-settings-panel').classList.remove('hidden');
     gsUpdateSwatches();
@@ -8310,6 +8408,23 @@ function toggleGraphSettingsPanel(){
     checks.innerHTML=CANVAS_PLOTS.map(p=>
         `<label class="checkbox-row" style="display:flex;align-items:center;gap:6px;font-size:11px"><input type="checkbox" value="${p.plotId}" checked onchange="gsBatchChanged()">${_esc(_gsPlotLabel(p))}</label>`
     ).join('');
+    // Show the Volcano regions section if at least one volcano plot is in
+    // the selection — picker values come from the first volcano plot's
+    // current per-region overrides (or the per-group defaults). Applying
+    // settings to a mixed selection writes the same volcano colour blob
+    // to every volcano plot in the batch.
+    const firstVolcano=CANVAS_PLOTS.find(p=>p.type==='volcano');
+    const volcRow=document.getElementById('gs-volcano-regions-row');
+    if(volcRow) volcRow.classList.toggle('hidden',!firstVolcano);
+    if(firstVolcano){
+        const cfg=firstVolcano.config||{};
+        const vc=cfg._volcanoColors||{};
+        const gxColor=(typeof grpColor==='function'&&cfg.gx)?grpColor(cfg.gx):'#f85149';
+        const gyColor=(typeof grpColor==='function'&&cfg.gy)?grpColor(cfg.gy):'#3fb950';
+        document.getElementById('gs-volc-ns-color'  ).value=vc.ns   ||'#6e7681';
+        document.getElementById('gs-volc-up-color'  ).value=vc.up   ||gxColor;
+        document.getElementById('gs-volc-down-color').value=vc.down ||gyColor;
+    }
     document.getElementById('graph-settings-panel').classList.remove('hidden');
     gsUpdateSwatches();
 }

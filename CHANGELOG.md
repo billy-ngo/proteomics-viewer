@@ -3,6 +3,34 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.16.7] — 2026-05-10
+
+### Fixed — changing volcano marker size no longer wipes region colours
+Volcano plots build with three separate traces (NS / Up / Down) each carrying its own base colour (group X colour for Up, group Y colour for Down, neutral grey for NS). Changing **any** Graph Settings input — including size or opacity — caused `applyGraphSettings()` to pass the panel's current marker-colour value through `chart.restyle({color: ...})`, which dutifully overwrote every trace's colour and merged them all into one uniform hue.
+
+Two changes fix this:
+
+- **Trace-level `_lockColor` flag.** `buildVolcanoConfig` now sets `marker._lockColor = true` on every trace it produces (the three main-cloud traces plus the two presence-only side-band traces). `chart.restyle()` skips the COLOR branch when this flag is set, so changing size/opacity/symbol/hollow/outline no longer touches the per-region colours.
+- **Other plot types unchanged.** PCA, dotplot, abundance, unique, and enrichment plots don't carry `_lockColor`, so a single global colour from Graph Settings still applies to them exactly as before (with GOI/species priority preserved).
+
+### Added — per-region colour pickers for volcano plots in Graph Settings
+A new **Volcano regions** section appears in the Graph Settings panel whenever the active plot (or any plot in batch mode) is a volcano. Three pickers control the marker colour for each region:
+
+- **NS (not significant)** — defaults to neutral grey `#6e7681`.
+- **Up (right side)** — defaults to the group X colour. Also colours the right-side presence-only band so the cloud and the band stay visually linked.
+- **Down (left side)** — defaults to the group Y colour. Also colours the left-side presence-only band.
+
+Each picker uses the same swatch UX as the other Graph Settings colour controls (click for the in-app palette, hover to peek, double-click for the OS native colour picker). Changes are persisted on `cp.config._volcanoColors` so they round-trip through every renderPlot path (filter change, freeze toggle, session save/load) and through the undo system. `buildVolcanoConfig` reads from `cp.config._volcanoColors` first and falls back to the group-derived defaults — so a plot with no per-region overrides looks exactly as before.
+
+Batch mode (the "Apply to" multi-plot panel) shows the volcano section if at least one volcano is in the selection; clicking Apply writes the same colour blob to every volcano plot in the batch.
+
+### Wiring
+- `proker-charts.js`: `restyle()` checks `marker._lockColor` before applying `props.color`; everything else (size, symbol, opacity, hollow, outline) still flows through unchanged.
+- `index.html`: `buildVolcanoConfig` reads `cp.config._volcanoColors.ns / up / down` with group-colour fallbacks; sets `_lockColor: true` on all five volcano traces (3 cloud + 2 side bands).
+- `index.html`: new `gs-volc-ns-color` / `gs-volc-up-color` / `gs-volc-down-color` inputs and matching `-sw` swatches added to the Graph Settings panel; wrapped in `#gs-volcano-regions-row` which `openGraphSettingsForPlot` and `toggleGraphSettingsPanel` show/hide based on plot type.
+- `applyGraphSettings`: reads the three new pickers, writes to `cp.config._volcanoColors`, force-renders the volcano via `renderPlot` (since `chart.restyle` alone can't change a `_lockColor` trace's colour). Undo snapshots include `volcanoColors` so Ctrl+Z rolls back per-region changes too.
+- `gsUpdateSwatches` and the input-listener array both updated to include the three new picker IDs.
+
 ## [4.16.6] — 2026-05-10
 
 ### Fixed — `proker` no longer crashes when its port is in use
