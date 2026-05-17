@@ -3,6 +3,40 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.16.8] — 2026-05-10
+
+### Fixed — delimiter detection no longer picks ';' on proteinGroups.txt files with multi-protein groups
+The auto-delimiter heuristic introduced in v4.16.2 was scoring candidates by total occurrence count across the first ~8 data lines. For proteinGroups.txt files where the "Protein IDs" / "Majority protein IDs" columns contain semicolon-separated lists of accession IDs (e.g. `Q9X1H7;P38398;Q14116`), the data-line semicolon count quickly dwarfs the tab count even though tabs are the actual delimiter:
+
+```
+Header line:      91 tabs, 0 semis
+Sample (8 KB):  358 tabs, 736 semis  ← semicolons win the naïve count
+```
+
+`csv.Sniffer` raised "Could not determine delimiter" on the same input, and the count-based fallback then picked `;`, which collapsed every line to a single column and made the parser report *"Could not detect sample columns."*
+
+The detector has been rewritten around a **column-count consistency score**:
+
+1. For each candidate delimiter (tab, comma, semicolon, pipe), parse the header + the first 9 data lines as if it were the delimiter using `csv.reader` (so quoted fields with embedded delimiters count as one cell, not two).
+2. The header must split into ≥ 2 columns — otherwise the candidate is rejected outright (semicolon parsing a tab-delimited proteinGroups header gives 1 column, eliminating it here).
+3. Score by `(consistency, header_cols, tie_break)` where consistency is the fraction of data lines whose column count matches the header. The CORRECT delimiter produces consistent counts; the WRONG delimiter produces wildly varying ones because it's matching characters that happen to appear inside fields.
+4. Ties go to tab (proteinGroups.txt's historical default), then comma, then semicolon, then pipe.
+
+For the user's Se-Ai proteinGroups.txt:
+- Tab: header=92 cols, data lines consistently 92 cols → consistency 1.0
+- Semicolon: header=1 col → rejected
+- Result: tab wins decisively.
+
+### Verification
+| Input | Result |
+|---|---|
+| User's Se-Ai proteinGroups.txt (multi-protein groups w/ ; in IDs) | 8 samples (M1–M8), 2492 proteins, quant types MS/MS count + LFQ intensity + Intensity ✓ |
+| Original test proteinGroups.txt | 10 samples, 1492 proteins ✓ (unchanged) |
+| TM7x transcriptomics TSV | 8 samples (Un_A..At_D), 705 genes ✓ (unchanged) |
+| Synthetic CSV (comma-delimited) | 4 samples ✓ |
+| Synthetic TSV with `;`-separated IDs in field | 2 samples ✓ (new edge case) |
+| Detector unit checks: TSV / CSV / SCSV / PSV one-liners | all 4 pass ✓ |
+
 ## [4.16.7] — 2026-05-10
 
 ### Fixed — changing volcano marker size no longer wipes region colours
