@@ -7327,7 +7327,19 @@ function applyGraphSettings(){
     });
     gsTargetPlots.forEach(plotId=>{
         const chart=CHARTS[plotId];if(!chart)return;
-        chart.restyle(markerOverride);
+        const cp=CANVAS_PLOTS.find(c=>c.plotId===plotId);
+        const isVolcano=cp&&cp.type==='volcano';
+        // For volcano plots the marker COLOUR is owned exclusively by the
+        // per-region pickers (which feed cp.config._volcanoColors and are
+        // read by buildVolcanoConfig). The global "marker colour" picker is
+        // shared with all other plot types and is irrelevant here, so we
+        // strip it from the override before passing to restyle — belt and
+        // suspenders alongside the trace-level _lockColor flag. Outline
+        // colour is also volcano-region-irrelevant; strip it too.
+        const restyleProps=isVolcano
+            ? (function(){const o=Object.assign({},markerOverride);delete o.color;delete o.outlineColor;return o})()
+            : markerOverride;
+        chart.restyle(restyleProps);
         if(chart._refLines&&showThresholds){
             chart._refLines.forEach(rl=>{
                 if(rl.axis==='x') rl._hidden=!showFClines;
@@ -7335,13 +7347,15 @@ function applyGraphSettings(){
             });
         }
         chart.relayout(layoutOverride);
-        const cp=CANVAS_PLOTS.find(c=>c.plotId===plotId);
         if(cp&&cp.config){
             // PERSISTENCE — these get re-applied in renderPlot after every
             // build*Config call, so the user's tweaks survive any future render.
             // They live on cp.config (which session-save serialises whole), so
             // they round-trip through reload and plot duplication for free.
-            cp.config._gsMarker=Object.assign({},markerOverride);
+            // For volcano: also strip colour from the persisted _gsMarker
+            // so the subsequent renderPlot → chart.restyle(_gsMarker) call
+            // doesn't smuggle the global colour back in.
+            cp.config._gsMarker=Object.assign({},isVolcano?restyleProps:markerOverride);
             cp.config._gsLayout=Object.assign({},layoutOverride);
             cp.config.showThresholds=showThresholds;
             cp.config.showFClines=showFClines;
@@ -7353,9 +7367,8 @@ function applyGraphSettings(){
             }
             // Volcano per-region colours — persist on cp.config so
             // buildVolcanoConfig picks them up, then force a full re-render
-            // (chart.restyle alone won't change the per-trace base colour
-            // because the volcano traces carry _lockColor=true).
-            if(cp.type==='volcano'){
+            // (the only path that paints volcano region colours is buildVolcanoConfig).
+            if(isVolcano){
                 cp.config._volcanoColors={ns:volcNS,up:volcUp,down:volcDown};
                 cp._forceUpdate=true;
                 const{data:qd}=getQData();renderPlot(cp,qd,getFilteredIdx());

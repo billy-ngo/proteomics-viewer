@@ -3,6 +3,36 @@
 All notable changes to Pro-ker Proteomics Analysis are documented here.
 Versioning follows [SemVer](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [4.16.11] — 2026-05-10
+
+### Fixed — volcano colour fix made bulletproof (no path can leak the global colour onto regions)
+v4.16.7 added a `marker._lockColor` flag that told `chart.restyle()` to skip the COLOR branch for volcano traces, and v4.16.7+ added per-region colour pickers. Per a user report ("dot colour still resets to grey when changing point size, and changing colours in the menu doesn't change the dot colours"), at least one code path was apparently still leaking the global colour through.
+
+Belt-and-suspenders second line of defence: the volcano-specific branch in `applyGraphSettings` now **strips `color` and `outlineColor` entirely** from the `restyle` props AND from the persisted `cp.config._gsMarker` blob:
+
+```js
+const restyleProps = isVolcano
+    ? (function(){const o=Object.assign({},markerOverride);delete o.color;delete o.outlineColor;return o})()
+    : markerOverride;
+chart.restyle(restyleProps);
+...
+cp.config._gsMarker = Object.assign({}, isVolcano ? restyleProps : markerOverride);
+```
+
+So even if `_lockColor` somehow got stripped from a trace (rare race during destroy/re-create), the restyle call simply has no colour to apply. Volcano marker colours are now owned **exclusively** by `cp.config._volcanoColors` → `buildVolcanoConfig`'s read at render time. There is no other path.
+
+The per-region pickers' input listeners still fire `applyGraphSettings` on change, which writes `_volcanoColors` and force-renders via `renderPlot` (which destroys the old chart and rebuilds via `buildVolcanoConfig`, picking up the new colours).
+
+### Fixed — browser cache could serve stale frontend after `pip install --upgrade`
+A separate but related issue: when users updated proker via pip, the new HTML/JS files were served — but browsers often returned cached versions of `/` and `/proker-charts.js`. So a fix shipped to `cp.config._volcanoColors` handling that depended on new JavaScript would silently not take effect until the user hard-refreshed (Ctrl+F5), which most users don't think to do.
+
+Server now sends `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` plus the legacy `Pragma: no-cache` and `Expires: 0` headers on both `/` and `/proker-charts.js`. Every page load fetches the current frontend.
+
+API endpoints don't carry these headers (they have their own per-route caching semantics, and most are `POST` anyway). Only the two static-frontend endpoints.
+
+### Note on user-reported regression
+If you're still seeing the old behaviour after updating to v4.16.11, do one hard-refresh (Ctrl+F5 / Cmd+Shift+R) — that's a one-time cost. Future updates served from this version onward will not need it.
+
 ## [4.16.10] — 2026-05-10
 
 ### Improved — compact upload bar uses a single "Add file ▾" dropdown for parser choice

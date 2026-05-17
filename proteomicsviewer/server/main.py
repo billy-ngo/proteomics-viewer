@@ -32,14 +32,30 @@ _templates_dir = Path(__file__).parent / "templates"
 
 
 # ── Frontend serving ──────────────────────────────────────────────
+# Cache-busting headers so a pip install --upgrade actually serves the
+# new frontend instead of whatever the user's browser cached from the
+# previous version. Without no-cache, users would update proker and
+# still see old behaviour (e.g. an unfixed bug they reported) until
+# they hard-refreshed — and most users don't know to do that.
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
 @app.get("/", include_in_schema=False)
 def serve_index():
-    return FileResponse(str(_templates_dir / "index.html"))
+    return FileResponse(str(_templates_dir / "index.html"), headers=_NO_CACHE_HEADERS)
 
 
 @app.get("/proker-charts.js", include_in_schema=False)
 def serve_charts_js():
-    return FileResponse(str(_templates_dir / "proker-charts.js"), media_type="application/javascript")
+    return FileResponse(
+        str(_templates_dir / "proker-charts.js"),
+        media_type="application/javascript",
+        headers=_NO_CACHE_HEADERS,
+    )
 
 
 # ── API routes ────────────────────────────────────────────────────
